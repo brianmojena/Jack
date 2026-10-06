@@ -12,6 +12,7 @@ struct JackActions {
     var toggleUnread: () -> Void
     var toggleTerminal: () -> Void
     var toggleBrowser: () -> Void
+    var toggleSimulator: () -> Void
     var toggleExplorer: () -> Void
     var toggleSidebar: () -> Void
     var closeTab: () -> Void
@@ -82,6 +83,9 @@ struct JackCommands: Commands {
                 .disabled(actions?.hasSelection != true)
             Button("Mostrar u ocultar navegador") { actions?.toggleBrowser() }
                 .keyboardShortcut("b", modifiers: [.command, .shift])
+                .disabled(actions?.hasSelection != true)
+            Button("Mostrar u ocultar simulador de iOS") { actions?.toggleSimulator() }
+                .keyboardShortcut("i", modifiers: [.command, .shift])
                 .disabled(actions?.hasSelection != true)
         }
     }

@@ -126,10 +126,10 @@ struct AgentTabStrip: View, Equatable {
     }
 }
 
-/// Switches for the terminal, browser and file panes. They observe the agent's tabs,
+/// Switches for the terminal, browser, simulator and file panes. They observe the agent's tabs,
 /// so the highlighted tool follows the tab selected in the pane.
 struct WorkspaceToggles: View, Equatable {
-    static let width: CGFloat = 100
+    static let width: CGFloat = 128
     @ObservedObject var sessions: WorkspaceSessions
     let conversationID: UUID?
     let paneVisible: Bool
@@ -146,6 +146,7 @@ struct WorkspaceToggles: View, Equatable {
         HStack(spacing: 2) {
             StripIconButton(symbol: "apple.terminal", active: current == .terminal, help: "Terminal (⌃`)") { onToggle(.terminal) }
             StripIconButton(symbol: "globe", active: current == .browser, help: "Navegador (⇧⌘B)") { onToggle(.browser) }
+            StripIconButton(symbol: "iphone", active: current == .simulator, help: "Simulador de iOS (⇧⌘I)") { onToggle(.simulator) }
             StripIconButton(symbol: "sidebar.right", active: explorerVisible, help: "Archivos del proyecto (⇧⌘E)", action: onToggleExplorer)
         }
         .disabled(conversationID == nil)

@@ -88,6 +88,7 @@ struct MainWindowView: View {
             if open != openTabIDs { openTabsValue = OpenTabs.encode(open) }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in workspace.terminateAll() }
+        .onAppear { workspace.attach = { id, paths in attach(paths, to: id) } }
         .focusedSceneValue(\.jackActions, actions)
         .sheet(isPresented: $showingNewConversation) {
             NewAgentSheet(
@@ -690,6 +691,7 @@ struct MainWindowView: View {
             },
             toggleTerminal: { toggleWorkspace(.terminal) },
             toggleBrowser: { toggleWorkspace(.browser) },
+            toggleSimulator: { toggleWorkspace(.simulator) },
             toggleExplorer: toggleExplorer,
             toggleSidebar: toggleSidebar,
             closeTab: { store.selectedID.map(closeTab) },

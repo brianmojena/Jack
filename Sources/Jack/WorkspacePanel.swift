@@ -5,13 +5,25 @@ import SwiftUI
 import WebKit
 
 enum WorkspaceTool: String, CaseIterable, Identifiable {
-    case terminal, browser
+    case terminal, browser, simulator
     var id: String { rawValue }
-    var title: String { self == .terminal ? "Terminal" : "Navegador" }
-    var symbol: String { self == .terminal ? "apple.terminal" : "globe" }
+    var title: String {
+        switch self {
+        case .terminal: "Terminal"
+        case .browser: "Navegador"
+        case .simulator: "Simulador"
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .terminal: "apple.terminal"
+        case .browser: "globe"
+        case .simulator: "iphone"
+        }
+    }
 }
 
-/// One tab of the right-hand pane: a shell or a web view.
+/// One tab of the right-hand pane: a shell, a web view or the iOS simulator.
 struct WorkspaceTab: Identifiable, Equatable {
     let id: UUID
     let kind: WorkspaceTool
@@ -26,6 +38,10 @@ struct WorkspaceTab: Identifiable, Equatable {
     private var terminals: [UUID: TerminalSession] = [:]
     private var browsers: [UUID: BrowserSession] = [:]
     private var explorers: [String: FileTreeModel] = [:]
+    /// Shared by every agent: there is one set of simulators on the Mac.
+    private(set) lazy var simulator = SimulatorSession()
+    /// Adds files, such as a simulator screenshot, to an agent's next message.
+    var attach: ((UUID, [String]) -> Void)?
 
     var terminalCount: Int { tabs.values.reduce(0) { $0 + $1.filter { $0.kind == .terminal }.count } }
 
@@ -39,6 +55,11 @@ struct WorkspaceTab: Identifiable, Equatable {
     @discardableResult
     func open(_ kind: WorkspaceTool, for conversation: UUID) -> WorkspaceTab {
         let list = tabs(for: conversation)
+        // One simulator tab per agent is enough: they all show the same device.
+        if kind == .simulator, let existing = list.first(where: { $0.kind == .simulator }) {
+            selection[conversation] = existing.id
+            return existing
+        }
         let number = (list.filter { $0.kind == kind }.map(\.number).max() ?? 0) + 1
         let tab = WorkspaceTab(id: UUID(), kind: kind, number: number)
         tabs[conversation] = list + [tab]
@@ -153,10 +174,11 @@ struct WorkspacePane: View, Equatable {
                 Menu {
                     Button("Nuevo terminal", systemImage: "apple.terminal") { sessions.open(.terminal, for: conversationID) }
                     Button("Nuevo navegador", systemImage: "globe") { sessions.open(.browser, for: conversationID) }
+                    Button("Simulador de iOS", systemImage: "iphone") { sessions.open(.simulator, for: conversationID) }
                 } label: {
                     Image(systemName: "plus").font(.system(size: 12, weight: .medium))
                 } primaryAction: {
-                    sessions.open(selected?.kind ?? .terminal, for: conversationID)
+                    sessions.open(selected?.kind == .browser ? .browser : .terminal, for: conversationID)
                 }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                 .foregroundStyle(JackPalette.muted)
@@ -176,6 +198,8 @@ struct WorkspacePane: View, Equatable {
                         TerminalPanel(session: sessions.terminal(selected.id, conversation: conversationID, directory: projectPath))
                     case .browser:
                         BrowserPanel(session: sessions.browser(selected.id))
+                    case .simulator:
+                        SimulatorPanel(session: sessions.simulator) { paths in sessions.attach?(conversationID, paths) }
                     }
                 } else {
                     emptyState
@@ -195,6 +219,7 @@ struct WorkspacePane: View, Equatable {
             HStack(spacing: 8) {
                 Button("Terminal") { sessions.open(.terminal, for: conversationID) }
                 Button("Navegador") { sessions.open(.browser, for: conversationID) }
+                Button("Simulador") { sessions.open(.simulator, for: conversationID) }
             }
             .controlSize(.small)
         }
@@ -209,7 +234,11 @@ private struct WorkspaceTabTitle: View {
         if tab.kind == .browser, let browser {
             BrowserTitle(session: browser)
         } else {
-            Text(tab.kind == .terminal ? "Terminal \(tab.number)" : "Nueva pestaña")
+            switch tab.kind {
+            case .terminal: Text("Terminal \(tab.number)")
+            case .browser: Text("Nueva pestaña")
+            case .simulator: Text("Simulador")
+            }
         }
     }
 }
