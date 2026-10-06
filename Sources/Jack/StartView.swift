@@ -103,7 +103,7 @@ struct StartView: View {
                         .offset(x: 4, y: 20)
                 }
             }
-            .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .jackGlass(in: RoundedRectangle(cornerRadius: 10, style: .continuous), basic: JackPalette.panel)
             .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(focused ? JackPalette.accent.opacity(0.5) : JackPalette.hairline))
 
             if !spaces.isEmpty {
@@ -144,7 +144,7 @@ struct StartView: View {
         .frame(maxWidth: 600, alignment: .leading)
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(JackPalette.canvas)
+        .jackSurface(.canvas)
         .onAppear {
             focused = true
             index.refreshIfStale()

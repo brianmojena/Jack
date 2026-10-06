@@ -86,7 +86,7 @@ struct StatusBar: View, Equatable {
         .foregroundStyle(JackPalette.muted)
         .padding(.horizontal, 12)
         .frame(height: 26)
-        .background(JackPalette.chrome)
+        .jackSurface(.chrome)
         .overlay(alignment: .top) { Rectangle().fill(JackPalette.hairline).frame(height: 1) }
     }
 }

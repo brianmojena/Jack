@@ -112,7 +112,7 @@ struct JackSidebar: View {
             }
             footer
         }
-        .background(JackPalette.chrome)
+        .jackSurface(.chrome)
         .onChange(of: searchRequest) { _, _ in searchFocused = true }
     }
 

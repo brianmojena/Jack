@@ -39,6 +39,102 @@ enum JackPalette {
     }
 }
 
+// MARK: - Interface style
+
+/// How Jack's main window is drawn. Basic is the solid, dense workspace; Ice lets the desktop
+/// show through the window and turns the composer, tabs and buttons into Liquid Glass.
+enum InterfaceStyle: String, CaseIterable, Identifiable {
+    case basic, ice
+
+    static let key = "interfaceStyle"
+
+    var id: String { rawValue }
+    var title: String {
+        switch self { case .basic: "Basic"; case .ice: "Ice" }
+    }
+}
+
+extension EnvironmentValues {
+    @Entry var interfaceStyle: InterfaceStyle = .basic
+}
+
+/// The window's layers. In Basic each one is a solid color; in Ice the window is frosted glass,
+/// the chrome is that glass as is and the content keeps a tint so text stays legible.
+enum JackSurface {
+    case window, chrome, canvas
+}
+
+private struct JackSurfaceBackground: ViewModifier {
+    let surface: JackSurface
+    @Environment(\.interfaceStyle) private var style
+
+    func body(content: Content) -> some View {
+        content.background {
+            switch (style, surface) {
+            case (.basic, .chrome): JackPalette.chrome
+            case (.basic, _): JackPalette.canvas
+            case (.ice, .window): WindowGlass()
+            case (.ice, .chrome): Color.clear
+            case (.ice, .canvas): JackPalette.iceCanvas
+            }
+        }
+    }
+}
+
+/// A Liquid Glass shape in Ice (a material before macOS 26); `basic` keeps the current look.
+private struct JackGlassBackground<S: InsettableShape>: ViewModifier {
+    let shape: S
+    let basic: Color
+    var tint: Color?
+    var interactive = false
+    @Environment(\.interfaceStyle) private var style
+
+    func body(content: Content) -> some View {
+        if style == .basic {
+            content.background(basic, in: shape)
+        } else if #available(macOS 26, *) {
+            content.glassEffect(glass, in: shape)
+        } else {
+            content.background(tint ?? .clear, in: shape).background(.ultraThinMaterial, in: shape)
+        }
+    }
+
+    @available(macOS 26, *)
+    private var glass: Glass {
+        var glass = Glass.regular
+        if let tint { glass = glass.tint(tint) }
+        return interactive ? glass.interactive() : glass
+    }
+}
+
+extension View {
+    func jackSurface(_ surface: JackSurface) -> some View {
+        modifier(JackSurfaceBackground(surface: surface))
+    }
+
+    func jackGlass<S: InsettableShape>(in shape: S, basic: Color, tint: Color? = nil, interactive: Bool = false) -> some View {
+        modifier(JackGlassBackground(shape: shape, basic: basic, tint: tint, interactive: interactive))
+    }
+}
+
+/// The desktop, blurred, behind the whole window.
+private struct WindowGlass: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .sidebar
+        view.blendingMode = .behindWindow
+        view.state = .followsWindowActiveState
+        return view
+    }
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
+}
+
+extension JackPalette {
+    /// Content over Ice's glass: translucent enough to feel the desktop, opaque enough to read.
+    static let iceCanvas = Color(nsColor: adaptive(light: NSColor.white.withAlphaComponent(0.55), dark: rgb(0x0E0E0F).withAlphaComponent(0.55)))
+}
+
 /// Monospaced type used by the transcript, terminal headers and status bar.
 extension Font {
     static func mono(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {

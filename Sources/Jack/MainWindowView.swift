@@ -17,6 +17,7 @@ struct MainWindowView: View {
     @AppStorage("sidebarVisible") private var sidebarVisible = true
     @AppStorage("openTabs") private var openTabsValue = ""
     @AppStorage("transcriptMonospaced") private var monospaced = true
+    @AppStorage(InterfaceStyle.key) private var interfaceStyle = InterfaceStyle.basic
     @State private var visibleMessageCounts: [UUID: Int] = [:]
     /// The chat follows the agent until the user scrolls up, and again once they return to the end.
     @State private var following = true
@@ -81,7 +82,8 @@ struct MainWindowView: View {
                 .equatable()
         }
         .background(WindowChrome())
-        .background(JackPalette.canvas)
+        .jackSurface(.window)
+        .environment(\.interfaceStyle, interfaceStyle)
         .ignoresSafeArea(.container, edges: .top)
         .frame(minWidth: 900, minHeight: 600)
         .onChange(of: store.conversations.map(\.id)) { _, ids in
@@ -240,7 +242,7 @@ struct MainWindowView: View {
             restore(message, to: conversation.id)
             store.clearRecalled(conversation.id)
         }
-        .background(JackPalette.canvas)
+        .jackSurface(.canvas)
         .onDrop(of: AttachmentDrop.types, isTargeted: $dropTargeted) { providers in
             AttachmentDrop.load(providers) { attach($0, to: conversation.id) }
             return true
@@ -591,7 +593,7 @@ struct MainWindowView: View {
                     Button { store.stop(conversation.id) } label: {
                         Image(systemName: "stop.fill").font(.system(size: 9, weight: .bold))
                             .frame(width: 24, height: 24)
-                            .background(JackPalette.panelStrong, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            .jackGlass(in: RoundedRectangle(cornerRadius: 6, style: .continuous), basic: JackPalette.panelStrong, interactive: true)
                     }
                     .buttonStyle(.plain)
                     .keyboardShortcut(".", modifiers: .command)
@@ -603,7 +605,8 @@ struct MainWindowView: View {
                         Image(systemName: "arrow.up").font(.system(size: 11, weight: .bold))
                             .foregroundStyle(canSend ? Color.white : JackPalette.faint)
                             .frame(width: 24, height: 24)
-                            .background(canSend ? JackPalette.accent : JackPalette.panelStrong, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            .jackGlass(in: RoundedRectangle(cornerRadius: 6, style: .continuous), basic: canSend ? JackPalette.accent : JackPalette.panelStrong,
+                                       tint: canSend ? JackPalette.accent : nil, interactive: canSend)
                     }
                     .buttonStyle(.plain)
                     .disabled(!canSend)
@@ -613,12 +616,12 @@ struct MainWindowView: View {
             }
         }
         .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 8)
-        .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .jackGlass(in: RoundedRectangle(cornerRadius: 8, style: .continuous), basic: JackPalette.panel)
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
             .strokeBorder(composerFocused ? JackPalette.accent.opacity(0.45) : JackPalette.hairline, lineWidth: 1))
         .frame(maxWidth: Self.columnWidth).frame(maxWidth: .infinity)
         .padding(.horizontal, 22).padding(.top, 6).padding(.bottom, 12)
-        .background(JackPalette.canvas)
+        .jackSurface(.canvas)
     }
 
     /// The command name being typed, while the draft is just `/name` with no arguments yet.

@@ -109,7 +109,7 @@ struct FileExplorer: View, Equatable {
             }
             .padding(.leading, 12).padding(.trailing, 6)
             .frame(height: JackMetrics.stripHeight)
-            .background(JackPalette.chrome)
+            .jackSurface(.chrome)
             .overlay(alignment: .bottom) { Rectangle().fill(JackPalette.hairline).frame(height: 1) }
 
             ScrollView {
@@ -131,7 +131,7 @@ struct FileExplorer: View, Equatable {
             }
             .scrollIndicators(.automatic)
         }
-        .background(JackPalette.chrome)
+        .jackSurface(.chrome)
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
     }
 

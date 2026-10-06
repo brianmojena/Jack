@@ -197,7 +197,7 @@ struct WorkspacePane: View, Equatable {
                 StripIconButton(symbol: "xmark", help: "Ocultar el panel", action: onClose).padding(.trailing, 6)
             }
             .frame(height: JackMetrics.stripHeight)
-            .background(JackPalette.chrome)
+            .jackSurface(.chrome)
             .overlay(alignment: .bottom) { Rectangle().fill(JackPalette.hairline).frame(height: 1) }
 
             Group {
@@ -219,7 +219,7 @@ struct WorkspacePane: View, Equatable {
             .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
             .clipped()
         }
-        .background(JackPalette.canvas)
+        .jackSurface(.canvas)
     }
 
     private var emptyState: some View {

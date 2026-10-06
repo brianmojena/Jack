@@ -102,7 +102,7 @@ struct CommandSuggestions: View {
             }
         }
         .padding(4)
-        .background(JackPalette.composer, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .jackGlass(in: RoundedRectangle(cornerRadius: 10, style: .continuous), basic: JackPalette.composer)
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(JackPalette.hairline, lineWidth: 1))
     }
 

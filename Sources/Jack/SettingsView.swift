@@ -23,6 +23,7 @@ private struct GeneralSettings: View {
     @AppStorage("collapsedSpaces") private var collapsedSpaces = ""
     @AppStorage("delegationEnabled") private var delegationEnabled = true
     @AppStorage("transcriptMonospaced") private var transcriptMonospaced = true
+    @AppStorage(InterfaceStyle.key) private var interfaceStyle = InterfaceStyle.basic
     @AppStorage(SimulatorSession.lightModeKey) private var simulatorLightMode = true
     @AppStorage(SimulatorSession.idleMinutesKey) private var simulatorIdleMinutes = 10
     @AppStorage(SimulatorSession.shutdownOnQuitKey) private var simulatorShutdownOnQuit = true
@@ -66,8 +67,17 @@ private struct GeneralSettings: View {
                 Text("El modo ligero desactiva en el simulador Siri, Apple Intelligence, Spotlight, sugerencias, Mail, News y Tiempo de uso: unos 350 MB y 40 procesos menos. Se aplica la próxima vez que Jack lo encienda. Jack solo apaga los simuladores que encendió él y nunca mientras Xcode compila o pasa tests.")
                     .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
             }
-            Section("Apariencia") {
+            Section {
+                Picker("Interfaz", selection: $interfaceStyle) {
+                    ForEach(InterfaceStyle.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
                 Toggle("Conversación con letra monoespaciada", isOn: $transcriptMonospaced)
+            } header: {
+                Text("Apariencia")
+            } footer: {
+                Text("Basic es la interfaz sólida de siempre. Ice deja ver el escritorio a través de la ventana y convierte el editor, las pestañas y los botones en Liquid Glass; usa algo más de GPU.")
+                    .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
             }
             Section("Barra lateral") {
                 LabeledContent("Spaces plegados") {

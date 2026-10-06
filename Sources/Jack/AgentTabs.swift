@@ -9,6 +9,7 @@ struct StripTab<Icon: View, Title: View>: View {
     @ViewBuilder let icon: Icon
     @ViewBuilder let title: Title
     @State private var hovering = false
+    @Environment(\.interfaceStyle) private var style
 
     var body: some View {
         HStack(spacing: 7) {
@@ -31,14 +32,25 @@ struct StripTab<Icon: View, Title: View>: View {
         }
         .padding(.leading, 11).padding(.trailing, 6)
         .frame(minWidth: 120, idealWidth: 180, maxWidth: 200, maxHeight: .infinity)
-        .background(selected ? JackPalette.canvas : .clear)
-        .overlay(alignment: .top) { if selected { Rectangle().fill(JackPalette.accent).frame(height: 1.5) } }
-        .overlay(alignment: .trailing) { Rectangle().fill(JackPalette.hairline).frame(width: 1) }
+        .background { if selected { selectionBackground } }
+        .overlay(alignment: .top) { if selected && style == .basic { Rectangle().fill(JackPalette.accent).frame(height: 1.5) } }
+        .overlay(alignment: .trailing) { if style == .basic { Rectangle().fill(JackPalette.hairline).frame(width: 1) } }
         .contentShape(Rectangle())
         .onTapGesture(perform: onSelect)
         .onHover { hovering = $0 }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+    }
+
+    /// Basic joins the selected tab to the chat below; Ice floats it as a glass lozenge.
+    @ViewBuilder private var selectionBackground: some View {
+        if style == .basic {
+            JackPalette.canvas
+        } else {
+            Color.clear
+                .jackGlass(in: RoundedRectangle(cornerRadius: 8, style: .continuous), basic: .clear)
+                .padding(.vertical, 5).padding(.horizontal, 2)
+        }
     }
 }
 
@@ -121,7 +133,7 @@ struct AgentTabStrip: View, Equatable {
             Color.clear.frame(width: WorkspaceToggles.width)
         }
         .frame(height: JackMetrics.stripHeight)
-        .background(JackPalette.chrome)
+        .jackSurface(.chrome)
         .overlay(alignment: .bottom) { Rectangle().fill(JackPalette.hairline).frame(height: 1) }
     }
 }
