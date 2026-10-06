@@ -91,6 +91,10 @@ struct WorkspacePanel: View, Equatable {
                 BrowserPanel(session: browser).id(conversationID)
             }
         }
+        // A fixed minimum keeps the inspector's size constraints stable while its content changes;
+        // otherwise AppKit sees new limits in the middle of a constraints pass and aborts the app.
+        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+        .clipped()
         .background(JackPalette.canvas)
     }
 }
@@ -495,7 +499,7 @@ struct BrowserPanel: View {
                 Text("Vista previa").font(.system(size: 13, weight: .semibold))
                 Text("Abre tu servidor local o cualquier dirección.").font(.system(size: 12)).foregroundStyle(JackPalette.muted)
             }
-            HStack(spacing: 6) {
+            HStack(spacing: 4) {
                 ForEach(Self.ports, id: \.self) { port in
                     Button { session.open("localhost:\(port)") } label: {
                         Text(":\(port)").font(.system(size: 11.5, weight: .medium, design: .monospaced))
@@ -508,7 +512,8 @@ struct BrowserPanel: View {
             }
             Text("Los enlaces web que pulses en el terminal también se abren aquí.")
                 .font(.system(size: 11)).foregroundStyle(JackPalette.faint)
+                .multilineTextAlignment(.center)
         }
-        .padding(24)
+        .padding(16)
     }
 }

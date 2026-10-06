@@ -138,6 +138,8 @@ struct MainWindowView: View {
             return true
         }
         .overlay { if dropTargeted { AttachmentDropOverlay() } }
+        // Same reason as the panel: constant limits for the split view beside the inspector.
+        .frame(minWidth: 320, maxWidth: .infinity, minHeight: 300, maxHeight: .infinity)
         .inspector(isPresented: $showingWorkspace) {
             WorkspacePanel(sessions: workspace, conversationID: conversation.id, projectPath: conversation.projectPath, tool: workspaceTool,
                            onSelect: { tool in withoutAnimation { workspaceTool = tool } },
