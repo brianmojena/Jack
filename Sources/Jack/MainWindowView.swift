@@ -6,6 +6,8 @@ struct MainWindowView: View {
     @State private var drafts: [UUID: String] = [:]
     @State private var historyIndices: [UUID: Int] = [:]
     @State private var historyDrafts: [UUID: String] = [:]
+    /// The conversation whose side-question card is waiting for a question typed in it.
+    @State private var composingAside: UUID?
     @State private var attachments: [UUID: [String]] = [:]
     @State private var dropTargeted = false
     /// Held as plain state: only the panes observe it, so tabs opening never re-render the chat.
@@ -213,7 +215,9 @@ struct MainWindowView: View {
                     .frame(maxWidth: Self.columnWidth).frame(maxWidth: .infinity)
                     .padding(.horizontal, 22).padding(.top, 4)
             }
-            AsideView(asides: store.asides, conversationID: conversation.id, provider: conversation.provider)
+            AsideView(asides: store.asides, conversationID: conversation.id, provider: conversation.provider,
+                      composing: Binding(get: { composingAside == conversation.id }, set: { composingAside = $0 ? conversation.id : nil }),
+                      onAsk: { store.askAside($0, in: conversation.id); composerFocused = true })
             if let query = commandQuery(for: conversation) {
                 let matches = CommandSuggestions.matches(availableComposerCommands(conversation), query: query)
                 CommandSuggestions(commands: matches, prefix: commandPrefix(conversation), loading: store.isLoadingCommands(for: conversation),
@@ -559,6 +563,17 @@ struct MainWindowView: View {
                     .labelStyle(.iconOnly).buttonStyle(.plain)
                     .font(.system(size: 12)).foregroundStyle(JackPalette.muted)
                     .frame(width: 24, height: 24)
+                Button {
+                    // With a message written it is asked as is, like ⌥↩; otherwise the card asks for one.
+                    if !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { askAside(in: conversation) }
+                    else { composingAside = conversation.id }
+                } label: {
+                    Image(systemName: "bubble.left.and.text.bubble.right").font(.system(size: 12, weight: .medium))
+                        .frame(width: 24, height: 24).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).foregroundStyle(JackPalette.muted)
+                .help("Preguntar al margen sin interrumpir al agente ni entrar en su historial (⌥↩)")
+                .accessibilityLabel("Preguntar al margen")
                 Button {
                     attach(AttachmentDrop.choose(from: conversation.projectPath), to: conversation.id)
                 } label: {
