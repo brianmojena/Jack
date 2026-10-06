@@ -197,6 +197,7 @@ private struct ShortcutsSettings: View {
         ("Escribir mensaje", "⌘L"),
         ("Enviar · nueva línea", "↩  ⇧↩"),
         ("Interrumpir y enviar", "⌘↩"),
+        ("Preguntar al margen sin interrumpir (como /btw) · cerrar", "⌥↩  ⎋"),
         ("Detener agente (devuelve los mensajes en espera)", "⌘."),
         ("Cambiar modo de Claude Code", "⇧⇥"),
         ("Mensajes enviados anteriores", "↑ ↓"),

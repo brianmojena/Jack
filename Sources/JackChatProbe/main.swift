@@ -30,6 +30,24 @@ import JackCore
             print("NOTA: \(usage.note) cached=\(usage.isCached)")
             return
         }
+        if args.count >= 5, args[1] == "aside", let provider = ChatProvider(rawValue: args[2]) {
+            // aside <provider> <session|-> <model|-> <question>: a side question from a copy of the session, as ⌥↩ asks it.
+            let conversation = ChatConversation(projectPath: FileManager.default.currentDirectoryPath, provider: provider,
+                                                model: args[4] == "-" ? nil : args[4], effort: provider == .claude ? "low" : "", sessionID: args[3] == "-" ? nil : args[3])
+            let asides = ChatAsides()
+            let started = Date()
+            asides.ask(args[5...].joined(separator: " "), about: conversation)
+            var shown = 0
+            while asides.items[conversation.id]?.finished != true, Date().timeIntervalSince(started) < 200 {
+                let answer = asides.items[conversation.id]?.answer ?? ""
+                if answer.count > shown { print(String(format: "[%.1f s] %d caracteres", Date().timeIntervalSince(started), answer.count)); shown = answer.count }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            let aside = asides.items[conversation.id]
+            print(String(format: "ASIDE after %.1f s: ", Date().timeIntervalSince(started)) + (aside?.error.map { "ERROR \($0)" } ?? aside?.answer ?? "none"))
+            if aside?.error != nil || aside?.answer.isEmpty != false { exit(1) }
+            return
+        }
         if args.count >= 2, args[1] == "suggest" {
             // A Claude Code turn through the store, then the next-message suggestion it predicts.
             let folder = FileManager.default.temporaryDirectory.appendingPathComponent("jack-suggest-probe-" + UUID().uuidString)

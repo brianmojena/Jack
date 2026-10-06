@@ -257,6 +257,7 @@ public struct JackCommandTemplate: Codable, Equatable {
 }
 public enum JackCommandCatalog {
     public static let builtins: [ChatCommand] = [
+        .init(name: "btw", description: "Pregunta al margen sin interrumpir al agente ni entrar en su historial (⌥↩)", argumentHint: "pregunta"),
         .init(name: "compact", description: "Reduce el contexto mediante un resumen; conserva el historial", argumentHint: "8000"),
         .init(name: "autocompact", description: "Compacta antes del siguiente mensaje al superar el umbral", argumentHint: "30000 8000 | off"),
         .init(name: "contexto", description: "Muestra contexto y presupuesto"),

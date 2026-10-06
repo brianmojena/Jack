@@ -39,6 +39,12 @@ final class StructuredChild: @unchecked Sendable {
         try input.fileHandleForWriting.write(contentsOf: data)
     }
 
+    /// Ends standard input, for one-shot CLIs that read a piped stdin before starting.
+    func closeInput() {
+        lock.lock(); defer { lock.unlock() }
+        try? input.fileHandleForWriting.close()
+    }
+
     func terminate() {
         lock.lock()
         guard !stopped else { lock.unlock(); return }

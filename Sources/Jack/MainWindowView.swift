@@ -213,6 +213,7 @@ struct MainWindowView: View {
                     .frame(maxWidth: Self.columnWidth).frame(maxWidth: .infinity)
                     .padding(.horizontal, 22).padding(.top, 4)
             }
+            AsideView(asides: store.asides, conversationID: conversation.id, provider: conversation.provider)
             if let query = commandQuery(for: conversation) {
                 let matches = CommandSuggestions.matches(availableComposerCommands(conversation), query: query)
                 CommandSuggestions(commands: matches, prefix: commandPrefix(conversation), loading: store.isLoadingCommands(for: conversation),
@@ -470,9 +471,14 @@ struct MainWindowView: View {
                     .scrollContentBackground(.hidden)
                     .modifier(DisableWritingTools())
                     .accessibilityLabel("Mensaje")
-                    .help("Enter para enviar · Shift+Enter para un salto de línea")
+                    .help("Enter para enviar · Shift+Enter para un salto de línea · ⌥Enter para preguntar al margen")
                     .onKeyPress(keys: [.return], phases: .down) { press in
                         guard !press.modifiers.contains(.shift) else { return .ignored }
+                        // ⌥↩ asks on the side, like /btw in Claude Code: the agent keeps working and its history stays as is.
+                        if press.modifiers.contains(.option), !press.modifiers.contains(.command) {
+                            askAside(in: conversation)
+                            return .handled
+                        }
                         // ⌘↩ interrupts the agent so it reads the message now, instead of after its current step.
                         if press.modifiers.contains(.command) {
                             if hasContent { sendDraft(in: conversation, interrupting: true); return .handled }
@@ -516,6 +522,10 @@ struct MainWindowView: View {
                            let suggestion = store.suggestions[conversation.id] {
                             drafts[conversation.id] = suggestion
                             store.clearSuggestion(conversation.id)
+                            return .handled
+                        }
+                        if press.key == .escape, store.asides.items[conversation.id] != nil {
+                            store.asides.dismiss(conversation.id)
                             return .handled
                         }
                         return .ignored
@@ -701,6 +711,16 @@ struct MainWindowView: View {
         drafts[conversation.id] = ""
         resetHistory(for: conversation.id)
         attachments[conversation.id] = nil
+    }
+
+    private func askAside(in conversation: ChatConversation) {
+        var text = (drafts[conversation.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        // `!btw pregunta` with ⌥↩ asks the same.
+        if let command = JackCommandCatalog.parse(text), command.name == "btw" { text = command.arguments }
+        guard !text.isEmpty else { return }
+        store.askAside(text, in: conversation.id)
+        drafts[conversation.id] = ""
+        resetHistory(for: conversation.id)
     }
 
     /// Takes a waiting message back from the agent, into the composer to edit it or away.

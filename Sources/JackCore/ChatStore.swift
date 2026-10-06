@@ -11,6 +11,8 @@ import Foundation
     /// Waiting messages taken back by stopping the agent, for the composer to restore.
     @Published public private(set) var recalled: [UUID: ChatQueuedMessage] = [:]
     @Published public private(set) var suggestions: [UUID: String] = [:]
+    /// Side questions about each conversation; observed by their own view so streaming answers don't redraw the chat.
+    public let asides = ChatAsides()
     @Published public var errorMessage: String?
     @Published public private(set) var maxConcurrent = 4
     @Published public private(set) var usage: [ChatProvider: ProviderUsage] = [:]
@@ -309,6 +311,11 @@ import Foundation
     }
     public func clearRecalled(_ id: UUID) { recalled.removeValue(forKey: id) }
     public func clearSuggestion(_ id: UUID) { suggestions.removeValue(forKey: id) }
+    /// Answers a question about the conversation from a copy of its session, without interrupting the agent.
+    public func askAside(_ question: String, in id: UUID) {
+        guard !stopped, let conversation = conversations.first(where: { $0.id == id }) else { return }
+        asides.ask(question, about: conversation)
+    }
     /// Waiting messages the agent no longer holds, e.g. because its process ended, go back to Jack's own queue.
     private func reconcileWaiting(_ id: UUID) {
         guard var messages = waiting[id], !messages.isEmpty else { return }
@@ -414,7 +421,7 @@ import Foundation
         liveDrivers.removeValue(forKey: id)?.close()
         conversations.removeAll { $0.id == id }; loaded.remove(id); statuses.removeValue(forKey: id); approvals.removeValue(forKey: id)
         waiting.removeValue(forKey: id); recalled.removeValue(forKey: id)
-        suggestions.removeValue(forKey: id)
+        suggestions.removeValue(forKey: id); asides.dismiss(id)
         archive.save(index: conversations, removedID: id)
         if selectedID == id { selectedID = nil; if let next = conversations.first { select(next.id) } }
     }
@@ -496,6 +503,7 @@ import Foundation
     }
     public func shutdown() {
         stopped = true; queue.removeAll(); flushTask?.cancel(); flushTask = nil
+        asides.cancelAll()
         for id in Array(pending.keys) { flush(id) }
         for (id, driver) in drivers { driver.stop(); runs[id]?.cancel(); settleActivities(id); save(id) }
         for driver in liveDrivers.values { driver.close() }
@@ -750,6 +758,11 @@ private extension ChatStore {
         }).joined(separator: "\n\n")
     }
     func executeJack(_ name: String, arguments a: String, to id: UUID) {
+        // The one command meant for a busy agent: it does not touch its session.
+        if name == "btw" {
+            guard !a.isEmpty else { errorMessage = "Uso: !btw pregunta (o escríbela y pulsa ⌥↩)."; return }
+            askAside(a, in: id); return
+        }
         guard runs[id] == nil, !queue.contains(where: { $0.0 == id }) else {
             errorMessage = "Espera a que termine el turno para usar comandos !."; return
         }

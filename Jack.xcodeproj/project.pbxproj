@@ -12,6 +12,7 @@
 		0BD576E2B4A206561BD3BED4 /* MainWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7BD885E59F4C6849E846404 /* MainWindowView.swift */; };
 		1426FBDE33222743A7485D0A /* JackCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A669F4C23030DFB614FB88C4 /* JackCore.framework */; };
 		1498D1DF8A8083084BF82604 /* JackDesign.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12A56C2DEDA3D8023FD61366 /* JackDesign.swift */; };
+		166A26F7D4105C984E303849 /* AsideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AA8C81C6A84E8DDF53B0226 /* AsideView.swift */; };
 		1758CFAF8C920737DFED7D85 /* JackCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A669F4C23030DFB614FB88C4 /* JackCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		19F535BFB4481EB3F8D01D87 /* StatusBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A093DD8DC6081C7E5DB0FA3D /* StatusBar.swift */; };
 		1E4B9916484367A33AC3D959 /* ChatUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D0A660EF197200211C217B4 /* ChatUsage.swift */; };
@@ -41,6 +42,7 @@
 		A7D328F4FA370B7E3C7FFB6F /* ChatProcess.swift in Sources */ = {isa = PBXBuildFile; fileRef = E229CF3EA3E5C8331E30BF2D /* ChatProcess.swift */; };
 		A98FB0615710A756161AC7F6 /* JackApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC084525C4D6CE0EBEF1CF88 /* JackApp.swift */; };
 		AF626BAEB5B26D0504A10C56 /* WaitingMessagesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DCC822661DED49C89F2189E /* WaitingMessagesView.swift */; };
+		B248BA64DE2A149805CE2C3B /* ChatAside.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FCA7EE32BDFA05868D21D74 /* ChatAside.swift */; };
 		B2B738782CA7D19B82A2B3DA /* ChatModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8E5B74C47ED76F7F4E3175D /* ChatModels.swift */; };
 		B9766774E9F9FDA9D637016F /* AgentActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC1BBE9D45CBEC403EA22C82 /* AgentActivityView.swift */; };
 		BF38477F58288B2D1279DF30 /* ChatModelPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D8A6CBC10C08DC5BE8F996 /* ChatModelPicker.swift */; };
@@ -94,6 +96,7 @@
 		112E9D6E62140F40A3F29A21 /* AgentBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentBridge.swift; sourceTree = "<group>"; };
 		12A56C2DEDA3D8023FD61366 /* JackDesign.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JackDesign.swift; sourceTree = "<group>"; };
 		138D59F70F9CA07105FD1933 /* FileExplorer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileExplorer.swift; sourceTree = "<group>"; };
+		1FCA7EE32BDFA05868D21D74 /* ChatAside.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatAside.swift; sourceTree = "<group>"; };
 		3621003C5F85DF2D65EFC584 /* AgentTabs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTabs.swift; sourceTree = "<group>"; };
 		3789D85F443A38492640A492 /* ClaudeSessionPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeSessionPicker.swift; sourceTree = "<group>"; };
 		3A74557C47C15953992E8937 /* JackLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JackLog.swift; sourceTree = "<group>"; };
@@ -106,6 +109,7 @@
 		56C4F86A9A39B8CF9807B05C /* ChatAttachments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatAttachments.swift; sourceTree = "<group>"; };
 		6164E34644769C64B3E867B1 /* WorkspacePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspacePanel.swift; sourceTree = "<group>"; };
 		67147764C7E299C6400683A6 /* AgentFoldersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentFoldersView.swift; sourceTree = "<group>"; };
+		6AA8C81C6A84E8DDF53B0226 /* AsideView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AsideView.swift; sourceTree = "<group>"; };
 		6B8F35219BDD3B6F10A58137 /* JackCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JackCommands.swift; sourceTree = "<group>"; };
 		83D024EB758956F78F8FDB4B /* ProjectFinder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectFinder.swift; sourceTree = "<group>"; };
 		87F75EF25C24256C43529DFF /* SimulatorDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatorDisplay.swift; sourceTree = "<group>"; };
@@ -165,6 +169,7 @@
 				112E9D6E62140F40A3F29A21 /* AgentBridge.swift */,
 				D270EF82D7E479169076203B /* BrowserAddress.swift */,
 				094C42C6DC4B76FE4E66E40D /* ChatArchive.swift */,
+				1FCA7EE32BDFA05868D21D74 /* ChatAside.swift */,
 				56C4F86A9A39B8CF9807B05C /* ChatAttachments.swift */,
 				9CE721E7266C74484EE01DBD /* ChatDrivers.swift */,
 				BAA06A062E9665524A768902 /* ChatModelChoice.swift */,
@@ -217,6 +222,7 @@
 				67147764C7E299C6400683A6 /* AgentFoldersView.swift */,
 				3621003C5F85DF2D65EFC584 /* AgentTabs.swift */,
 				0E0312F9EF3FDF19D86B6340 /* ApprovalViews.swift */,
+				6AA8C81C6A84E8DDF53B0226 /* AsideView.swift */,
 				A8AC5CBAB71E44192E8AF824 /* AttachmentViews.swift */,
 				E1DA779938E07CE10645928A /* ChatCommandViews.swift */,
 				504E39FB7DA22A1B9933C4A5 /* ChatMessageRow.swift */,
@@ -348,6 +354,7 @@
 				34BC32CE33FE4D40341CCE4D /* AgentFoldersView.swift in Sources */,
 				399CD8D588217F962CE06C5D /* AgentTabs.swift in Sources */,
 				53306EA90065579DD4362D48 /* ApprovalViews.swift in Sources */,
+				166A26F7D4105C984E303849 /* AsideView.swift in Sources */,
 				28AC8F651C192396167D8317 /* AttachmentViews.swift in Sources */,
 				D9BC01980D4186E943774370 /* ChatCommandViews.swift in Sources */,
 				8D901B967A33198662F4A94B /* ChatMessageRow.swift in Sources */,
@@ -383,6 +390,7 @@
 				26F33593401C4D6EF10CC974 /* AgentBridge.swift in Sources */,
 				7E295FDBE4DB448AD14EB38C /* BrowserAddress.swift in Sources */,
 				02B83CB51FECD80B94438A2F /* ChatArchive.swift in Sources */,
+				B248BA64DE2A149805CE2C3B /* ChatAside.swift in Sources */,
 				F08A921CC43E600748CC33B8 /* ChatAttachments.swift in Sources */,
 				A2732E28952569560148E19D /* ChatDrivers.swift in Sources */,
 				E824B6F7F7B32A392DC14117 /* ChatModelChoice.swift in Sources */,
