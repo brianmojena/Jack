@@ -11,16 +11,19 @@ struct StartView: View {
     let onStart: (_ projectPath: String, _ provider: ChatProvider, _ message: String) -> Void
     let onMoreOptions: (_ projectPath: String?, _ provider: ChatProvider) -> Void
 
-    @AppStorage("lastProjectPath") private var projectPath = ""
     @AppStorage("lastNewAgentProvider") private var providerValue = ChatProvider.codex.rawValue
+    @ObservedObject private var index = ProjectIndex.shared
+    /// A folder the user picked; without one, Jack reads the project from the request.
+    @State private var chosenProject: String?
     @State private var message = ""
+    @State private var showHint = false
     @FocusState private var focused: Bool
 
     private var provider: ChatProvider { ChatProvider(rawValue: providerValue) ?? .codex }
-    private var project: String? {
-        if !projectPath.isEmpty, FileManager.default.fileExists(atPath: projectPath) { return projectPath }
-        return spaces.first
+    private var detected: ProjectFinder.Match? {
+        chosenProject == nil ? ProjectFinder.resolve(message, projects: index.ordered(recent: spaces)) : nil
     }
+    private var project: String? { chosenProject ?? detected?.path }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
@@ -32,13 +35,14 @@ struct StartView: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text("›").font(.mono(15, weight: .bold)).foregroundStyle(JackPalette.accent)
-                    TextField(project == nil ? "Elige un proyecto para empezar" : "¿Qué hacemos en \(name(of: project!))?",
+                    TextField(chosenProject.map { "¿Qué hacemos en \(name(of: $0))?" } ?? "Pide algo y nombra el proyecto: «en Jack arregla el login»",
                               text: $message, axis: .vertical)
                         .textFieldStyle(.plain)
                         .font(.mono(13.5))
                         .lineLimit(1...8)
                         .focused($focused)
                         .onSubmit(start)
+                        .onChange(of: message) { _, _ in showHint = false }
                 }
                 .padding(.horizontal, 14).padding(.top, 13).padding(.bottom, 10)
 
@@ -71,10 +75,17 @@ struct StartView: View {
                             .background(project == nil ? JackPalette.panelStrong : JackPalette.accent, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                             .foregroundStyle(project == nil ? JackPalette.muted : .white)
                     }
-                    .buttonStyle(.plain).disabled(project == nil)
+                    .buttonStyle(.plain)
                     .help(message.isEmpty ? "Abrir el agente" : "Crear el agente y enviar")
                 }
                 .padding(.horizontal, 8).padding(.bottom, 8)
+            }
+            .overlay(alignment: .bottomLeading) {
+                if showHint {
+                    Text("No sé en qué proyecto: nómbralo en el mensaje o elígelo en el menú de la carpeta.")
+                        .font(.system(size: 11)).foregroundStyle(JackPalette.amber)
+                        .offset(x: 4, y: 20)
+                }
             }
             .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(focused ? JackPalette.accent.opacity(0.5) : JackPalette.hairline))
@@ -85,7 +96,7 @@ struct StartView: View {
                         .padding(.bottom, 4)
                     ForEach(spaces.prefix(5), id: \.self) { path in
                         Button {
-                            projectPath = path
+                            chosenProject = chosenProject == path ? nil : path
                             focused = true
                         } label: {
                             HStack(spacing: 10) {
@@ -118,43 +129,70 @@ struct StartView: View {
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(JackPalette.canvas)
-        .onAppear { focused = true }
+        .onAppear {
+            focused = true
+            index.refreshIfStale()
+        }
     }
 
     private var projectMenu: some View {
         Menu {
-            ForEach(spaces, id: \.self) { path in
-                Button(name(of: path)) { projectPath = path }
+            Button { chosenProject = nil } label: {
+                if chosenProject == nil { Label("Automático", systemImage: "checkmark") } else { Text("Automático") }
             }
-            if !spaces.isEmpty { Divider() }
+            Divider()
+            ForEach(spaces.prefix(8), id: \.self) { path in
+                Button(name(of: path)) { chosenProject = path }
+            }
+            let others = index.ordered(recent: []).filter { !spaces.contains($0) }
+            if !others.isEmpty {
+                Menu("Todos los proyectos") {
+                    ForEach(others.sorted { name(of: $0).localizedStandardCompare(name(of: $1)) == .orderedAscending }, id: \.self) { path in
+                        Button(name(of: path)) { chosenProject = path }
+                    }
+                }
+            }
+            Divider()
             Button("Elegir carpeta…", action: chooseProject)
         } label: {
             HStack(spacing: 5) {
-                Image(systemName: "folder").font(.system(size: 11))
-                Text(project.map(name(of:)) ?? "Elegir proyecto").font(.system(size: 11.5, weight: .medium)).lineLimit(1)
+                Image(systemName: chosenProject != nil ? "folder" : detected != nil ? "sparkles" : "wand.and.stars")
+                    .font(.system(size: 11))
+                Text(project.map(name(of:)) ?? "Automático").font(.system(size: 11.5, weight: .medium)).lineLimit(1)
                 Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
             }
+            .foregroundStyle(detected != nil ? JackPalette.accent : Color.primary)
             .padding(.horizontal, 8).frame(height: 24)
-            .background(JackPalette.panelStrong, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .background(detected != nil ? JackPalette.accent.opacity(0.14) : JackPalette.panelStrong, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .animation(.easeOut(duration: 0.15), value: detected?.path)
         }
         .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-        .help(project.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? "Carpeta en la que trabajará el agente")
+        .help(projectHelp)
+    }
+
+    private var projectHelp: String {
+        if let chosenProject { return (chosenProject as NSString).abbreviatingWithTildeInPath }
+        if let detected { return "Detectado por «\(detected.mention)»: \((detected.path as NSString).abbreviatingWithTildeInPath)" }
+        return "Automático: Jack elige la carpeta según el proyecto que nombres"
     }
 
     private var subtitle: String {
         if attentionCount > 0 {
             return attentionCount == 1 ? "Un agente espera tu permiso en la barra lateral." : "\(attentionCount) agentes esperan tu permiso en la barra lateral."
         }
-        if agentCount == 0 { return "Elige un proyecto y un agente, y escribe qué quieres hacer." }
-        return "Empieza un agente nuevo o abre uno de la barra lateral."
+        return "Di qué quieres y en qué proyecto; Jack abre la carpeta por ti."
     }
 
     private func name(of path: String) -> String { URL(fileURLWithPath: path).lastPathComponent }
 
     private func start() {
-        guard let project else { chooseProject(); return }
+        guard let project else {
+            if message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { focused = true } else { showHint = true }
+            return
+        }
         let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
         message = ""
+        chosenProject = nil
         onStart(project, provider, text)
     }
 
@@ -166,7 +204,7 @@ struct StartView: View {
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        projectPath = url.path
+        chosenProject = url.path
         focused = true
     }
 
