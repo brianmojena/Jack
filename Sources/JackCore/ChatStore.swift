@@ -214,6 +214,9 @@ import Foundation
     public func commandError(for conversation: ChatConversation) -> String? {
         commandErrors[Self.commandKey(conversation.provider, conversation.projectPath)]
     }
+    /// Longest wait for a provider's command list. Claude Code usually answers in 4–6 s.
+    var commandDeadline: Duration = .seconds(30)
+
     /// Reads the provider's commands once per project; runs also refresh them as they report changes.
     /// A failed read is not remembered as an empty list: the next call tries again.
     public func loadCommands(for conversation: ChatConversation) {
@@ -221,11 +224,16 @@ import Foundation
         guard commands[key] == nil, !loadingCommands.contains(key) else { return }
         loadingCommands.insert(key)
         commandErrors[key] = nil
+        let loader = loadCommandList, deadline = commandDeadline, started = Date()
         Task { [weak self] in
             var list: [ChatCommand] = []
             var failure: String?
-            do { list = try await self?.loadCommandList(conversation.provider, conversation.projectPath) ?? [] }
-            catch { failure = error.localizedDescription }
+            // The deadline does not depend on the CLI: a process that never closes its output used to
+            // leave "Cargando comandos…" on screen forever, with nothing in the log.
+            do { list = try await Self.withDeadline(deadline) { try await loader(conversation.provider, conversation.projectPath) } }
+            catch is CommandDeadlineExceeded {
+                failure = "\(conversation.provider.title) tardó más de \(deadline.components.seconds) s en informar de sus comandos."
+            } catch { failure = error.localizedDescription }
             guard let self else { return }
             self.loadingCommands.remove(key)
             if list.isEmpty, failure == nil { failure = "\(conversation.provider.title) no informó de ningún comando." }
@@ -233,8 +241,37 @@ import Foundation
                 self.commandErrors[key] = failure
                 JackLog.write("comandos de \(conversation.provider.title) en \(conversation.projectPath): \(failure)")
             } else if self.commands[key] == nil || !list.isEmpty { self.commands[key] = list }
+            // Slow reads leave a trace, to tell a slow CLI from a stuck one next time.
+            let seconds = Date().timeIntervalSince(started)
+            if seconds > 10 { JackLog.write("comandos de \(conversation.provider.title) en \(conversation.projectPath): \(Int(seconds)) s") }
         }
     }
+    private struct CommandDeadlineExceeded: Error {}
+
+    /// `operation`'s result, or `CommandDeadlineExceeded` after `deadline` even if the operation never returns.
+    private static func withDeadline<T: Sendable>(_ deadline: Duration, _ operation: @escaping @Sendable () async throws -> T) async throws -> T {
+        let state = DeadlineState<T>()
+        return try await withCheckedThrowingContinuation { continuation in
+            state.continuation = continuation
+            let work = Task { do { state.finish(.success(try await operation())) } catch { state.finish(.failure(error)) } }
+            Task {
+                try? await Task.sleep(for: deadline)
+                state.finish(.failure(CommandDeadlineExceeded()))
+                work.cancel()
+            }
+        }
+    }
+
+    private final class DeadlineState<T: Sendable>: @unchecked Sendable {
+        private let lock = NSLock()
+        var continuation: CheckedContinuation<T, Error>?
+
+        func finish(_ result: Result<T, Error>) {
+            let pending: CheckedContinuation<T, Error>? = lock.withLock { defer { continuation = nil }; return continuation }
+            pending?.resume(with: result)
+        }
+    }
+
     public func setUnread(_ id: UUID, _ unread: Bool) {
         guard let index = conversations.firstIndex(where: { $0.id == id }), (conversations[index].hasUnread == true) != unread else { return }
         conversations[index].hasUnread = unread ? true : nil

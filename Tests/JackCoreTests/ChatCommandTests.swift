@@ -94,4 +94,22 @@ final class ChatCommandTests: XCTestCase {
         store.updateSettings(id: id, model: "opus", effort: "high")
         XCTAssertNil(store.selectedConversation?.contextUsage)
     }
+
+    /// A loader that never answers, like a CLI whose output stays open, must not leave "Cargando comandos…" forever.
+    @MainActor func testCommandLoadingGivesUpAtTheDeadline() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("jack-command-tests-" + UUID().uuidString)
+        let store = ChatStore(archive: ChatArchive(directory: folder), preferences: nil, driverFactory: { ChatDriverFactory.make($0) },
+                              commandLoader: { _, _ in
+                                  try await withCheckedThrowingContinuation { (_: CheckedContinuation<[ChatCommand], Error>) in }
+                              })
+        store.commandDeadline = .milliseconds(100)
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        _ = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .claude))
+        let conversation = try XCTUnwrap(store.selectedConversation)
+        store.loadCommands(for: conversation)
+        XCTAssertTrue(store.isLoadingCommands(for: conversation))
+        for _ in 0..<100 where store.isLoadingCommands(for: conversation) { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertFalse(store.isLoadingCommands(for: conversation))
+        XCTAssertNotNil(store.commandError(for: conversation))
+    }
 }
