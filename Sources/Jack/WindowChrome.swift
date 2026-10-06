@@ -48,3 +48,25 @@ struct WindowChrome: NSViewRepresentable {
         deinit { observers.forEach(NotificationCenter.default.removeObserver) }
     }
 }
+
+/// Ice's window: a standard unified toolbar with the conversation's title, where macOS places
+/// the traffic lights and draws the toolbar's Liquid Glass itself.
+struct IceWindowChrome: NSViewRepresentable {
+    func makeNSView(context: Context) -> ChromeView { ChromeView() }
+    func updateNSView(_ view: ChromeView, context: Context) {}
+
+    final class ChromeView: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard let window else { return }
+            window.titleVisibility = .visible
+            window.titlebarAppearsTransparent = false
+            window.toolbarStyle = .unified
+            // Basic moved the traffic lights into its own strip; let AppKit lay them out again.
+            DispatchQueue.main.async {
+                window.standardWindowButton(.closeButton)?.superview?.superview?.needsLayout = true
+                window.contentView?.superview?.needsLayout = true
+            }
+        }
+    }
+}

@@ -3,7 +3,8 @@ import SwiftUI
 
 @main
 struct JackApp: App {
-    @StateObject private var store = ChatStore()
+    /// `JACK_DATA_DIR` runs a build on a copy of the chats, beside the installed Jack.
+    @StateObject private var store = ChatStore(archive: ChatArchive(directory: ProcessInfo.processInfo.environment["JACK_DATA_DIR"].map { URL(fileURLWithPath: $0) }))
     @NSApplicationDelegateAdaptor(JackAppDelegate.self) private var appDelegate
 
     var body: some Scene {

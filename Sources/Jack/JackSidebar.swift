@@ -81,6 +81,7 @@ struct JackSidebar: View {
     @FocusState private var searchFocused: Bool
     /// Folded spaces, stored as newline-separated project paths.
     @AppStorage("collapsedSpaces") private var collapsedSpacesValue = ""
+    @Environment(\.interfaceStyle) private var style
 
     private var collapsedSpaces: Set<String> { SidebarSections.collapsed(collapsedSpacesValue) }
 
@@ -99,6 +100,10 @@ struct JackSidebar: View {
     }
 
     var body: some View {
+        if style == .ice { nativeBody } else { basicBody }
+    }
+
+    private var basicBody: some View {
         VStack(spacing: 0) {
             header
             VStack(spacing: 1) {
@@ -114,6 +119,69 @@ struct JackSidebar: View {
         }
         .jackSurface(.chrome)
         .onChange(of: searchRequest) { _, _ in searchFocused = true }
+    }
+
+    /// Ice: the system's sidebar list, which macOS 26 floats as a Liquid Glass panel.
+    private var nativeBody: some View {
+        TimelineView(.everyMinute) { context in
+            let sections = SidebarSections(rows: filtered, projectPaths: projectPaths)
+            List(selection: Binding(get: { selectedID }, set: { id in if let id { onSelect(id) } })) {
+                if !sections.attention.isEmpty {
+                    Section {
+                        ForEach(sections.attention) { row in nativeRow(row, showProject: true, now: context.date) }
+                    } header: {
+                        HStack(spacing: 6) {
+                            Text("Necesita atención").foregroundStyle(JackPalette.amber)
+                            Text("\(sections.attention.count)").font(.system(size: 10, weight: .semibold).monospacedDigit())
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 5).padding(.vertical, 1)
+                                .background(JackPalette.amber, in: Capsule())
+                        }
+                    }
+                }
+                ForEach(sections.projects, id: \.path) { project in
+                    // While searching every space stays open so no match is hidden.
+                    Section(isExpanded: Binding(get: { !collapsedSpaces.contains(project.path) || !query.isEmpty },
+                                                set: { _ in toggleSpace(project.path) })) {
+                        ForEach(project.rows) { row in nativeRow(row, showProject: false, now: context.date) }
+                    } header: {
+                        NativeProjectHeader(name: project.name, path: project.path, rows: project.rows,
+                                            onNew: { onNewConversation(project.path) })
+                    }
+                }
+            }
+            .listStyle(.sidebar)
+        }
+        .searchable(text: $query, placement: .sidebar, prompt: "Buscar")
+        .searchFocused($searchFocused)
+        .overlay {
+            if rows.isEmpty {
+                emptyState
+            } else if filtered.isEmpty {
+                Text("Sin resultados para “\(query)”").font(.system(size: 12)).foregroundStyle(JackPalette.muted)
+            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            HStack {
+                SettingsLink { Label("Ajustes", systemImage: "gearshape") }
+                    .help("Ajustes (⌘,)")
+                Spacer()
+                Button("Nuevo agente", systemImage: "plus") { onNewConversation(nil) }
+                    .help("Nuevo agente (⌘N)")
+            }
+            .labelStyle(.iconOnly)
+            .buttonStyle(.borderless)
+            .controlSize(.large)
+            .padding(.horizontal, 14).padding(.vertical, 10)
+        }
+        .onChange(of: searchRequest) { _, _ in searchFocused = true }
+    }
+
+    private func nativeRow(_ row: SidebarRowModel, showProject: Bool, now: Date) -> some View {
+        SidebarRow(row: row, showProject: showProject, selected: row.id == selectedID, age: compactAge(row.updatedAt, now: now), native: true)
+            .equatable()
+            .tag(row.id)
+            .contextMenu { rowMenu(row) }
     }
 
     private var header: some View {
@@ -224,28 +292,30 @@ struct JackSidebar: View {
                 .equatable()
         }
         .buttonStyle(.plain)
-        .contextMenu {
-            Button(row.unread ? "Marcar como leído" : "Marcar como no leído", systemImage: row.unread ? "envelope.open" : "envelope.badge") {
-                onSetUnread(row.id, !row.unread)
+        .contextMenu { rowMenu(row) }
+    }
+
+    @ViewBuilder private func rowMenu(_ row: SidebarRowModel) -> some View {
+        Button(row.unread ? "Marcar como leído" : "Marcar como no leído", systemImage: row.unread ? "envelope.open" : "envelope.badge") {
+            onSetUnread(row.id, !row.unread)
+        }
+        if let path = projectPaths[row.id] {
+            Button("Mostrar space en Finder", systemImage: "folder") {
+                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
             }
-            if let path = projectPaths[row.id] {
-                Button("Mostrar space en Finder", systemImage: "folder") {
-                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
-                }
-            }
-            if row.provider == .claude {
-                Divider()
-                Button("Continuar en la terminal", systemImage: "apple.terminal") { onContinueInTerminal(row.id) }
-                    .disabled(!row.canEdit)
-                Button("Actualizar desde Claude Code", systemImage: "arrow.clockwise") { onReloadFromClaude(row.id) }
-                    .disabled(!row.canEdit)
-            }
+        }
+        if row.provider == .claude {
             Divider()
-            Button("Renombrar…", systemImage: "pencil") { onRename(row.id) }
+            Button("Continuar en la terminal", systemImage: "apple.terminal") { onContinueInTerminal(row.id) }
                 .disabled(!row.canEdit)
-            Button("Eliminar conversación…", systemImage: "trash", role: .destructive) { onDelete(row.id) }
+            Button("Actualizar desde Claude Code", systemImage: "arrow.clockwise") { onReloadFromClaude(row.id) }
                 .disabled(!row.canEdit)
         }
+        Divider()
+        Button("Renombrar…", systemImage: "pencil") { onRename(row.id) }
+            .disabled(!row.canEdit)
+        Button("Eliminar conversación…", systemImage: "trash", role: .destructive) { onDelete(row.id) }
+            .disabled(!row.canEdit)
     }
 
     private var emptyState: some View {
@@ -271,6 +341,37 @@ struct JackSidebar: View {
             Spacer()
         }
         .padding(.horizontal, 8).frame(height: 34)
+    }
+}
+
+/// A project folder as a section header of the system sidebar, which adds the fold chevron.
+private struct NativeProjectHeader: View {
+    let name: String
+    let path: String
+    let rows: [SidebarRowModel]
+    let onNew: () -> Void
+
+    var body: some View {
+        let running = rows.filter { $0.status == .running || $0.status == .queued }.count
+        HStack(spacing: 6) {
+            Text(name).lineLimit(1)
+            Text("\(rows.count)").monospacedDigit().foregroundStyle(.tertiary)
+            Spacer(minLength: 4)
+            if running > 0 {
+                HStack(spacing: 3) {
+                    Circle().fill(JackPalette.green).frame(width: 5, height: 5)
+                    Text("\(running)").monospacedDigit()
+                }
+                .help("\(running) trabajando")
+            }
+        }
+        .help(path)
+        .contextMenu {
+            Button("Nuevo agente aquí", systemImage: "plus", action: onNew)
+            Button("Mostrar en Finder", systemImage: "folder") {
+                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+            }
+        }
     }
 }
 
@@ -328,6 +429,8 @@ struct SidebarRow: View, Equatable {
     let showProject: Bool
     let selected: Bool
     let age: String
+    /// In the system's sidebar list, which draws the selection and the row insets itself.
+    var native = false
 
     private var showsActivity: Bool { row.status == .running || row.status == .waiting || row.status == .failed }
 
@@ -356,9 +459,9 @@ struct SidebarRow: View, Equatable {
                     .padding(.leading, row.depth > 0 ? 55 : 38)
             }
         }
-        .padding(.leading, 18 + CGFloat(row.depth) * 4).padding(.trailing, 8).padding(.vertical, 5)
+        .padding(.leading, native ? CGFloat(row.depth) * 4 : 18 + CGFloat(row.depth) * 4).padding(.trailing, native ? 0 : 8).padding(.vertical, native ? 3 : 5)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(selected ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .background(selected && !native ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityValue(row.status.title)

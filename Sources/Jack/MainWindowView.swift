@@ -36,55 +36,13 @@ struct MainWindowView: View {
     @State private var dismissedCommandDraft: String?
 
     private var selectedConversation: ChatConversation? { store.selectedConversation }
+    private var ice: Bool { interfaceStyle == .ice }
 
     var body: some View {
-        let conversation = selectedConversation
-        VStack(spacing: 0) {
-            PaneSplit(.leading, visible: sidebarVisible, widthKey: "sidebarWidth", defaultWidth: 264, range: 210...400, flexibleMinimum: 440) {
-                JackSidebar(
-                    rows: sidebarRows,
-                    projectPaths: Dictionary(uniqueKeysWithValues: store.conversations.map { ($0.id, $0.projectPath) }),
-                    selectedID: store.selectedID,
-                    onNewConversation: { space in openNewConversation(space: space) },
-                    onSelect: store.select,
-                    onRename: { id in store.conversations.first { $0.id == id }.map(beginRename) },
-                    onDelete: { id in deletingConversation = store.conversations.first { $0.id == id } },
-                    onSetUnread: store.setUnread,
-                    onContinueInTerminal: continueInTerminal,
-                    onReloadFromClaude: reloadFromClaude,
-                    onHide: toggleSidebar,
-                    searchRequest: searchRequest
-                )
-            } trailing: {
-                PaneSplit(.trailing, visible: explorerVisible && conversation != nil, widthKey: "explorerWidth", defaultWidth: 250,
-                          range: 180...440, flexibleMinimum: 380) {
-                    PaneSplit(.trailing, visible: workspaceVisible && conversation != nil, widthKey: "workspaceWidth", defaultWidth: 500,
-                              range: 300...1200, flexibleMinimum: 340) {
-                        centerColumn
-                    } trailing: {
-                        if let conversation {
-                            WorkspacePane(sessions: workspace, conversationID: conversation.id, projectPath: conversation.projectPath,
-                                          onClose: { withoutAnimation { workspaceVisible = false }; composerFocused = true })
-                                .equatable()
-                        }
-                    }
-                } trailing: {
-                    if let conversation {
-                        FileExplorer(model: workspace.explorer(for: conversation.projectPath),
-                                     onAttach: { attach([$0], to: conversation.id) },
-                                     onClose: { withoutAnimation { explorerVisible = false } })
-                            .equatable()
-                    }
-                }
-            }
-            StatusBar(usage: store.usage, refreshing: store.refreshingUsage, activeCount: store.activeCount, maxConcurrent: store.maxConcurrent,
-                      sessions: workspace, refresh: { Task { await store.refreshUsage() } }, setConcurrency: store.setConcurrency)
-                .equatable()
+        Group {
+            if interfaceStyle == .ice { iceLayout } else { basicLayout }
         }
-        .background(WindowChrome())
-        .jackSurface(.window)
         .environment(\.interfaceStyle, interfaceStyle)
-        .ignoresSafeArea(.container, edges: .top)
         .frame(minWidth: 900, minHeight: 600)
         .onChange(of: store.conversations.map(\.id)) { _, ids in
             workspace.prune(keeping: Set(ids))
@@ -146,7 +104,116 @@ struct MainWindowView: View {
         }
     }
 
-    private var centerColumn: some View {
+    /// Jack's own dense workspace: hidden title bar, custom strips and panes.
+    private var basicLayout: some View {
+        VStack(spacing: 0) {
+            PaneSplit(.leading, visible: sidebarVisible, widthKey: "sidebarWidth", defaultWidth: 264, range: 210...400, flexibleMinimum: 440) {
+                sidebar
+            } trailing: {
+                detailPanes
+            }
+            statusBar
+        }
+        .background(WindowChrome())
+        .background(JackPalette.canvas)
+        .ignoresSafeArea(.container, edges: .top)
+    }
+
+    /// macOS's own Liquid Glass structure: floating sidebar, glass toolbar and the composer
+    /// floating over the transcript, which scrolls beneath it.
+    private var iceLayout: some View {
+        let conversation = selectedConversation
+        return NavigationSplitView(columnVisibility: Binding(get: { sidebarVisible ? .all : .detailOnly },
+                                                             set: { sidebarVisible = $0 != .detailOnly })) {
+            sidebar.navigationSplitViewColumnWidth(min: 210, ideal: 264, max: 400)
+        } detail: {
+            VStack(spacing: 0) {
+                detailPanes
+                statusBar
+            }
+            .navigationTitle(conversation?.title ?? "Jack")
+            .navigationSubtitle(conversation.map { URL(fileURLWithPath: $0.projectPath).lastPathComponent } ?? "")
+            .toolbar {
+                if #available(macOS 26, *) { ToolbarSpacer(.flexible) }
+                ToolbarItem {
+                    WorkspaceToolbarButtons(sessions: workspace, conversationID: store.selectedID, paneVisible: workspaceVisible,
+                                            explorerVisible: explorerVisible, onToggle: toggleWorkspace, onToggleExplorer: toggleExplorer)
+                }
+                ToolbarItem {
+                    Button("Nuevo agente", systemImage: "square.and.pencil") { openNewConversation() }
+                        .help("Nuevo agente (⌘N)")
+                }
+            }
+        }
+        .background(IceWindowChrome())
+    }
+
+    private var sidebar: some View {
+        JackSidebar(
+            rows: sidebarRows,
+            projectPaths: Dictionary(uniqueKeysWithValues: store.conversations.map { ($0.id, $0.projectPath) }),
+            selectedID: store.selectedID,
+            onNewConversation: { space in openNewConversation(space: space) },
+            onSelect: store.select,
+            onRename: { id in store.conversations.first { $0.id == id }.map(beginRename) },
+            onDelete: { id in deletingConversation = store.conversations.first { $0.id == id } },
+            onSetUnread: store.setUnread,
+            onContinueInTerminal: continueInTerminal,
+            onReloadFromClaude: reloadFromClaude,
+            onHide: toggleSidebar,
+            searchRequest: searchRequest
+        )
+    }
+
+    /// The chat with the workspace and file panes beside it.
+    private var detailPanes: some View {
+        let conversation = selectedConversation
+        return PaneSplit(.trailing, visible: explorerVisible && conversation != nil, widthKey: "explorerWidth", defaultWidth: 250,
+                         range: 180...440, flexibleMinimum: 380) {
+            PaneSplit(.trailing, visible: workspaceVisible && conversation != nil, widthKey: "workspaceWidth", defaultWidth: 500,
+                      range: 300...1200, flexibleMinimum: 340) {
+                centerColumn
+            } trailing: {
+                if let conversation {
+                    WorkspacePane(sessions: workspace, conversationID: conversation.id, projectPath: conversation.projectPath,
+                                  onClose: { withoutAnimation { workspaceVisible = false }; composerFocused = true })
+                        .equatable()
+                }
+            }
+        } trailing: {
+            if let conversation {
+                FileExplorer(model: workspace.explorer(for: conversation.projectPath),
+                             onAttach: { attach([$0], to: conversation.id) },
+                             onClose: { withoutAnimation { explorerVisible = false } })
+                    .equatable()
+            }
+        }
+    }
+
+    private var statusBar: some View {
+        StatusBar(usage: store.usage, refreshing: store.refreshingUsage, activeCount: store.activeCount, maxConcurrent: store.maxConcurrent,
+                  sessions: workspace, refresh: { Task { await store.refreshUsage() } }, setConcurrency: store.setConcurrency)
+            .equatable()
+    }
+
+    /// Ice shows the open agents as glass tabs over the top of the chat, once there is more than one.
+    @ViewBuilder private var iceTabs: some View {
+        if interfaceStyle == .ice, tabModels.count > 1 {
+            IceAgentTabs(tabs: tabModels, selectedID: store.selectedID, onSelect: store.select, onClose: closeTab)
+                .equatable()
+        }
+    }
+
+    @ViewBuilder private var centerColumn: some View {
+        if interfaceStyle == .ice {
+            conversationPanel
+                .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+        } else {
+            basicCenterColumn
+        }
+    }
+
+    private var basicCenterColumn: some View {
         VStack(spacing: 0) {
             AgentTabStrip(tabs: tabModels, selectedID: store.selectedID, sidebarVisible: sidebarVisible,
                           onSelect: store.select, onClose: closeTab, onNew: { openNewConversation() }, onShowSidebar: toggleSidebar)
@@ -195,6 +262,7 @@ struct MainWindowView: View {
                 } onMoreOptions: { path, provider in
                     openNewConversation(provider: provider, space: path)
                 } onResumeClaude: { showingSessionPicker = true }
+                .jackEdgeBar(.top) { iceTabs }
             }
         }
     }
@@ -204,6 +272,29 @@ struct MainWindowView: View {
         return VStack(spacing: 0) {
             if let error = store.errorMessage, !error.isEmpty { errorBanner(error) }
             messageHistory(conversation)
+                .jackEdgeBar(.top) { iceTabs }
+                .jackEdgeBar(.bottom) { bottomPanels(conversation, status: status) }
+        }
+        .onChange(of: store.recalled[conversation.id]) { _, message in
+            guard let message else { return }
+            restore(message, to: conversation.id)
+            store.clearRecalled(conversation.id)
+        }
+        .jackSurface(.canvas)
+        .onDrop(of: AttachmentDrop.types, isTargeted: $dropTargeted) { providers in
+            AttachmentDrop.load(providers) { attach($0, to: conversation.id) }
+            return true
+        }
+        .overlay { if dropTargeted { AttachmentDropOverlay() } }
+        .onChange(of: status.isActive) { wasActive, active in
+            // The agent may have changed files: refresh the tree once its turn ends.
+            if wasActive, !active, explorerVisible { workspace.explorer(for: conversation.projectPath).refresh() }
+        }
+    }
+
+    /// Approvals, live activity, queued messages, side questions, commands and the composer.
+    private func bottomPanels(_ conversation: ChatConversation, status: ChatStatus) -> some View {
+        VStack(spacing: 0) {
             if let approvals = store.approvals[conversation.id], !approvals.isEmpty {
                 approvalsPanel(approvals, conversation: conversation)
             }
@@ -236,21 +327,6 @@ struct MainWindowView: View {
                     .onChange(of: query) { _, _ in commandSelection = 0 }
             }
             composer(conversation)
-        }
-        .onChange(of: store.recalled[conversation.id]) { _, message in
-            guard let message else { return }
-            restore(message, to: conversation.id)
-            store.clearRecalled(conversation.id)
-        }
-        .jackSurface(.canvas)
-        .onDrop(of: AttachmentDrop.types, isTargeted: $dropTargeted) { providers in
-            AttachmentDrop.load(providers) { attach($0, to: conversation.id) }
-            return true
-        }
-        .overlay { if dropTargeted { AttachmentDropOverlay() } }
-        .onChange(of: status.isActive) { wasActive, active in
-            // The agent may have changed files: refresh the tree once its turn ends.
-            if wasActive, !active, explorerVisible { workspace.explorer(for: conversation.projectPath).refresh() }
         }
     }
 
@@ -339,9 +415,9 @@ struct MainWindowView: View {
                             Label("Volver a la conversación", systemImage: "arrow.down")
                                 .font(.system(size: 11.5, weight: .medium))
                                 .padding(.horizontal, 12).padding(.vertical, 6)
-                                .background(JackPalette.panelStrong, in: Capsule())
-                                .overlay(Capsule().strokeBorder(JackPalette.hairline))
-                                .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
+                                .jackGlass(in: Capsule(), basic: JackPalette.panelStrong, interactive: true)
+                                .overlay { if !ice { Capsule().strokeBorder(JackPalette.hairline) } }
+                                .shadow(color: .black.opacity(ice ? 0 : 0.15), radius: 6, y: 2)
                                 .contentShape(Capsule())
                         }
                         .buttonStyle(.plain)
@@ -593,7 +669,7 @@ struct MainWindowView: View {
                     Button { store.stop(conversation.id) } label: {
                         Image(systemName: "stop.fill").font(.system(size: 9, weight: .bold))
                             .frame(width: 24, height: 24)
-                            .jackGlass(in: RoundedRectangle(cornerRadius: 6, style: .continuous), basic: JackPalette.panelStrong, interactive: true)
+                            .background(JackPalette.panelStrong, in: RoundedRectangle(cornerRadius: ice ? 12 : 6, style: .continuous))
                     }
                     .buttonStyle(.plain)
                     .keyboardShortcut(".", modifiers: .command)
@@ -605,8 +681,7 @@ struct MainWindowView: View {
                         Image(systemName: "arrow.up").font(.system(size: 11, weight: .bold))
                             .foregroundStyle(canSend ? Color.white : JackPalette.faint)
                             .frame(width: 24, height: 24)
-                            .jackGlass(in: RoundedRectangle(cornerRadius: 6, style: .continuous), basic: canSend ? JackPalette.accent : JackPalette.panelStrong,
-                                       tint: canSend ? JackPalette.accent : nil, interactive: canSend)
+                            .background(canSend ? JackPalette.accent : JackPalette.panelStrong, in: RoundedRectangle(cornerRadius: ice ? 12 : 6, style: .continuous))
                     }
                     .buttonStyle(.plain)
                     .disabled(!canSend)
@@ -616,9 +691,14 @@ struct MainWindowView: View {
             }
         }
         .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 8)
-        .jackGlass(in: RoundedRectangle(cornerRadius: 8, style: .continuous), basic: JackPalette.panel)
-        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .strokeBorder(composerFocused ? JackPalette.accent.opacity(0.45) : JackPalette.hairline, lineWidth: 1))
+        // Ice: a glass field floating over the transcript, as in the system's own apps.
+        .jackGlass(in: RoundedRectangle(cornerRadius: ice ? 18 : 8, style: .continuous), basic: JackPalette.panel)
+        .overlay {
+            if !ice {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(composerFocused ? JackPalette.accent.opacity(0.45) : JackPalette.hairline, lineWidth: 1)
+            }
+        }
         .frame(maxWidth: Self.columnWidth).frame(maxWidth: .infinity)
         .padding(.horizontal, 22).padding(.top, 6).padding(.bottom, 12)
         .jackSurface(.canvas)

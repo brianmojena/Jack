@@ -76,7 +76,7 @@ private struct GeneralSettings: View {
             } header: {
                 Text("Apariencia")
             } footer: {
-                Text("Basic es la interfaz sólida de siempre. Ice deja ver el escritorio a través de la ventana y convierte el editor, las pestañas y los botones en Liquid Glass; usa algo más de GPU.")
+                Text("Basic es la interfaz densa de siempre. Ice usa la estructura nativa de macOS con Liquid Glass: barra lateral flotante, barra de herramientas del sistema y el editor flotando sobre la conversación.")
                     .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
             }
             Section("Barra lateral") {
