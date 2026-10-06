@@ -199,6 +199,8 @@ private struct ShortcutsSettings: View {
         ("Interrumpir y enviar", "⌘↩"),
         ("Detener agente (devuelve los mensajes en espera)", "⌘."),
         ("Cambiar modo de Claude Code", "⇧⇥"),
+        ("Mensajes enviados anteriores", "↑ ↓"),
+        ("Usar la sugerencia", "⇥"),
         ("Permitir · rechazar permiso", "⌘↩  ⎋"),
         ("Permitir siempre", "⌥⌘↩"),
         ("Marcar como no leído", "⇧⌘U"),

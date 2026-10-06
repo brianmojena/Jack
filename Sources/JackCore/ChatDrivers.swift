@@ -464,6 +464,8 @@ enum ClaudeProtocol {
                 return subagentEvents(object, parent: parent)
             }
             if type == "rate_limit_event", let usage = UsageDecoder.claudeEvent(object) { return [.usage(usage)] }
+            if type == "prompt_suggestion", let suggestion = object["suggestion"] as? String,
+               !suggestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return [.suggestion(suggestion)] }
             if type == "user", let message = object["message"] as? [String: Any], let blocks = message["content"] as? [[String: Any]] {
                 return blocks.compactMap { block in
                     guard block["type"] as? String == "tool_result", let nativeID = block["tool_use_id"] as? String, let tool = tools[nativeID],
@@ -799,10 +801,11 @@ private final class ClaudeChatDriver: ProcessChatDriver {
         // The SDK's permission channel, which also enables AskUserQuestion and plan approval.
         var args = ["--print", "--verbose", "--output-format", "stream-json", "--input-format", "stream-json", "--include-partial-messages", "--permission-prompt-tool", "stdio",
                     // Echoes each message when the agent reads it, so a queued message moves into the chat at that moment.
-                    "--replay-user-messages"]
+                    "--replay-user-messages", "--prompt-suggestions"]
             + ChatRunConfiguration.claudeSettings(conversation)
         if let saved = conversation.sessionID, !saved.isEmpty { args += ["--resume", saved] }
-        var environment: [String: String] = [:]
+        // Claude Code turns prompt suggestions off when it is not interactive unless asked to; delegated agents have no one to suggest to.
+        var environment: [String: String] = conversation.parentID == nil ? ["CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "true"] : [:]
         if delegation != nil {
             args += delegationArgs
             // wait_for_agents may hold a call open for up to 15 minutes.

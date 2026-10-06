@@ -10,6 +10,7 @@ import Foundation
     @Published public private(set) var waiting: [UUID: [ChatQueuedMessage]] = [:]
     /// Waiting messages taken back by stopping the agent, for the composer to restore.
     @Published public private(set) var recalled: [UUID: ChatQueuedMessage] = [:]
+    @Published public private(set) var suggestions: [UUID: String] = [:]
     @Published public var errorMessage: String?
     @Published public private(set) var maxConcurrent = 4
     @Published public private(set) var usage: [ChatProvider: ProviderUsage] = [:]
@@ -230,6 +231,7 @@ import Foundation
     public func send(_ prompt: String, attachments: [String] = [], to id: UUID, interrupting: Bool = false) {
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !attachments.isEmpty, conversations.contains(where: { $0.id == id }), !stopped else { return }
+        clearSuggestion(id)
         if isBusy(id), JackCommandCatalog.parse(text) == nil {
             wait(text.hasPrefix("!!") ? String(text.dropFirst()) : text, attachments: attachments, to: id)
             if interrupting { sendWaitingNow(id) }
@@ -270,6 +272,7 @@ import Foundation
     /// as typing does in Claude Code; otherwise it waits: agents that read messages mid-turn get it at once and
     /// read it after their current step, and the rest get it when the turn ends.
     private func wait(_ text: String, attachments: [String], to id: UUID) {
+        clearSuggestion(id)
         guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
         if let driver = drivers[id], driver.keepsAlive, attachments.isEmpty, let request = approvals[id]?.first(where: { $0.questions.isEmpty }) {
             conversations[index].messages.append(ChatMessage(role: "user", text: text))
@@ -305,6 +308,7 @@ import Foundation
         return message
     }
     public func clearRecalled(_ id: UUID) { recalled.removeValue(forKey: id) }
+    public func clearSuggestion(_ id: UUID) { suggestions.removeValue(forKey: id) }
     /// Waiting messages the agent no longer holds, e.g. because its process ended, go back to Jack's own queue.
     private func reconcileWaiting(_ id: UUID) {
         guard var messages = waiting[id], !messages.isEmpty else { return }
@@ -410,6 +414,7 @@ import Foundation
         liveDrivers.removeValue(forKey: id)?.close()
         conversations.removeAll { $0.id == id }; loaded.remove(id); statuses.removeValue(forKey: id); approvals.removeValue(forKey: id)
         waiting.removeValue(forKey: id); recalled.removeValue(forKey: id)
+        suggestions.removeValue(forKey: id)
         archive.save(index: conversations, removedID: id)
         if selectedID == id { selectedID = nil; if let next = conversations.first { select(next.id) } }
     }
@@ -526,6 +531,7 @@ import Foundation
         return driver
     }
     private func startRun(_ id: UUID, driver: any ChatDriver, _ body: @escaping @MainActor (@escaping @MainActor (ChatEvent) -> Void) async throws -> Void) {
+        clearSuggestion(id)
         drivers[id] = driver; statuses[id] = .running
         if let c = conversations.first(where: { $0.id == id }), c.provider == .codex {
             budgetBaseline[id] = (c.tokenUsage?.input ?? 0) + (c.tokenUsage?.output ?? 0)
@@ -679,6 +685,7 @@ import Foundation
             if value != conversations[index].contextUsage { conversations[index].contextUsage = value }
         case .commands(let list):
             if !list.isEmpty { commands[Self.commandKey(conversations[index].provider, conversations[index].projectPath)] = list }
+        case .suggestion(let text): suggestions[id] = text
         case .session(let sessionID): conversations[index].sessionID = sessionID; save(id)
         case let .tool(messageID, title, detail, status):
             let message = ChatMessage(id: messageID, role: "tool", text: title, detail: String(detail.prefix(65_536)), status: status)

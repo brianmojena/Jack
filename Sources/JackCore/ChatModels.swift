@@ -122,6 +122,7 @@ public enum ChatEvent {
     /// Tokens in the context window after the latest request; either value may be unknown.
     case context(used: Int?, window: Int?)
     case commands([ChatCommand])
+    case suggestion(String)
     case approval(ChatApproval)
     case approvalResolved(String)
     /// The agent switched its permission mode itself, e.g. after the user approved a plan.

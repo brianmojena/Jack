@@ -4,6 +4,8 @@ import SwiftUI
 struct MainWindowView: View {
     @ObservedObject var store: ChatStore
     @State private var drafts: [UUID: String] = [:]
+    @State private var historyIndices: [UUID: Int] = [:]
+    @State private var historyDrafts: [UUID: String] = [:]
     @State private var attachments: [UUID: [String]] = [:]
     @State private var dropTargeted = false
     /// Held as plain state: only the panes observe it, so tabs opening never re-render the chat.
@@ -445,11 +447,22 @@ struct MainWindowView: View {
                         .opacity(0)
                         .accessibilityHidden(true)
                     if draft.isEmpty {
-                        Text(placeholder(conversation, status: status, steerable: steerable))
+                        if !busy, conversation.provider == .claude, let suggestion = store.suggestions[conversation.id] {
+                            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                                Text(suggestion).foregroundStyle(JackPalette.faint)
+                                Text("Tab").font(.system(size: 9, weight: .medium, design: .rounded))
+                                    .foregroundStyle(JackPalette.faint.opacity(0.7))
+                            }
                             .font(.system(size: textSize, design: design))
-                            .foregroundStyle(JackPalette.faint)
                             .padding(.horizontal, 5)
                             .allowsHitTesting(false)
+                        } else {
+                            Text(placeholder(conversation, status: status, steerable: steerable))
+                                .font(.system(size: textSize, design: design))
+                                .foregroundStyle(JackPalette.faint)
+                                .padding(.horizontal, 5)
+                                .allowsHitTesting(false)
+                        }
                     }
                 TextEditor(text: draftBinding(for: conversation.id))
                     .font(.system(size: textSize, design: design))
@@ -483,17 +496,29 @@ struct MainWindowView: View {
                         return .handled
                     }
                     .onKeyPress(keys: [.upArrow, .downArrow, .tab, .escape], phases: .down) { press in
-                        guard commandQuery(for: conversation) != nil else { return .ignored }
-                        let count = CommandSuggestions.matches(availableComposerCommands(conversation), query: commandQuery(for: conversation) ?? "").count
-                        switch press.key {
-                        case .upArrow: commandSelection = max(0, min(commandSelection, count - 1) - 1)
-                        case .downArrow: commandSelection = min(max(0, count - 1), commandSelection + 1)
-                        case .tab:
-                            guard let command = selectedCommand(for: conversation) else { return .ignored }
-                            complete(command, in: conversation)
-                        default: dismissedCommandDraft = drafts[conversation.id]
+                        if let query = commandQuery(for: conversation) {
+                            let count = CommandSuggestions.matches(availableComposerCommands(conversation), query: query).count
+                            switch press.key {
+                            case .upArrow: commandSelection = max(0, min(commandSelection, count - 1) - 1)
+                            case .downArrow: commandSelection = min(max(0, count - 1), commandSelection + 1)
+                            case .tab:
+                                guard let command = selectedCommand(for: conversation) else { return .ignored }
+                                complete(command, in: conversation)
+                            default: dismissedCommandDraft = drafts[conversation.id]
+                            }
+                            return .handled
                         }
-                        return .handled
+                        if press.modifiers.isEmpty, (press.key == .upArrow || press.key == .downArrow) {
+                            return navigateHistory(press.key, in: conversation) ? .handled : .ignored
+                        }
+                        if press.key == .tab, press.modifiers.isEmpty, draft.isEmpty,
+                           conversation.provider == .claude, !busy,
+                           let suggestion = store.suggestions[conversation.id] {
+                            drafts[conversation.id] = suggestion
+                            store.clearSuggestion(conversation.id)
+                            return .handled
+                        }
+                        return .ignored
                     }
                 }
                 .frame(minHeight: 18, maxHeight: 200)
@@ -589,12 +614,59 @@ struct MainWindowView: View {
 
     private func complete(_ command: ChatCommand, in conversation: ChatConversation) {
         drafts[conversation.id] = "\(commandPrefix(conversation))\(command.name) "
+        resetHistory(for: conversation.id)
         commandSelection = 0
         composerFocused = true
     }
 
     private func draftBinding(for id: UUID) -> Binding<String> {
-        Binding(get: { drafts[id, default: ""] }, set: { drafts[id] = $0 })
+        Binding(get: { drafts[id, default: ""] }, set: { value in
+            // Only typing leaves history navigation; the editor echoing the same text back does not.
+            guard value != drafts[id, default: ""] else { return }
+            drafts[id] = value
+            resetHistory(for: id)
+        })
+    }
+
+    private func navigateHistory(_ key: KeyEquivalent, in conversation: ChatConversation) -> Bool {
+        let id = conversation.id
+        let messages = conversation.messages.reversed().compactMap { message -> String? in
+            guard message.role == "user" else { return nil }
+            let text = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return text.isEmpty ? nil : message.text
+        }
+        var history: [String] = []
+        for message in messages where history.last?.trimmingCharacters(in: .whitespacesAndNewlines) != message.trimmingCharacters(in: .whitespacesAndNewlines) {
+            history.append(message)
+        }
+        let draft = drafts[id] ?? ""
+        if key == .upArrow {
+            if let index = historyIndices[id] {
+                guard index + 1 < history.count, draft == history[index] else { return false }
+                historyIndices[id] = index + 1
+                drafts[id] = history[index + 1]
+            } else {
+                guard draft.isEmpty, let first = history.first else { return false }
+                historyDrafts[id] = draft
+                historyIndices[id] = 0
+                drafts[id] = first
+            }
+            return true
+        }
+        guard let index = historyIndices[id], draft == history[index] else { return false }
+        if index == 0 {
+            drafts[id] = historyDrafts.removeValue(forKey: id) ?? ""
+            historyIndices.removeValue(forKey: id)
+        } else {
+            historyIndices[id] = index - 1
+            drafts[id] = history[index - 1]
+        }
+        return true
+    }
+
+    private func resetHistory(for id: UUID) {
+        historyIndices.removeValue(forKey: id)
+        historyDrafts.removeValue(forKey: id)
     }
 
     private func errorBanner(_ text: String) -> some View {
@@ -627,6 +699,7 @@ struct MainWindowView: View {
         store.send(text, attachments: files, to: conversation.id, interrupting: interrupting)
         guard store.errorMessage == nil else { return }
         drafts[conversation.id] = ""
+        resetHistory(for: conversation.id)
         attachments[conversation.id] = nil
     }
 

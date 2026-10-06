@@ -169,6 +169,20 @@ final class ClaudeIntegrationTests: XCTestCase {
         XCTAssertEqual(store.selectedConversation?.messages.last?.text, "El subagente terminó")
     }
 
+    @MainActor func testIdlePromptSuggestionIsStoredAndClearedWhenSending() async throws {
+        let (store, folder, drivers) = fixture()
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        let id = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .claude))
+        store.send("primero"); await settle()
+        let driver = try XCTUnwrap(drivers().first)
+        driver.callback?(.completed); driver.finish(); await settle()
+
+        driver.idle?(.suggestion("x"))
+        XCTAssertEqual(store.suggestions[id], "x")
+        store.send("segundo", to: id)
+        XCTAssertNil(store.suggestions[id])
+    }
+
     @MainActor func testModeChangesLiveAndTypingRejectsPendingPermissionWithReason() async throws {
         let (store, folder, drivers) = fixture()
         defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
@@ -227,6 +241,15 @@ final class ClaudeIntegrationTests: XCTestCase {
 }
 
 final class ClaudeProtocolTests: XCTestCase {
+    func testPromptSuggestionBecomesSuggestionEvent() {
+        var decoder = ClaudeProtocol.Decoder()
+        guard case .suggestion(let text) = decoder.events(["type": "prompt_suggestion", "suggestion": "ejecuta los tests"]).first else {
+            return XCTFail("Expected prompt suggestion")
+        }
+        XCTAssertEqual(text, "ejecuta los tests")
+        XCTAssertTrue(decoder.events(["type": "prompt_suggestion", "suggestion": "  "]).isEmpty)
+    }
+
     func testQuestionsPlanAndPermissionsBecomeRichApprovals() {
         var decoder = ClaudeProtocol.Decoder()
         let question = decoder.events(["type": "control_request", "request_id": "q", "request": ["subtype": "can_use_tool", "tool_name": "AskUserQuestion", "input": [

@@ -30,6 +30,23 @@ import JackCore
             print("NOTA: \(usage.note) cached=\(usage.isCached)")
             return
         }
+        if args.count >= 2, args[1] == "suggest" {
+            // A Claude Code turn through the store, then the next-message suggestion it predicts.
+            let folder = FileManager.default.temporaryDirectory.appendingPathComponent("jack-suggest-probe-" + UUID().uuidString)
+            let store = ChatStore(archive: ChatArchive(directory: folder), preferences: nil)
+            defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+            guard let id = store.create(projectPath: FileManager.default.currentDirectoryPath, provider: .claude) else { exit(1) }
+            store.updateSettings(id: id, model: "haiku", effort: "low")
+            store.send("Dime en una frase el primero de tres pasos para añadir tests a una app Swift.", to: id)
+            let started = Date()
+            while store.statuses[id] != .idle || Date().timeIntervalSince(started) < 1, Date().timeIntervalSince(started) < 90 { try? await Task.sleep(for: .milliseconds(200)) }
+            let ended = Date()
+            while store.suggestions[id] == nil, Date().timeIntervalSince(ended) < 40 { try? await Task.sleep(for: .milliseconds(200)) }
+            let suggestion = store.suggestions[id]
+            print(String(format: "SUGGESTION after %.1f s: \(suggestion ?? "none")", Date().timeIntervalSince(ended)))
+            if suggestion == nil { exit(1) }
+            return
+        }
         if args.count >= 2, args[1] == "store" {
             // What the app does at launch and when typing "/": every provider's quota at once, then each one's commands.
             let folder = FileManager.default.temporaryDirectory.appendingPathComponent("jack-store-probe-" + UUID().uuidString)
@@ -81,6 +98,7 @@ import JackCore
                         case let .tool(_, title, _, status): print("TOOL \(title) \(status)")
                         case .completed: print("COMPLETED")
                         case .failure(let message): print("FAILURE \(message)")
+                        case .suggestion(let text): print("SUGGESTION \(text)")
                         default: break
                         }
                     }
@@ -114,6 +132,7 @@ import JackCore
                     case let .text(_, text, replace): if replace { output = text } else { output += text }
                     case .completed: sawCompletion = true
                     case .failure(let message): failure = true; print("ERROR: \(message)")
+                    case .suggestion(let text): print("SUGGESTION: \(text)")
                     case .approval(let approval):
                         print("APPROVAL received; rejecting smoke-test tools")
                         Task { try? await driver.respond(approvalID: approval.id, allow: false) }
