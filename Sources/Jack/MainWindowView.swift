@@ -202,6 +202,15 @@ struct MainWindowView: View {
                     .frame(maxWidth: Self.columnWidth).frame(maxWidth: .infinity)
                     .padding(.horizontal, 22)
             }
+            if let waiting = store.waiting[conversation.id], !waiting.isEmpty {
+                WaitingMessagesView(messages: waiting, provider: conversation.provider,
+                                    readsWhileWorking: store.readsWhileWorking(conversation.id),
+                                    onSendNow: { store.sendWaitingNow(conversation.id) },
+                                    onEdit: { takeBack($0, from: conversation, restore: true) },
+                                    onRemove: { takeBack($0, from: conversation, restore: false) })
+                    .frame(maxWidth: Self.columnWidth).frame(maxWidth: .infinity)
+                    .padding(.horizontal, 22).padding(.top, 4)
+            }
             if let query = commandQuery(for: conversation) {
                 let matches = CommandSuggestions.matches(availableComposerCommands(conversation), query: query)
                 CommandSuggestions(commands: matches, prefix: commandPrefix(conversation), loading: store.isLoadingCommands(for: conversation),
@@ -212,6 +221,11 @@ struct MainWindowView: View {
                     .onChange(of: query) { _, _ in commandSelection = 0 }
             }
             composer(conversation)
+        }
+        .onChange(of: store.recalled[conversation.id]) { _, message in
+            guard let message else { return }
+            restore(message, to: conversation.id)
+            store.clearRecalled(conversation.id)
         }
         .background(JackPalette.canvas)
         .onDrop(of: AttachmentDrop.types, isTargeted: $dropTargeted) { providers in
@@ -386,6 +400,8 @@ struct MainWindowView: View {
             ForEach(approvals) { approval in
                 ApprovalCard(approval: approval, provider: conversation.provider, projectPath: conversation.projectPath,
                              repliesInChat: store.canSend(to: conversation.id) && store.statuses[conversation.id]?.isActive == true,
+                             // ⌘↩ belongs to the composer while it holds a message: it interrupts and sends it.
+                             shortcutsEnabled: (drafts[conversation.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                              onRespond: { choice, message in store.respond(conversationID: conversation.id, approvalID: approval.id, choice: choice, message: message) },
                              onAnswer: { answers in store.answer(conversationID: conversation.id, approvalID: approval.id, answers: answers) })
             }
@@ -442,6 +458,13 @@ struct MainWindowView: View {
                     .help("Enter para enviar · Shift+Enter para un salto de línea")
                     .onKeyPress(keys: [.return], phases: .down) { press in
                         guard !press.modifiers.contains(.shift) else { return .ignored }
+                        // ⌘↩ interrupts the agent so it reads the message now, instead of after its current step.
+                        if press.modifiers.contains(.command) {
+                            if hasContent { sendDraft(in: conversation, interrupting: true); return .handled }
+                            guard store.waiting[conversation.id]?.isEmpty == false else { return .ignored }
+                            store.sendWaitingNow(conversation.id)
+                            return .handled
+                        }
                         // Enter completes a partly typed command; once the name is complete it sends.
                         if let query = commandQuery(for: conversation), let command = selectedCommand(for: conversation), command.name != query {
                             complete(command, in: conversation)
@@ -528,7 +551,7 @@ struct MainWindowView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(!canSend)
-                    .help(busy ? "Enviar mientras trabaja (Enter)" : "Enviar (Enter)")
+                    .help(busy ? "Poner en espera hasta que lo lea (Enter) · Interrumpir y enviar (⌘Enter)" : "Enviar (Enter)")
                     .accessibilityLabel("Enviar")
                 }
             }
@@ -585,22 +608,45 @@ struct MainWindowView: View {
         let name = conversation.provider.title
         guard status.isActive else { return "Escribe a \(name)…  ! Jack · / proveedor" }
         guard steerable else { return "\(name) está trabajando…" }
-        if status == .waiting, store.approvals[conversation.id]?.contains(where: { $0.questions.isEmpty }) == true {
+        if status == .waiting, store.readsWhileWorking(conversation.id), store.approvals[conversation.id]?.contains(where: { $0.questions.isEmpty }) == true {
             return "Escribe para rechazar y decirle qué hacer en su lugar…"
         }
-        return "\(name) está trabajando · escribe para añadir instrucciones…"
+        return store.readsWhileWorking(conversation.id)
+            ? "\(name) está trabajando · lo leerá al terminar el paso · ⌘↩ interrumpe"
+            : "\(name) está trabajando · se enviará al terminar · ⌘↩ interrumpe"
     }
 
-    private func sendDraft(in conversation: ChatConversation) {
+    private func sendDraft(in conversation: ChatConversation, interrupting: Bool = false) {
         let text = (drafts[conversation.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let files = attachments[conversation.id] ?? []
         guard !text.isEmpty || !files.isEmpty, store.canSend(to: conversation.id) else { return }
         if store.selectedID != conversation.id { store.select(conversation.id) }
         store.errorMessage = nil
-        store.send(text, attachments: files)
+        store.send(text, attachments: files, to: conversation.id, interrupting: interrupting)
         guard store.errorMessage == nil else { return }
         drafts[conversation.id] = ""
         attachments[conversation.id] = nil
+    }
+
+    /// Takes a waiting message back from the agent, into the composer to edit it or away.
+    private func takeBack(_ message: ChatQueuedMessage, from conversation: ChatConversation, restore: Bool) {
+        Task {
+            guard let taken = await store.withdraw(message.id, from: conversation.id) else {
+                store.errorMessage = "\(conversation.provider.title) ya leyó ese mensaje."
+                return
+            }
+            if restore { self.restore(taken, to: conversation.id) }
+        }
+    }
+
+    /// Puts a message back in the composer, before whatever is being written.
+    private func restore(_ message: ChatQueuedMessage, to id: UUID) {
+        let current = drafts[id] ?? ""
+        drafts[id] = [message.text, current].filter { !$0.isEmpty }.joined(separator: "\n\n")
+        var files = message.attachments
+        for path in attachments[id] ?? [] where !files.contains(path) { files.append(path) }
+        attachments[id] = files.isEmpty ? nil : files
+        composerFocused = true
     }
 
     /// The panel appears at once: animating its width would relayout the chat and the terminal on every frame.

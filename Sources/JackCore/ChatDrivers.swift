@@ -57,7 +57,10 @@ private class ProcessChatDriver: ChatDriver {
     var keepsAlive: Bool { false }
     func observe(idle: @escaping @MainActor (ChatEvent) -> Void, unprompted: @escaping @MainActor () -> Void) {}
     func follow(onEvent: @escaping @MainActor (ChatEvent) -> Void) async throws {}
-    func inject(conversation: ChatConversation, prompt: String) -> Bool { false }
+    func inject(_ message: ChatQueuedMessage, conversation: ChatConversation) -> Bool { false }
+    func withdraw(messageID: String) async -> Bool { false }
+    func isQueued(_ messageID: String) -> Bool { false }
+    func stop(keepingQueued: Bool) { stop() }
     func setMode(_ mode: String) -> Bool { false }
     func close() { stop() }
 
@@ -663,6 +666,9 @@ private final class ClaudeChatDriver: ProcessChatDriver {
     private var interrupting: Task<Void, Never>?
     private var idleClose: Task<Void, Never>?
     private var requests = 0
+    private var replies: [String: CheckedContinuation<[String: Any]?, Never>] = [:]
+    /// Messages handed over mid-turn that the agent has not read yet, by id.
+    private var queued: [String: String] = [:]
     /// Delegated agents close right after their turn: an orchestrator may start several, and memory is scarce.
     private var closesWhenIdle = false
 
@@ -702,10 +708,26 @@ private final class ClaudeChatDriver: ProcessChatDriver {
         try await awaitTurn(onEvent) { buffered.forEach(self.deliver) }
     }
 
-    override func inject(conversation: ChatConversation, prompt: String) -> Bool {
-        guard sink != nil, interrupting == nil, let child else { return false }
-        return (try? child.writeJSON(Self.userMessage(conversation, prompt: prompt))) != nil
+    /// Claude Code keeps the message in its queue and reads it between steps, as when typing in its terminal while it works.
+    override func inject(_ message: ChatQueuedMessage, conversation: ChatConversation) -> Bool {
+        guard sink != nil || unpromptedEvents != nil, let child else { return false }
+        var line = Self.userMessage(conversation, prompt: message.text, attachments: message.attachments)
+        line["uuid"] = message.id
+        guard (try? child.writeJSON(line)) != nil else { return false }
+        idleClose?.cancel()
+        queued[message.id] = message.text
+        return true
     }
+
+    override func withdraw(messageID: String) async -> Bool {
+        guard queued[messageID] != nil else { return true }
+        let response = await request(["subtype": "cancel_async_message", "message_uuid": messageID])
+        guard response?["cancelled"] as? Bool == true else { return false }
+        queued.removeValue(forKey: messageID)
+        return true
+    }
+
+    override func isQueued(_ messageID: String) -> Bool { queued[messageID] != nil }
 
     override func setMode(_ mode: String) -> Bool {
         guard child != nil else { return true }
@@ -715,11 +737,15 @@ private final class ClaudeChatDriver: ProcessChatDriver {
         return true
     }
 
-    /// Interrupts the turn as Esc does in the terminal; the process and its background tasks stay.
-    override func stop() {
+    /// Interrupts the turn as Esc does in the terminal, dropping queued messages; the process and its background tasks stay.
+    override func stop() { stop(keepingQueued: false) }
+
+    override func stop(keepingQueued: Bool) {
         guard sink != nil, interrupting == nil else { return }
         pendingApprovals.removeAll()
-        guard control(["subtype": "interrupt"]) else { closeSession(); endTurn(nil); return }
+        var interrupt: [String: Any] = ["subtype": "interrupt"]
+        if !keepingQueued { interrupt["cancel_queued"] = true; queued.removeAll() }
+        guard control(interrupt) else { closeSession(); endTurn(nil); return }
         interrupting = Task { [weak self] in
             try? await Task.sleep(for: .seconds(5))
             guard !Task.isCancelled, let self, self.sink != nil else { return }
@@ -755,8 +781,9 @@ private final class ClaudeChatDriver: ProcessChatDriver {
         try child.writeJSON(["type": "control_response", "response": ["subtype": "success", "request_id": requestID, "response": response]])
     }
 
-    static func userMessage(_ conversation: ChatConversation, prompt: String) -> [String: Any] {
-        ["type": "user", "message": ["role": "user", "content": ChatRunConfiguration.claudeContent(conversation, prompt: prompt)], "parent_tool_use_id": NSNull()]
+    static func userMessage(_ conversation: ChatConversation, prompt: String, attachments: [String]? = nil) -> [String: Any] {
+        let content = ChatRunConfiguration.claudeContent(prompt: prompt, attachments: attachments ?? conversation.turnAttachments)
+        return ["type": "user", "message": ["role": "user", "content": content], "parent_tool_use_id": NSNull()]
     }
 
     // MARK: Process
@@ -770,7 +797,9 @@ private final class ClaudeChatDriver: ProcessChatDriver {
         if let child, signature == launch || decoder.backgroundTaskCount > 0 { return child }
         closeSession()
         // The SDK's permission channel, which also enables AskUserQuestion and plan approval.
-        var args = ["--print", "--verbose", "--output-format", "stream-json", "--input-format", "stream-json", "--include-partial-messages", "--permission-prompt-tool", "stdio"]
+        var args = ["--print", "--verbose", "--output-format", "stream-json", "--input-format", "stream-json", "--include-partial-messages", "--permission-prompt-tool", "stdio",
+                    // Echoes each message when the agent reads it, so a queued message moves into the chat at that moment.
+                    "--replay-user-messages"]
             + ChatRunConfiguration.claudeSettings(conversation)
         if let saved = conversation.sessionID, !saved.isEmpty { args += ["--resume", saved] }
         var environment: [String: String] = [:]
@@ -794,6 +823,7 @@ private final class ClaudeChatDriver: ProcessChatDriver {
     private func closeSession() {
         reader?.cancel(); reader = nil
         launch = []
+        dropPending()
         guard let process = child else { return }
         child = nil
         process.terminate()
@@ -804,22 +834,62 @@ private final class ClaudeChatDriver: ProcessChatDriver {
         guard child === process else { return }
         child = nil; launch = []; reader = nil
         unpromptedEvents = nil
+        dropPending()
         guard sink != nil else { return }
         let message = await process.failureDescription(default: "Claude Code se cerró antes de terminar.")
         if sink != nil, child == nil { endTurn(ChatDriverError.process(message)) }
     }
 
     @discardableResult
-    private func control(_ request: [String: Any]) -> Bool {
-        guard let child else { return false }
+    private func control(_ request: [String: Any]) -> Bool { send(request) != nil }
+
+    private func send(_ request: [String: Any]) -> String? {
+        guard let child else { return nil }
         requests += 1
-        return (try? child.writeJSON(["type": "control_request", "request_id": "jack-\(requests)", "request": request])) != nil
+        let id = "jack-\(requests)"
+        return (try? child.writeJSON(["type": "control_request", "request_id": id, "request": request])) != nil ? id : nil
+    }
+
+    /// A control request whose answer matters; nil when the process ends or does not answer in time.
+    private func request(_ request: [String: Any]) async -> [String: Any]? {
+        guard let id = send(request) else { return nil }
+        return await withCheckedContinuation { continuation in
+            replies[id] = continuation
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(5))
+                self?.replies.removeValue(forKey: id)?.resume(returning: nil)
+            }
+        }
+    }
+
+    /// The process is gone: nothing it held will be read, and no request will be answered.
+    private func dropPending() {
+        queued.removeAll()
+        let waiting = replies.values
+        replies.removeAll()
+        waiting.forEach { $0.resume(returning: nil) }
     }
 
     // MARK: Turns
 
     private func handle(_ line: Data) {
-        guard let object = jsonObject(line), object["type"] as? String != "control_response" else { return }
+        guard let object = jsonObject(line) else { return }
+        switch object["type"] as? String {
+        case "control_response":
+            let response = object["response"] as? [String: Any] ?? [:]
+            if let id = response["request_id"] as? String { replies.removeValue(forKey: id)?.resume(returning: response["response"] as? [String: Any] ?? [:]) }
+            return
+        case "command_lifecycle":
+            if let id = object["command_uuid"] as? String, ["cancelled", "dropped"].contains(object["state"] as? String) { queued.removeValue(forKey: id) }
+            return
+        case "user" where object["isReplay"] as? Bool == true:
+            // A queued message the agent is reading now; replays of messages Jack sent as a turn are already shown.
+            if let id = object["uuid"] as? String, let text = queued.removeValue(forKey: id) {
+                deliver(.delivered(id: id, text: text))
+            }
+            return
+        default: break
+        }
         if sink == nil, unpromptedEvents == nil, ClaudeProtocol.startsTurn(object) {
             idleClose?.cancel()
             unpromptedEvents = []
@@ -876,12 +946,13 @@ private final class ClaudeChatDriver: ProcessChatDriver {
     /// Closes the idle process after the configured minutes, but never while a background task runs.
     private func scheduleIdleClose() {
         idleClose?.cancel()
-        guard child != nil, sink == nil else { return }
+        // Queued messages start a turn of their own as soon as the agent reads them.
+        guard child != nil, sink == nil, queued.isEmpty else { return }
         let minutes = closesWhenIdle ? 0 : UserDefaults.standard.object(forKey: ChatDriverFactory.claudeKeepAliveKey) as? Int ?? 5
         let seconds = decoder.backgroundTaskCount > 0 ? max(60, minutes * 60) : minutes * 60
         idleClose = Task { [weak self] in
             if seconds > 0 { try? await Task.sleep(for: .seconds(seconds)) }
-            guard !Task.isCancelled, let self, self.sink == nil, self.unpromptedEvents == nil else { return }
+            guard !Task.isCancelled, let self, self.sink == nil, self.unpromptedEvents == nil, self.queued.isEmpty else { return }
             if self.decoder.backgroundTaskCount > 0 { self.scheduleIdleClose() } else { self.closeSession() }
         }
     }
@@ -1343,7 +1414,9 @@ enum ChatRunConfiguration {
     }
     /// Plain text, or text plus image blocks when the message carries attachments.
     static func claudeContent(_ conversation: ChatConversation, prompt: String) -> Any {
-        let attachments = conversation.turnAttachments
+        claudeContent(prompt: prompt, attachments: conversation.turnAttachments)
+    }
+    static func claudeContent(prompt: String, attachments: [String]) -> Any {
         guard !attachments.isEmpty else { return prompt }
         var blocks: [[String: Any]] = [["type": "text", "text": ChatAttachments.promptText(prompt, attachments: attachments)]]
         for path in attachments {

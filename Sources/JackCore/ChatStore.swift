@@ -6,6 +6,10 @@ import Foundation
     @Published public var selectedID: UUID?
     @Published public private(set) var statuses: [UUID: ChatStatus] = [:]
     @Published public private(set) var approvals: [UUID: [ChatApproval]] = [:]
+    /// Messages written while the agent works, until it reads them.
+    @Published public private(set) var waiting: [UUID: [ChatQueuedMessage]] = [:]
+    /// Waiting messages taken back by stopping the agent, for the composer to restore.
+    @Published public private(set) var recalled: [UUID: ChatQueuedMessage] = [:]
     @Published public var errorMessage: String?
     @Published public private(set) var maxConcurrent = 4
     @Published public private(set) var usage: [ChatProvider: ProviderUsage] = [:]
@@ -191,15 +195,21 @@ import Foundation
         guard let id = selectedID else { return }
         send(prompt, attachments: attachments, to: id)
     }
-    /// Whether a message can be sent now: when idle, or to an agent that takes messages while it works.
-    public func canSend(to id: UUID) -> Bool {
-        guard !queue.contains(where: { $0.0 == id }) else { return false }
-        guard runs[id] != nil else { return true }
-        return drivers[id]?.keepsAlive == true
-    }
-    public func send(_ prompt: String, attachments: [String] = [], to id: UUID) {
+    /// Messages can always be written: while the agent works they wait until it reads them.
+    public func canSend(to id: UUID) -> Bool { !stopped }
+    /// Whether the agent is busy, so a message sent now waits.
+    public func isBusy(_ id: UUID) -> Bool { runs[id] != nil || queue.contains { $0.0 == id } }
+    /// Whether the agent reads waiting messages while it works, rather than after its turn.
+    public func readsWhileWorking(_ id: UUID) -> Bool { drivers[id]?.keepsAlive == true || liveDrivers[id] != nil }
+    /// `interrupting` stops the turn so the agent reads the message right away, like Ctrl+Enter.
+    public func send(_ prompt: String, attachments: [String] = [], to id: UUID, interrupting: Bool = false) {
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty || !attachments.isEmpty, conversations.contains(where: { $0.id == id }), !queue.contains(where: { $0.0 == id }), !stopped else { return }
+        guard !text.isEmpty || !attachments.isEmpty, conversations.contains(where: { $0.id == id }), !stopped else { return }
+        if isBusy(id), JackCommandCatalog.parse(text) == nil {
+            wait(text.hasPrefix("!!") ? String(text.dropFirst()) : text, attachments: attachments, to: id)
+            if interrupting { sendWaitingNow(id) }
+            return
+        }
         if let command = JackCommandCatalog.parse(text) {
             guard attachments.isEmpty else { errorMessage = "Los comandos ! no admiten archivos adjuntos."; return }
             executeJack(command.name, arguments: command.arguments, to: id)
@@ -218,10 +228,6 @@ import Foundation
             beginCompaction(id, target: target)
             return
         }
-        if runs[id] != nil {
-            steer(ordinaryText, attachments: attachments, to: id)
-            return
-        }
         loadTranscript(id)
         guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
         conversations[index].messages.append(ChatMessage(role: "user", text: ordinaryText, attachments: attachments.isEmpty ? nil : attachments))
@@ -235,19 +241,72 @@ import Foundation
         queue.append((id, ordinaryText))
         drainQueue()
     }
-    /// A message for an agent that is working: it answers a pending permission request by rejecting it
-    /// with the message as the reason, as typing does in Claude Code; otherwise it joins the turn.
-    private func steer(_ text: String, attachments: [String], to id: UUID) {
-        guard let driver = drivers[id], driver.keepsAlive, let index = conversations.firstIndex(where: { $0.id == id }) else { return }
-        conversations[index].messages.append(ChatMessage(role: "user", text: text, attachments: attachments.isEmpty ? nil : attachments))
-        if let request = approvals[id]?.first(where: { $0.questions.isEmpty }) {
+    /// A message for an agent that is working. A pending permission request is rejected with it as the reason,
+    /// as typing does in Claude Code; otherwise it waits: agents that read messages mid-turn get it at once and
+    /// read it after their current step, and the rest get it when the turn ends.
+    private func wait(_ text: String, attachments: [String], to id: UUID) {
+        guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
+        if let driver = drivers[id], driver.keepsAlive, attachments.isEmpty, let request = approvals[id]?.first(where: { $0.questions.isEmpty }) {
+            conversations[index].messages.append(ChatMessage(role: "user", text: text))
+            conversations[index].updatedAt = Date()
+            save(id)
             respond(conversationID: id, approvalID: request.id, choice: "deny", message: text)
-        } else if !driver.inject(conversation: conversations[index], prompt: text) {
-            conversations[index].messages.removeLast()
-            errorMessage = "No se pudo enviar el mensaje mientras el agente trabaja."
             return
         }
-        conversations[index].updatedAt = Date()
+        var message = ChatQueuedMessage(text: text, attachments: attachments)
+        if runs[id] != nil, let driver = drivers[id], driver.keepsAlive { message.sent = driver.inject(message, conversation: conversations[index]) }
+        waiting[id, default: []].append(message)
+    }
+    /// Interrupts the turn so the agent reads the waiting messages now.
+    public func sendWaitingNow(_ id: UUID) {
+        guard waiting[id]?.isEmpty == false else { return }
+        guard runs[id] != nil, let driver = drivers[id] else {
+            if runs[id] == nil, !queue.contains(where: { $0.0 == id }) { deliverWaiting(id) }
+            return
+        }
+        // A kept-alive agent reads its queued messages right after the interruption; the rest are sent when the turn ends.
+        driver.stop(keepingQueued: true)
+        if !driver.keepsAlive { runs[id]?.cancel() }
+        approvals[id] = []
+    }
+    /// Takes a waiting message back, to edit or discard it. Nil when the agent already read it.
+    public func withdraw(_ messageID: String, from id: UUID) async -> ChatQueuedMessage? {
+        guard let message = waiting[id]?.first(where: { $0.id == messageID }) else { return nil }
+        if message.sent, let driver = drivers[id] ?? liveDrivers[id], driver.isQueued(messageID) {
+            guard await driver.withdraw(messageID: messageID) else { return nil }
+        }
+        guard waiting[id]?.contains(where: { $0.id == messageID }) == true else { return nil }
+        waiting[id]?.removeAll { $0.id == messageID }
+        return message
+    }
+    public func clearRecalled(_ id: UUID) { recalled.removeValue(forKey: id) }
+    /// Waiting messages the agent no longer holds, e.g. because its process ended, go back to Jack's own queue.
+    private func reconcileWaiting(_ id: UUID) {
+        guard var messages = waiting[id], !messages.isEmpty else { return }
+        let driver = liveDrivers[id]
+        for index in messages.indices where messages[index].sent && driver?.isQueued(messages[index].id) != true { messages[index].sent = false }
+        waiting[id] = messages
+    }
+    /// Sends the messages Jack still holds as the next turn, once the agent is free and holds none itself.
+    private func deliverWaiting(_ id: UUID) {
+        guard !stopped, runs[id] == nil, !queue.contains(where: { $0.0 == id }) else { return }
+        reconcileWaiting(id)
+        guard let messages = waiting[id], !messages.isEmpty, !messages.contains(where: \.sent) else { return }
+        waiting[id] = nil
+        let text = messages.map(\.text).filter { !$0.isEmpty }.joined(separator: "\n\n")
+        var attachments: [String] = []
+        for path in messages.flatMap(\.attachments) where !attachments.contains(path) { attachments.append(path) }
+        send(text, attachments: attachments, to: id)
+    }
+    /// The agent read a waiting message: it joins the transcript where the agent read it.
+    private func receiveDelivered(_ messageID: String, text: String, at index: Int) {
+        let id = conversations[index].id
+        let message = waiting[id]?.first { $0.id == messageID }
+        waiting[id]?.removeAll { $0.id == messageID }
+        if waiting[id]?.isEmpty == true { waiting[id] = nil }
+        guard !conversations[index].messages.contains(where: { $0.id == messageID }) else { return }
+        let attachments = message?.attachments ?? []
+        conversations[index].messages.append(ChatMessage(id: messageID, role: "user", text: message?.text ?? text, attachments: attachments.isEmpty ? nil : attachments))
         save(id)
     }
     private func loadTranscript(_ id: UUID) {
@@ -275,6 +334,14 @@ import Foundation
             }
         }
         queue.removeAll { $0.0 == id }
+        // As Esc does in Claude Code, stopping returns the waiting messages to the composer.
+        if let messages = waiting.removeValue(forKey: id), !messages.isEmpty {
+            var attachments: [String] = []
+            for path in messages.flatMap(\.attachments) where !attachments.contains(path) { attachments.append(path) }
+            let previous = recalled[id].map { [$0.text] } ?? []
+            recalled[id] = ChatQueuedMessage(text: (previous + messages.map(\.text)).filter { !$0.isEmpty }.joined(separator: "\n\n"),
+                                             attachments: (recalled[id]?.attachments ?? []) + attachments)
+        }
         if let driver = drivers[id] {
             driver.stop()
             // A kept-alive agent ends its turn itself once interrupted.
@@ -317,6 +384,7 @@ import Foundation
         guard runs[id] == nil, !queue.contains(where: { $0.0 == id }) else { return }
         liveDrivers.removeValue(forKey: id)?.close()
         conversations.removeAll { $0.id == id }; loaded.remove(id); statuses.removeValue(forKey: id); approvals.removeValue(forKey: id)
+        waiting.removeValue(forKey: id); recalled.removeValue(forKey: id)
         archive.save(index: conversations, removedID: id)
         if selectedID == id { selectedID = nil; if let next = conversations.first { select(next.id) } }
     }
@@ -451,6 +519,7 @@ import Foundation
             self.finishTurn(id)
             self.drivers.removeValue(forKey: id); self.runs.removeValue(forKey: id)
             self.completeJackTurn(id, cancelled: Task.isCancelled)
+            self.deliverWaiting(id)
             self.save(id); self.evictInactiveTranscripts(); self.drainQueue()
         }
     }
@@ -594,6 +663,7 @@ import Foundation
         case .approvalResolved(let requestID): approvals[id]?.removeAll { $0.id == requestID }; statuses[id] = approvals[id]?.isEmpty == false ? .waiting : .running
         case .mode(let mode):
             if conversations[index].mode != mode { conversations[index].mode = mode; save(id) }
+        case let .delivered(messageID, text): receiveDelivered(messageID, text: text, at: index)
         case .failure(let message):
             if conversations[index].messages.last?.text != message { conversations[index].messages.append(ChatMessage(role: "error", text: message)) }
             statuses[id] = .failed
