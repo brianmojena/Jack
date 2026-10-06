@@ -131,8 +131,30 @@ func displayPath(_ path: String, project: String) -> String {
 
 // MARK: - Provider marks
 
+/// Official provider logos, stored as template vectors in the asset catalog.
+func providerLogo(_ provider: ChatProvider) -> String {
+    switch provider { case .codex: "ProviderCodex"; case .claude: "ProviderClaude"; case .opencode: "ProviderOpenCode" }
+}
+
+/// Fallback when the asset catalog is not bundled (e.g. `swift run`).
 func providerSymbol(_ provider: ChatProvider) -> String {
     switch provider { case .codex: "chevron.left.forwardslash.chevron.right"; case .claude: "asterisk"; case .opencode: "terminal" }
+}
+
+/// The provider's logo at `size` points, falling back to its SF Symbol.
+private struct ProviderLogo: View {
+    let provider: ChatProvider
+    let size: CGFloat
+    let symbolScale: CGFloat
+
+    var body: some View {
+        if NSImage(named: providerLogo(provider)) != nil {
+            Image(providerLogo(provider)).resizable().renderingMode(.template).scaledToFit()
+                .frame(width: size, height: size)
+        } else {
+            Image(systemName: providerSymbol(provider)).font(.system(size: size * symbolScale, weight: .bold))
+        }
+    }
 }
 
 func providerColor(_ provider: ChatProvider) -> Color {
@@ -149,8 +171,7 @@ struct ProviderMark: View {
     var size: CGFloat = 12
 
     var body: some View {
-        Image(systemName: providerSymbol(provider))
-            .font(.system(size: size * (provider == .claude ? 0.95 : 0.78), weight: .bold))
+        ProviderLogo(provider: provider, size: size, symbolScale: provider == .claude ? 0.95 : 0.78)
             .foregroundStyle(providerColor(provider))
             .frame(width: size, height: size)
             .accessibilityLabel(provider.title)
@@ -160,7 +181,7 @@ struct ProviderMark: View {
 func providerGlyph(_ provider: ChatProvider, size: CGFloat = 25) -> some View {
     ZStack {
         RoundedRectangle(cornerRadius: size * 0.28, style: .continuous).fill(providerColor(provider).opacity(0.14)).frame(width: size, height: size)
-        Image(systemName: providerSymbol(provider)).font(.system(size: size * 0.45, weight: .bold)).foregroundStyle(providerColor(provider))
+        ProviderLogo(provider: provider, size: size * 0.6, symbolScale: 0.75).foregroundStyle(providerColor(provider))
     }.accessibilityHidden(true)
 }
 
