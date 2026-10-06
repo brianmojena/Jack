@@ -22,6 +22,8 @@
 		34BC32CE33FE4D40341CCE4D /* AgentFoldersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67147764C7E299C6400683A6 /* AgentFoldersView.swift */; };
 		399CD8D588217F962CE06C5D /* AgentTabs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3621003C5F85DF2D65EFC584 /* AgentTabs.swift */; };
 		4D90663164D5102D213F6D5F /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 1385178F099D3E470B6B3D6E /* SwiftTerm */; };
+		53306EA90065579DD4362D48 /* ApprovalViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E0312F9EF3FDF19D86B6340 /* ApprovalViews.swift */; };
+		56C38ADB49FAC17203F73ED4 /* ClaudeSessions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA9AEFCAF5C3EB12827473A9 /* ClaudeSessions.swift */; };
 		5C70B0D201725071F109AE1C /* ProjectIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8ED82B9B70891B0200DA37ED /* ProjectIndex.swift */; };
 		6A89D2DA42A687D07F5F2C3F /* SimulatorPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A3D7246F7BBDA7A8018807 /* SimulatorPanel.swift */; };
 		6EB861C0B842D3CECBD7F800 /* ExecutableResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A45A93DAF44DBBC83A60C50 /* ExecutableResolver.swift */; };
@@ -30,6 +32,7 @@
 		7E295FDBE4DB448AD14EB38C /* BrowserAddress.swift in Sources */ = {isa = PBXBuildFile; fileRef = D270EF82D7E479169076203B /* BrowserAddress.swift */; };
 		827E3C32A16440805AD8B9D8 /* JackSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A513FA72943E495D585C29AB /* JackSidebar.swift */; };
 		88169CA35E507941B634D8BC /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CC159ECABCA798A6D404BD8 /* Models.swift */; };
+		8CFA9AFD04527815E8EC6FC0 /* ClaudeSessionPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3789D85F443A38492640A492 /* ClaudeSessionPicker.swift */; };
 		8D901B967A33198662F4A94B /* ChatMessageRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504E39FB7DA22A1B9933C4A5 /* ChatMessageRow.swift */; };
 		945101B1264E34154DC79876 /* WorkspacePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6164E34644769C64B3E867B1 /* WorkspacePanel.swift */; };
 		96AB78C25512D6E21C9AA45B /* ChatStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55789284D46B10B50C316C86 /* ChatStore.swift */; };
@@ -85,10 +88,12 @@
 		0AD6A284F00CF9276696D1F8 /* ContextPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextPanelView.swift; sourceTree = "<group>"; };
 		0D0A660EF197200211C217B4 /* ChatUsage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatUsage.swift; sourceTree = "<group>"; };
 		0D507CBFB46C0D8CC4191A10 /* Simulators.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Simulators.swift; sourceTree = "<group>"; };
+		0E0312F9EF3FDF19D86B6340 /* ApprovalViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalViews.swift; sourceTree = "<group>"; };
 		112E9D6E62140F40A3F29A21 /* AgentBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentBridge.swift; sourceTree = "<group>"; };
 		12A56C2DEDA3D8023FD61366 /* JackDesign.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JackDesign.swift; sourceTree = "<group>"; };
 		138D59F70F9CA07105FD1933 /* FileExplorer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileExplorer.swift; sourceTree = "<group>"; };
 		3621003C5F85DF2D65EFC584 /* AgentTabs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTabs.swift; sourceTree = "<group>"; };
+		3789D85F443A38492640A492 /* ClaudeSessionPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeSessionPicker.swift; sourceTree = "<group>"; };
 		48DDA04AE7E47B63803F18BB /* SessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStore.swift; sourceTree = "<group>"; };
 		49EB006FB5D21FFC9B93D8CF /* WindowChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowChrome.swift; sourceTree = "<group>"; };
 		504E39FB7DA22A1B9933C4A5 /* ChatMessageRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessageRow.swift; sourceTree = "<group>"; };
@@ -116,6 +121,7 @@
 		BECA119E22381166808B5690 /* PaneSplit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaneSplit.swift; sourceTree = "<group>"; };
 		C3D8A6CBC10C08DC5BE8F996 /* ChatModelPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModelPicker.swift; sourceTree = "<group>"; };
 		C4E64BB6ED15B3A579DB97CE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		CA9AEFCAF5C3EB12827473A9 /* ClaudeSessions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeSessions.swift; sourceTree = "<group>"; };
 		CC084525C4D6CE0EBEF1CF88 /* JackApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JackApp.swift; sourceTree = "<group>"; };
 		D270EF82D7E479169076203B /* BrowserAddress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserAddress.swift; sourceTree = "<group>"; };
 		D8E5B74C47ED76F7F4E3175D /* ChatModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModels.swift; sourceTree = "<group>"; };
@@ -162,6 +168,7 @@
 				E229CF3EA3E5C8331E30BF2D /* ChatProcess.swift */,
 				55789284D46B10B50C316C86 /* ChatStore.swift */,
 				0D0A660EF197200211C217B4 /* ChatUsage.swift */,
+				CA9AEFCAF5C3EB12827473A9 /* ClaudeSessions.swift */,
 				8A45A93DAF44DBBC83A60C50 /* ExecutableResolver.swift */,
 				9CC159ECABCA798A6D404BD8 /* Models.swift */,
 				83D024EB758956F78F8FDB4B /* ProjectFinder.swift */,
@@ -204,10 +211,12 @@
 				EC1BBE9D45CBEC403EA22C82 /* AgentActivityView.swift */,
 				67147764C7E299C6400683A6 /* AgentFoldersView.swift */,
 				3621003C5F85DF2D65EFC584 /* AgentTabs.swift */,
+				0E0312F9EF3FDF19D86B6340 /* ApprovalViews.swift */,
 				A8AC5CBAB71E44192E8AF824 /* AttachmentViews.swift */,
 				E1DA779938E07CE10645928A /* ChatCommandViews.swift */,
 				504E39FB7DA22A1B9933C4A5 /* ChatMessageRow.swift */,
 				C3D8A6CBC10C08DC5BE8F996 /* ChatModelPicker.swift */,
+				3789D85F443A38492640A492 /* ClaudeSessionPicker.swift */,
 				0AD6A284F00CF9276696D1F8 /* ContextPanelView.swift */,
 				138D59F70F9CA07105FD1933 /* FileExplorer.swift */,
 				CC084525C4D6CE0EBEF1CF88 /* JackApp.swift */,
@@ -332,10 +341,12 @@
 				B9766774E9F9FDA9D637016F /* AgentActivityView.swift in Sources */,
 				34BC32CE33FE4D40341CCE4D /* AgentFoldersView.swift in Sources */,
 				399CD8D588217F962CE06C5D /* AgentTabs.swift in Sources */,
+				53306EA90065579DD4362D48 /* ApprovalViews.swift in Sources */,
 				28AC8F651C192396167D8317 /* AttachmentViews.swift in Sources */,
 				D9BC01980D4186E943774370 /* ChatCommandViews.swift in Sources */,
 				8D901B967A33198662F4A94B /* ChatMessageRow.swift in Sources */,
 				BF38477F58288B2D1279DF30 /* ChatModelPicker.swift in Sources */,
+				8CFA9AFD04527815E8EC6FC0 /* ClaudeSessionPicker.swift in Sources */,
 				F4C4F1A3CBF9BF0DD8CEB3FB /* ContextPanelView.swift in Sources */,
 				051E30A12B62E96A652522D3 /* FileExplorer.swift in Sources */,
 				A98FB0615710A756161AC7F6 /* JackApp.swift in Sources */,
@@ -372,6 +383,7 @@
 				A7D328F4FA370B7E3C7FFB6F /* ChatProcess.swift in Sources */,
 				96AB78C25512D6E21C9AA45B /* ChatStore.swift in Sources */,
 				1E4B9916484367A33AC3D959 /* ChatUsage.swift in Sources */,
+				56C38ADB49FAC17203F73ED4 /* ClaudeSessions.swift in Sources */,
 				6EB861C0B842D3CECBD7F800 /* ExecutableResolver.swift in Sources */,
 				88169CA35E507941B634D8BC /* Models.swift in Sources */,
 				D0940594786ADCB9DF4AD81B /* ProjectFinder.swift in Sources */,

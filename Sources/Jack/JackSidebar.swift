@@ -71,6 +71,9 @@ struct JackSidebar: View {
     let onRename: (UUID) -> Void
     let onDelete: (UUID) -> Void
     let onSetUnread: (UUID, Bool) -> Void
+    /// Claude Code conversations: continue the session in a terminal, or reread it after using one.
+    let onContinueInTerminal: (UUID) -> Void
+    let onReloadFromClaude: (UUID) -> Void
     let onHide: () -> Void
     /// Bumped by ⌘F to focus the search field.
     let searchRequest: Int
@@ -229,6 +232,13 @@ struct JackSidebar: View {
                 Button("Mostrar space en Finder", systemImage: "folder") {
                     NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
                 }
+            }
+            if row.provider == .claude {
+                Divider()
+                Button("Continuar en la terminal", systemImage: "apple.terminal") { onContinueInTerminal(row.id) }
+                    .disabled(!row.canEdit)
+                Button("Actualizar desde Claude Code", systemImage: "arrow.clockwise") { onReloadFromClaude(row.id) }
+                    .disabled(!row.canEdit)
             }
             Divider()
             Button("Renombrar…", systemImage: "pencil") { onRename(row.id) }

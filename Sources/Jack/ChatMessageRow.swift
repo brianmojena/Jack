@@ -23,6 +23,12 @@ struct ChatMessageRow: View, Equatable {
     @ViewBuilder private var content: some View {
         switch message.role {
         case "tool": ToolActivityRow(message: message, projectPath: projectPath, design: design).padding(.leading, chatActivityInset - 6)
+        case "jack":
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Jack").font(.system(size: 11, weight: .semibold)).foregroundStyle(JackPalette.accent)
+                Text(message.text).font(.system(size: 12)).textSelection(.enabled)
+                ForEach(message.attachments ?? [], id: \.self) { AttachmentChip(path: $0) }
+            }.padding(10).frame(maxWidth: .infinity, alignment: .leading).background(JackPalette.panel, in: RoundedRectangle(cornerRadius: 6))
         case "error": errorMessage
         case "user": userMessage
         case "reasoning":
@@ -141,7 +147,7 @@ private struct ReasoningRow: View {
 // MARK: - Tools
 
 struct ToolPresentation {
-    enum Kind { case command, read, edit, search, web, agent, delegate, todo, mcp, other }
+    enum Kind { case command, read, edit, search, web, agent, delegate, todo, question, plan, mcp, other }
 
     let kind: Kind
     let title: String
@@ -160,6 +166,8 @@ struct ToolPresentation {
         case .agent: "person.2"
         case .delegate: "arrow.triangle.branch"
         case .todo: "checklist"
+        case .question: "questionmark.bubble"
+        case .plan: "list.bullet.clipboard"
         case .mcp: "puzzlepiece.extension"
         case .other: "wrench.and.screwdriver"
         }
@@ -182,7 +190,22 @@ struct ToolPresentation {
             case "stop_agent": running ? "Deteniendo" : "Detuvo"
             default: running ? "Revisando" : "Revisó"
             }
-        case .todo: "Tareas"
+        case .todo:
+            switch title.lowercased() {
+            case "taskcreate": running ? "Creando tarea" : "Nueva tarea"
+            case "taskupdate":
+                switch input["status"] as? String {
+                case "completed": "Completó"
+                case "in_progress": "Empezó"
+                case "deleted": "Descartó"
+                default: running ? "Actualizando" : "Actualizó"
+                }
+            case "tasklist": running ? "Revisando tareas" : "Revisó las tareas"
+            case "taskget": running ? "Leyendo tarea" : "Leyó la tarea"
+            default: "Tareas"
+            }
+        case .question: running ? "Preguntando" : "Preguntó"
+        case .plan: title.lowercased() == "enterplanmode" ? "Pasó a modo plan" : running ? "Presentando el plan" : "Presentó el plan"
         case .mcp, .other: title
         }
     }
@@ -208,6 +231,12 @@ struct ToolPresentation {
             kind = .delegate
         } else if lower.hasPrefix("mcp") {
             kind = .mcp
+        } else if ["taskcreate", "taskupdate", "tasklist", "taskget", "todowrite"].contains(lower) {
+            kind = .todo
+        } else if lower == "askuserquestion" {
+            kind = .question
+        } else if lower == "exitplanmode" || lower == "enterplanmode" {
+            kind = .plan
         } else if lower == "ejecutar comando" || ["bash", "shell", "exec", "exec_command", "local_shell"].contains(lower) || input["command"] is String {
             kind = .command
         } else if lower == "editar archivos" || ["edit", "multiedit", "write", "patch", "apply_patch", "notebookedit"].contains(lower) || (path != nil && hasEdit) {
@@ -260,7 +289,14 @@ struct ToolPresentation {
         case .agent:
             subject = string("description", "prompt") ?? ""
         case .todo:
-            subject = ""
+            if let task = string("subject") { subject = task }
+            else if let id = (input["taskId"] as? String) ?? (input["taskId"] as? Int).map(String.init) { subject = "#\(id)" }
+            else if let todos = input["todos"] as? [Any] { subject = todos.count == 1 ? "1 tarea" : "\(todos.count) tareas" }
+        case .question:
+            subject = ((input["questions"] as? [[String: Any]])?.first?["question"] as? String) ?? ""
+        case .plan:
+            let firstLine = (input["plan"] as? String ?? "").components(separatedBy: "\n").first { !$0.trimmingCharacters(in: .whitespaces).isEmpty } ?? ""
+            subject = firstLine.trimmingCharacters(in: CharacterSet(charactersIn: "# ")).replacingOccurrences(of: "Plan: ", with: "")
         case .delegate:
             switch delegateAction ?? "" {
             case "create_agent":
@@ -284,6 +320,17 @@ struct ToolPresentation {
         self.input = input
         self.output = output.trimmingCharacters(in: .newlines)
         self.exitCode = exitCode
+    }
+
+    /// The answers Claude Code reports after AskUserQuestion: `"question"="answer"` pairs.
+    static func answers(in output: String) -> [(question: String, answer: String)]? {
+        guard output.hasPrefix("Your questions have been answered") || output.hasPrefix("User has answered") else { return nil }
+        let pattern = try? NSRegularExpression(pattern: #""((?:[^"\\]|\\.)*)"="((?:[^"\\]|\\.)*)""#)
+        let range = NSRange(output.startIndex..., in: output)
+        return pattern?.matches(in: output, range: range).compactMap { match in
+            guard let question = Range(match.range(at: 1), in: output), let answer = Range(match.range(at: 2), in: output) else { return nil }
+            return (String(output[question]), String(output[answer]))
+        }
     }
 
     /// Jack's own delegation tools, as Claude/Codex (`mcp__jack__x`) and OpenCode (`jack_x`) name them.
@@ -341,7 +388,7 @@ struct ToolActivityRow: View {
         self.diffLines = Self.diffLines(for: presentation)
     }
 
-    private var running: Bool { ["running", "inProgress", "pending"].contains(message.status) }
+    private var running: Bool { ["running", "inProgress", "pending", "background"].contains(message.status) }
     private var failed: Bool { message.status == "failed" || (presentation.exitCode.map { $0 != 0 } ?? false) }
     private var defaultExpanded: Bool { failed || (presentation.kind == .edit && !diffLines.isEmpty) }
     private var isExpanded: Bool { expanded ?? defaultExpanded }
@@ -390,7 +437,13 @@ struct ToolActivityRow: View {
     }
 
     @ViewBuilder private var statusView: some View {
-        if running {
+        if message.status == "background" {
+            HStack(spacing: 5) {
+                ProgressView().controlSize(.mini)
+                Text("En segundo plano").font(.system(size: 11)).foregroundStyle(JackPalette.muted)
+            }
+            .help("Sigue trabajando aunque el agente ya respondió; avisará al terminar")
+        } else if running {
             ProgressView().controlSize(.mini)
         } else if failed {
             Label(presentation.exitCode.map { "Código \($0)" } ?? statusTitle, systemImage: "xmark.circle.fill")
@@ -408,6 +461,7 @@ struct ToolActivityRow: View {
     private var statusTitle: String {
         switch message.status {
         case "running", "inProgress", "pending": "En curso"
+        case "background": "En segundo plano"
         case "completed": "Completado"
         case "failed": "Error"
         case "declined": "Rechazado"
@@ -418,7 +472,7 @@ struct ToolActivityRow: View {
 
     // MARK: Expanded content
 
-    private static func diffLines(for tool: ToolPresentation) -> [DiffLine] {
+    static func diffLines(for tool: ToolPresentation) -> [DiffLine] {
         let input = tool.input
         if let old = (input["old_string"] ?? input["oldString"]) as? String, let new = (input["new_string"] ?? input["newString"]) as? String {
             return old.components(separatedBy: "\n").map { DiffLine(kind: .removed, text: $0) } + new.components(separatedBy: "\n").map { DiffLine(kind: .added, text: $0) }
@@ -451,7 +505,16 @@ struct ToolActivityRow: View {
             if !diff.isEmpty {
                 DiffView(lines: diff)
             }
-            if tool.kind == .command {
+            if tool.kind == .plan, let plan = tool.input["plan"] as? String, !plan.isEmpty {
+                PlanBox(text: plan)
+            } else if tool.kind == .question, let answers = ToolPresentation.answers(in: tool.output), !answers.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(answers, id: \.question) { answer in
+                        (Text(answer.question + "  ").foregroundStyle(JackPalette.muted) + Text(answer.answer).fontWeight(.medium))
+                            .font(.system(size: 12)).textSelection(.enabled)
+                    }
+                }
+            } else if tool.kind == .command {
                 OutputBox(text: (tool.subject.isEmpty ? "" : "$ \(fullCommand(tool))\n") + tool.output)
             } else if diff.isEmpty || (tool.kind != .edit && !tool.output.isEmpty) {
                 let text = tool.output.isEmpty ? prettyInput(tool.input) : tool.output
@@ -477,12 +540,26 @@ struct DiffLine {
     let text: String
 }
 
+/// A plan as Markdown, in the same frame as tool output.
+struct PlanBox: View {
+    let text: String
+
+    var body: some View {
+        MarkdownText(text: text, fontSize: 12.5)
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(JackPalette.codeBackground, in: RoundedRectangle(cornerRadius: 7))
+            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(JackPalette.hairline, lineWidth: 0.5))
+    }
+}
+
 /// Number of lines shown before a block collapses behind "Mostrar más"; short overflows are shown whole.
 private let collapsedLineLimit = 14
 private func collapses(_ count: Int) -> Bool { count > collapsedLineLimit + 4 }
 
 /// Diff without an inner scroll view: wheel events always reach the chat.
-private struct DiffView: View {
+struct DiffView: View {
     let lines: [DiffLine]
     @State private var showAll = false
 
@@ -531,7 +608,7 @@ private struct DiffView: View {
 }
 
 /// Tool output as a single selectable text, truncated instead of scrolled.
-private struct OutputBox: View {
+struct OutputBox: View {
     let text: String
     @State private var showAll = false
 

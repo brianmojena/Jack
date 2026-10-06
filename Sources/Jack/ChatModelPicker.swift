@@ -30,6 +30,24 @@ struct ChatModelPicker: View {
         modes.first { $0.id == conversation.mode }?.title ?? (conversation.mode ?? (conversation.provider == .opencode ? "Predeterminado" : conversation.provider == .claude ? "Manual" : "Normal"))
     }
 
+    /// Claude Code's colors for the modes that change what it may do without asking.
+    private var modeColor: Color {
+        guard conversation.provider == .claude else { return JackPalette.muted }
+        switch conversation.mode {
+        case "plan": return JackPalette.blue
+        case "acceptEdits": return JackPalette.purple
+        case "auto", "dontAsk": return JackPalette.amber
+        default: return JackPalette.muted
+        }
+    }
+    private var modeHelp: String {
+        switch conversation.provider {
+        case .claude: return "Modo de permisos · ⇧⇥ para cambiar, también mientras trabaja"
+        case .codex where conversation.mode == "auto": return "Auto ejecuta dentro del proyecto; las acciones que requieren permiso se deniegan"
+        default: return "Modo de trabajo para el próximo mensaje"
+        }
+    }
+
     var body: some View {
         HStack(spacing: 8) {
             Menu {
@@ -60,6 +78,7 @@ struct ChatModelPicker: View {
             .menuStyle(.borderlessButton)
             .fixedSize()
             .help(busy ? "Detén el agente para cambiar de modelo" : "Cambiar modelo para el próximo mensaje")
+            .disabled(busy)
             .popover(isPresented: $custom) {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Otro modelo · \(conversation.provider.title)").font(.headline)
@@ -103,7 +122,8 @@ struct ChatModelPicker: View {
                     Text(conversation.provider == .opencode ? (conversation.variant ?? "Automático") : ChatModelChoice.effortTitle(conversation.effort)).foregroundStyle(JackPalette.muted)
                 }
                 .menuStyle(.borderlessButton).fixedSize()
-                .help("Esfuerzo de razonamiento") }
+                .help("Esfuerzo de razonamiento")
+                .disabled(busy) }
             Menu {
                 if conversation.provider == .opencode {
                     Button("Predeterminado") { store.updateMode(id: conversation.id, mode: nil, supported: modes) }
@@ -119,12 +139,12 @@ struct ChatModelPicker: View {
                 if conversation.provider == .opencode && modes.isEmpty {
                     Text(loadingModels ? "Cargando modos…" : "Actualiza el catálogo para cargar los modos")
                 }
-            } label: { Text(modeTitle).foregroundStyle(JackPalette.muted) }
+            } label: { Text(modeTitle).foregroundStyle(modeColor) }
             .menuStyle(.borderlessButton).fixedSize()
-            .help(conversation.provider == .codex && conversation.mode == "auto" ? "Auto ejecuta dentro del proyecto; las acciones que requieren permiso se deniegan" : "Modo de trabajo para el próximo mensaje")
+            .help(modeHelp)
+            .disabled(busy && !store.changesModeLive(conversation.id))
         }
         .foregroundStyle(JackPalette.accent)
-        .disabled(busy)
         .onChange(of: conversation.id) { _, _ in custom = false }
         .task(id: conversation.id) {
             providers = []; openCodeModes = []; modelsError = nil

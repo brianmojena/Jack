@@ -22,7 +22,18 @@ public struct ChatApproval: Identifiable, Equatable {
     public var title: String
     public var detail: String
     public var questions: [ChatInputQuestion] = []
+    /// The tool asking, when `detail` is its input as JSON, so the request can be previewed like the transcript shows it.
+    public var tool: String? = nil
+    /// Ways to answer besides allowing once and rejecting, such as "always allow".
+    public var choices: [ChatApprovalChoice] = []
+    /// A plan to review: `detail` is Markdown and `choices` replace allowing and rejecting.
+    public var isPlan = false
     public init(id: String, title: String, detail: String) { self.id = id; self.title = title; self.detail = detail }
+}
+public struct ChatApprovalChoice: Identifiable, Equatable {
+    public var id: String
+    public var title: String
+    public init(id: String, title: String) { self.id = id; self.title = title }
 }
 public struct ChatInputQuestion: Identifiable, Decodable, Equatable {
     public var id: String
@@ -30,10 +41,16 @@ public struct ChatInputQuestion: Identifiable, Decodable, Equatable {
     public var question: String
     public var options: [ChatInputOption]?
     public var isSecret: Bool?
+    /// Several options may be chosen; the answer joins them with ", ".
+    public var multiSelect: Bool?
+    public init(id: String, header: String, question: String, options: [ChatInputOption]? = nil, isSecret: Bool? = nil, multiSelect: Bool? = nil) {
+        self.id = id; self.header = header; self.question = question; self.options = options; self.isSecret = isSecret; self.multiSelect = multiSelect
+    }
 }
 public struct ChatInputOption: Decodable, Equatable {
     public var label: String
     public var description: String
+    public init(label: String, description: String) { self.label = label; self.description = description }
 }
 public struct ChatConversation: Identifiable, Codable, Equatable {
     public var id: UUID
@@ -44,6 +61,7 @@ public struct ChatConversation: Identifiable, Codable, Equatable {
     public var effort: String
     public var variant: String? = nil
     public var mode: String? = nil
+    public var jackContext: JackContextSettings? = nil
     public var sessionID: String?
     public var messages: [ChatMessage]
     public var updatedAt: Date
@@ -94,6 +112,8 @@ public enum ChatEvent {
     case commands([ChatCommand])
     case approval(ChatApproval)
     case approvalResolved(String)
+    /// The agent switched its permission mode itself, e.g. after the user approved a plan.
+    case mode(String)
     case completed
     case failure(String)
 }
@@ -155,14 +175,86 @@ public struct ChatCommand: Identifiable, Codable, Equatable {
     /// Runs a turn with Jack's delegation tools attached, for providers that support them.
     func run(conversation: ChatConversation, prompt: String, delegation: ChatDelegation?, onEvent: @escaping @MainActor (ChatEvent) -> Void) async throws
     func respond(approvalID: String, allow: Bool) async throws
+    /// Answers with one of the approval's `choices`, "allow" or "deny"; `message` tells the agent why it was rejected.
+    func respond(approvalID: String, choice: String, message: String?) async throws
     func answer(approvalID: String, answers: [String: String]) async throws
+    /// Ends the current turn; drivers that keep their agent alive interrupt it instead of ending the process.
     func stop()
+
+    /// The agent's process outlives each turn: the driver is reused, and the agent may start turns on its own,
+    /// for example when a background task it launched finishes.
+    var keepsAlive: Bool { get }
+    /// `idle` receives events between turns; `unprompted` is called when the agent starts a turn by itself,
+    /// which the caller consumes with `follow`.
+    func observe(idle: @escaping @MainActor (ChatEvent) -> Void, unprompted: @escaping @MainActor () -> Void)
+    func follow(onEvent: @escaping @MainActor (ChatEvent) -> Void) async throws
+    /// Adds a user message to the turn in progress. Returns false when the driver cannot.
+    func inject(conversation: ChatConversation, prompt: String) -> Bool
+    /// Changes the permission mode, even in the middle of a turn. Returns false when the driver cannot.
+    func setMode(_ mode: String) -> Bool
+    /// Ends the agent's process.
+    func close()
 }
 public extension ChatDriver {
     func run(conversation: ChatConversation, prompt: String, delegation: ChatDelegation?, onEvent: @escaping @MainActor (ChatEvent) -> Void) async throws {
         try await run(conversation: conversation, prompt: prompt, onEvent: onEvent)
     }
+    func respond(approvalID: String, choice: String, message: String?) async throws {
+        try await respond(approvalID: approvalID, allow: choice != "deny")
+    }
     func answer(approvalID: String, answers: [String: String]) async throws {
         throw NSError(domain: "Jack", code: 1, userInfo: [NSLocalizedDescriptionKey: "Este proveedor no admite preguntas interactivas."])
     }
+    var keepsAlive: Bool { false }
+    func observe(idle: @escaping @MainActor (ChatEvent) -> Void, unprompted: @escaping @MainActor () -> Void) {}
+    func follow(onEvent: @escaping @MainActor (ChatEvent) -> Void) async throws {}
+    func inject(conversation: ChatConversation, prompt: String) -> Bool { false }
+    func setMode(_ mode: String) -> Bool { false }
+    func close() { stop() }
+}
+
+/// Jack commands are local to the app; provider slash commands retain their own routing.
+public struct JackContextSettings: Codable, Equatable {
+    public var seed: String? = nil
+    public var seedDelivered: Bool? = nil
+    public var pinned: [String] = []
+    public var autoThreshold: Int? = nil
+    public var autoTarget: Int? = nil
+    public var budget: Int? = nil
+    public var spent: Int = 0
+    public var budgetWarned = false
+    public init() {}
+}
+public struct JackCommandTemplate: Codable, Equatable {
+    public var name: String
+    public var prompt: String
+    public init(name: String, prompt: String) { self.name = name; self.prompt = prompt }
+}
+public enum JackCommandCatalog {
+    public static let builtins: [ChatCommand] = [
+        .init(name: "compact", description: "Reduce el contexto mediante un resumen; conserva el historial", argumentHint: "8000"),
+        .init(name: "autocompact", description: "Compacta antes del siguiente mensaje al superar el umbral", argumentHint: "30000 8000 | off"),
+        .init(name: "contexto", description: "Muestra contexto y presupuesto"),
+        .init(name: "fijar", description: "Conserva instrucciones en futuras sesiones", argumentHint: "texto | listar | quitar número"),
+        .init(name: "resumen", description: "Resume decisiones, avances y pendientes"),
+        .init(name: "checkpoint", description: "Guarda una copia o restaura en otra conversación", argumentHint: "nombre | restaurar nombre"),
+        .init(name: "rama", description: "Crea una conversación independiente con el contexto actual", argumentHint: "nombre"),
+        .init(name: "traspasar", description: "Prepara un resumen para otro modelo o proveedor", argumentHint: "codex | claude | opencode (opcional)"),
+        .init(name: "plan", description: "Activa Plan y prepara la tarea", argumentHint: "tarea"),
+        .init(name: "revisar", description: "Revisa los cambios del proyecto", argumentHint: "instrucciones opcionales"),
+        .init(name: "presupuesto", description: "Avisa al acercarse al presupuesto de tokens", argumentHint: "20000 | off"),
+        .init(name: "comandos", description: "Lista, crea o elimina plantillas personales", argumentHint: "crear nombre texto | eliminar nombre")
+    ]
+    public static let defaults: [JackCommandTemplate] = [
+        .init(name: "revisar-pr", prompt: "Revisa los cambios actuales como una pull request: errores, regresiones y pruebas que faltan. No modifiques archivos. {{args}}"),
+        .init(name: "documentar", prompt: "Documenta los cambios actuales siguiendo el estilo del proyecto. {{args}}"),
+        .init(name: "preparar-release", prompt: "Prepara una propuesta de notas de versión y una lista de pasos para publicar; no publiques ni despliegues. {{args}}")
+    ]
+    public static func parse(_ text: String) -> (name: String, arguments: String)? {
+        guard text.hasPrefix("!"), !text.hasPrefix("!!") else { return nil }
+        let body = text.dropFirst()
+        let name = body.prefix { !$0.isWhitespace }
+        return (String(name).lowercased(), body.dropFirst(name.count).trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+    public static func estimatedTokens(_ text: String) -> Int { max(1, (text.utf8.count + 3) / 4) }
 }

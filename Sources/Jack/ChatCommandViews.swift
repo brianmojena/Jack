@@ -51,6 +51,7 @@ struct ContextGauge: View {
 /// Matching slash commands while the user types `/name`.
 struct CommandSuggestions: View {
     let commands: [ChatCommand]
+    var prefix: String = "/"
     let loading: Bool
     let selection: Int
     let onPick: (ChatCommand) -> Void
@@ -65,7 +66,7 @@ struct CommandSuggestions: View {
             ForEach(Array(commands.enumerated()), id: \.element.id) { index, command in
                 Button { onPick(command) } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text("/" + command.name)
+                        Text(prefix + command.name)
                             .font(.system(size: 12, weight: .semibold, design: .monospaced))
                             .foregroundStyle(index == selection ? Color.white : Color.primary)
                         if !command.argumentHint.isEmpty {

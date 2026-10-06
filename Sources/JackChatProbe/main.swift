@@ -10,6 +10,19 @@ import JackCore
             let model = args.count > 3 ? args[3] : (orchestrator == .claude ? "haiku" : orchestrator.defaultModel)
             await delegate(orchestrator: orchestrator, model: model, project: FileManager.default.currentDirectoryPath); return
         }
+        if args.count >= 2, args[1] == "sessions" {
+            // Lists Claude Code's saved sessions and reads the newest, as "Retomar sesión" does.
+            let sessions = ClaudeSessions.list(projectPath: args.count > 2 ? args[2] : nil, limit: 5)
+            for session in sessions { print("\(session.updatedAt.formatted()) · \(session.id) · \(session.title) · \(session.projectPath)") }
+            if let first = sessions.first {
+                let loaded = ClaudeSessions.load(first)
+                print("LOADED \(loaded.messages.count) messages, model \(loaded.model ?? "-"): " + loaded.messages.prefix(6).map { "[\($0.role)] \($0.text.prefix(40))" }.joined(separator: " | "))
+            }
+            return
+        }
+        if args.count >= 2, args[1] == "live" {
+            await live(project: FileManager.default.currentDirectoryPath); return
+        }
         if args.count >= 3, args[1] == "usage", let provider = ChatProvider(rawValue: args[2]) {
             // Reads the provider's quota the same way the usage panel does.
             let usage = await ChatUsageService.read(provider)
@@ -69,7 +82,7 @@ import JackCore
             guard !Task.isCancelled else { return }
             print("TIMEOUT"); driver.stop()
         }
-        defer { timeout.cancel(); driver.stop() }
+        defer { timeout.cancel(); driver.close() }
         for prompt in ["No tools. Reply exactly JACK_CHAT_OK_731.", "No tools. What exact token did I ask you to reply in the previous message? Reply only that token."] {
             output = ""; sawCompletion = false
             do {
@@ -83,7 +96,7 @@ import JackCore
                         print("APPROVAL received; rejecting smoke-test tools")
                         Task { try? await driver.respond(approvalID: approval.id, allow: false) }
                     case .tool: print("TOOL event")
-                    case .approvalResolved, .reasoning, .toolOutput, .usage, .tokens, .context, .commands: break
+                    case .approvalResolved, .reasoning, .toolOutput, .usage, .tokens, .context, .commands, .mode: break
                     }
                 }
                 print("REPLY: \(String(output.prefix(300)))")
@@ -92,6 +105,97 @@ import JackCore
         }
         print(failure ? "FAIL" : "PASS: structured chat and native session resume")
         if failure { exit(1) }
+    }
+
+    /// End-to-end check of a kept-alive Claude Code session through the store: questions, permissions,
+    /// a background subagent that reports back in a turn of its own, a message sent mid-turn and an interrupt.
+    @MainActor static func live(project: String) async {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("jack-live-probe-" + UUID().uuidString)
+        let store = ChatStore(archive: ChatArchive(directory: folder), preferences: nil)
+        guard let id = store.create(projectPath: project, provider: .claude, model: "haiku", effort: "low") else { print("FAIL: create"); exit(1) }
+        var answered = Set<String>()
+        func status() -> ChatStatus { store.statuses[id] ?? .idle }
+        func pump() {
+            for approval in store.approvals[id] ?? [] where answered.insert(approval.id).inserted {
+                if !approval.questions.isEmpty {
+                    print("QUESTION \(approval.questions.map(\.question)) multi=\(approval.questions.map { $0.multiSelect ?? false })")
+                    store.answer(conversationID: id, approvalID: approval.id, answers: Dictionary(uniqueKeysWithValues: approval.questions.map { ($0.id, $0.options?.first?.label ?? "sí") }))
+                } else {
+                    print("PERMISSION \(approval.title) tool=\(approval.tool ?? "-") choices=\(approval.choices.map(\.title)) plan=\(approval.isPlan)")
+                    store.respond(conversationID: id, approvalID: approval.id, choice: approval.isPlan ? "plan.acceptEdits" : "allow")
+                }
+            }
+        }
+        func wait(until done: () -> Bool, seconds: Double) async -> Bool {
+            let deadline = Date().addingTimeInterval(seconds)
+            while Date() < deadline {
+                pump()
+                if done() { return true }
+                try? await Task.sleep(for: .milliseconds(200))
+            }
+            return false
+        }
+        func transcript(_ label: String) {
+            let messages = store.conversations.first { $0.id == id }?.messages ?? []
+            print("--- \(label): \(messages.count) mensajes")
+            for message in messages.suffix(12) {
+                print("  [\(message.role)] \(message.text.prefix(80).replacingOccurrences(of: "\n", with: " ")) \(message.status) \(message.detail.suffix(140).replacingOccurrences(of: "\n", with: " ⏎ "))")
+            }
+        }
+        var failures: [String] = []
+
+        store.send("Haz esto en orden: 1) usa AskUserQuestion para preguntarme si prefiero rojo o azul. 2) Lanza con la herramienta Agent (subagent_type general-purpose, run_in_background true) un subagente que ejecute con Bash `sleep 6; echo listo-subagente` y devuelva la salida. 3) Sin esperar al subagente, responde solo 'lanzado'.", to: id)
+        if !(await wait(until: { status() == .running || status() == .waiting }, seconds: 10)) { failures.append("turn 1 did not start") }
+        if !(await wait(until: { status() == .idle || status() == .failed }, seconds: 180)) { failures.append("turn 1 did not end") }
+        transcript("turno 1")
+        print("MODE \(store.conversations.first { $0.id == id }?.mode ?? "nil")")
+        // The subagent finishes after the reply; Claude Code then starts a turn of its own to report it.
+        let reported = await wait(until: { status() == .running }, seconds: 90)
+        if !reported { failures.append("no unprompted turn after the background subagent") }
+        if reported, !(await wait(until: { status() == .idle }, seconds: 120)) { failures.append("unprompted turn did not end") }
+        transcript("tras el subagente")
+
+        store.send("Ejecuta con Bash `sleep 4; echo paso-uno` y después dime qué salió.", to: id)
+        _ = await wait(until: { status() == .running }, seconds: 10)
+        try? await Task.sleep(for: .seconds(2))
+        print("CAN SEND WHILE RUNNING \(store.canSend(to: id))")
+        store.send("Además, al final añade la palabra PLATANO.", to: id)
+        if !(await wait(until: { status() == .idle }, seconds: 120)) { failures.append("steered turn did not end") }
+        _ = await wait(until: { status() == .idle }, seconds: 30)
+        transcript("con mensaje a mitad de turno")
+        let steered = store.conversations.first { $0.id == id }?.messages.contains { $0.role == "assistant" && $0.text.contains("PLATANO") } == true
+        if !steered { failures.append("mid-turn message was not followed") }
+
+        store.send("Ejecuta con Bash `sleep 30; echo nunca` y espera a que termine.", to: id)
+        _ = await wait(until: { (store.conversations.first { $0.id == id }?.messages.last?.role == "tool") }, seconds: 60)
+        try? await Task.sleep(for: .seconds(3))
+        let stopAt = Date()
+        store.stop(id)
+        if !(await wait(until: { status() == .idle }, seconds: 10)) { failures.append("interrupt did not end the turn") }
+        print(String(format: "STOPPED in %.1f s, status \(status())", Date().timeIntervalSince(stopAt)))
+        transcript("tras interrumpir")
+        store.send("Responde solo: SIGO-AQUI", to: id)
+        _ = await wait(until: { status() == .running }, seconds: 10)
+        if !(await wait(until: { status() == .idle }, seconds: 60)) { failures.append("turn after interrupt did not end") }
+        let alive = store.conversations.first { $0.id == id }?.messages.last { $0.role == "assistant" }?.text.contains("SIGO-AQUI") == true
+        if !alive { failures.append("no reply after interrupt") }
+        transcript("tras reanudar")
+
+        let planFile = URL(fileURLWithPath: project).appendingPathComponent("plan-probe.txt")
+        try? FileManager.default.removeItem(at: planFile)
+        store.updateMode(id: id, mode: "plan", supported: ChatRunMode.choices(for: .claude))
+        store.send("Planifica crear el archivo plan-probe.txt con el texto 'hecho'. Presenta el plan con ExitPlanMode y, cuando lo apruebe, créalo.", to: id)
+        _ = await wait(until: { status() == .running || status() == .waiting }, seconds: 10)
+        if !(await wait(until: { status() == .idle || status() == .failed }, seconds: 180)) { failures.append("plan turn did not end") }
+        let mode = store.conversations.first { $0.id == id }?.mode ?? "nil"
+        print("MODE AFTER PLAN \(mode) FILE \(FileManager.default.fileExists(atPath: planFile.path))")
+        if mode != "acceptEdits" { failures.append("approving the plan did not switch to acceptEdits") }
+        if !FileManager.default.fileExists(atPath: planFile.path) { failures.append("plan was not carried out") }
+        try? FileManager.default.removeItem(at: planFile)
+        transcript("tras el plan")
+        store.shutdown()
+        print(failures.isEmpty ? "PASS: live Claude Code session" : "FAIL: " + failures.joined(separator: "; "))
+        if !failures.isEmpty { exit(1) }
     }
 
     /// End-to-end check of Jack's delegation tools with the real Claude Code CLI as orchestrator.
