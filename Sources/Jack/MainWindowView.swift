@@ -14,7 +14,8 @@ struct MainWindowView: View {
     @AppStorage("openTabs") private var openTabsValue = ""
     @AppStorage("transcriptMonospaced") private var monospaced = true
     @State private var visibleMessageCounts: [UUID: Int] = [:]
-    @State private var nearBottom = true
+    /// The chat follows the agent until the user scrolls up, and again once they return to the end.
+    @State private var following = true
     @State private var showingNewConversation = false
     @State private var pendingProvider: ChatProvider?
     @State private var pendingSpace: String?
@@ -259,24 +260,56 @@ struct MainWindowView: View {
                 .padding(.top, 18).padding(.bottom, 20)
             }
             .defaultScrollAnchor(.bottom)
-            // Only a Bool crosses into view state, so scrolling does not re-render the chat.
-            .onScrollGeometryChange(for: Bool.self) { geometry in
-                geometry.contentSize.height - geometry.visibleRect.maxY < 120
-            } action: { _, isNearBottom in
-                nearBottom = isNearBottom
-            }
-            .onChange(of: conversation.messages.last?.text) { _, _ in
-                if nearBottom { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
+            // Only the follow flag crosses into view state, and only when it flips, so scrolling does not re-render the chat.
+            .onScrollGeometryChange(for: ChatScrollMetrics.self) { geometry in
+                ChatScrollMetrics(offset: geometry.contentOffset.y, content: geometry.contentSize.height,
+                                  visible: geometry.containerSize.height,
+                                  distanceToBottom: geometry.contentSize.height - geometry.visibleRect.maxY)
+            } action: { old, new in
+                var follow = following
+                if new.distanceToBottom < 24 {
+                    follow = true
+                } else if new.offset < old.offset - 0.5, new.content >= old.content - 0.5, new.visible == old.visible {
+                    // Moving up without the content shrinking is the user scrolling back.
+                    follow = false
+                }
+                if follow != following { following = follow }
+                if follow, new.distanceToBottom > 0.5, new.content != old.content || new.visible != old.visible {
+                    // New text, a tool row or a panel below the chat: stay on the agent's last line.
+                    DispatchQueue.main.async { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
+                }
             }
             .onChange(of: conversation.messages.count) { _, _ in
-                if nearBottom { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
+                if following { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
             }
             .onChange(of: conversation.id) { _, _ in
-                nearBottom = true
+                following = true
                 proxy.scrollTo(Self.bottomID, anchor: .bottom)
             }
             // A second scroll after the first layout makes the lazy list create the rows in view.
             .onAppear { DispatchQueue.main.async { proxy.scrollTo(Self.bottomID, anchor: .bottom) } }
+            .overlay(alignment: .bottom) {
+                ZStack {
+                    if !following {
+                        Button {
+                            following = true
+                            withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
+                        } label: {
+                            Label("Volver a la conversación", systemImage: "arrow.down")
+                                .font(.system(size: 11.5, weight: .medium))
+                                .padding(.horizontal, 12).padding(.vertical, 6)
+                                .background(JackPalette.panelStrong, in: Capsule())
+                                .overlay(Capsule().strokeBorder(JackPalette.hairline))
+                                .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.bottom, 12)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    }
+                }
+                .animation(.easeOut(duration: 0.15), value: following)
+            }
         }
     }
 
@@ -749,6 +782,13 @@ private struct DisableWritingTools: ViewModifier {
 
 
 /// The top of a transcript, like a CLI's banner: who the agent is, its model and its folder.
+private struct ChatScrollMetrics: Equatable {
+    let offset: CGFloat
+    let content: CGFloat
+    let visible: CGFloat
+    let distanceToBottom: CGFloat
+}
+
 private struct ConversationHeader: View, Equatable {
     let conversation: ChatConversation
 
