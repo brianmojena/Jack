@@ -13,36 +13,43 @@ final class ProjectFinderTests: XCTestCase {
     ]
 
     func testNamesTheProjectInTheRequest() {
-        XCTAssertEqual(ProjectFinder.resolve("ve a jack y arregla el login", projects: projects)?.path, "/Users/me/Trabajo/Jack")
-        XCTAssertEqual(ProjectFinder.resolve("En Financia App revisa los presupuestos", projects: projects)?.path, "/Users/me/Trabajo/financia-app")
-        XCTAssertEqual(ProjectFinder.resolve("abre llego oficina y mira el deploy", projects: projects)?.path, "/Users/me/Trabajo/LlegoOficina")
-        XCTAssertEqual(ProjectFinder.resolve("en el proyecto llegooficina", projects: projects)?.path, "/Users/me/Trabajo/LlegoOficina")
+        XCTAssertEqual(ProjectFinder.resolve("ve a jack y arregla el login", projects: Array(projects.dropLast(2))).match?.path, "/Users/me/Trabajo/Jack")
+        XCTAssertEqual(ProjectFinder.resolve("En Financia App revisa los presupuestos", projects: projects).match?.path, "/Users/me/Trabajo/financia-app")
+        XCTAssertEqual(ProjectFinder.resolve("abre llego oficina y mira el deploy", projects: projects).match?.path, "/Users/me/Trabajo/LlegoOficina")
+        XCTAssertEqual(ProjectFinder.resolve("en el proyecto llegooficina", projects: projects).match?.path, "/Users/me/Trabajo/LlegoOficina")
     }
 
     func testGenericFolderIsKnownByItsParent() {
-        XCTAssertEqual(ProjectFinder.resolve("en atlas frontend cambia el color", projects: projects)?.path, "/Users/me/Atlas/frontend")
-        XCTAssertNil(ProjectFinder.resolve("arregla el frontend", projects: projects))
+        XCTAssertEqual(ProjectFinder.resolve("en atlas frontend cambia el color", projects: projects).match?.path, "/Users/me/Atlas/frontend")
+        XCTAssertEqual(ProjectFinder.resolve("arregla el frontend", projects: projects), .none)
     }
 
     func testSmallTyposStillMatch() {
-        XCTAssertEqual(ProjectFinder.resolve("ve al proyecto LlegoOfisina", projects: projects)?.path, "/Users/me/Trabajo/LlegoOficina")
+        XCTAssertEqual(ProjectFinder.resolve("ve al proyecto LlegoOfisina", projects: projects).match?.path, "/Users/me/Trabajo/LlegoOficina")
     }
 
-    func testRecentProjectWinsOnEqualNames() {
-        XCTAssertEqual(ProjectFinder.resolve("jack: sube la versión", projects: projects)?.path, "/Users/me/Trabajo/Jack")
+    func testEqualNamesAskWhichOneRecentFirst() {
+        let choices = ProjectFinder.resolve("jack: sube la versión", projects: projects).choices.map(\.path)
+        XCTAssertEqual(choices, ["/Users/me/Trabajo/Jack", "/Users/me/Old/Jack"])
+    }
+
+    func testCloserNameIsNotAmbiguous() {
+        let projects = ["/p/utipapp", "/p/utipapp-1"]
+        XCTAssertEqual(ProjectFinder.resolve("en utipapp revisa", projects: projects).match?.path, "/p/utipapp")
+        XCTAssertEqual(ProjectFinder.resolve("en utipapp 1 revisa", projects: projects).match?.path, "/p/utipapp-1")
     }
 
     func testGenericOrMissingNamesDoNotMatch() {
-        XCTAssertNil(ProjectFinder.resolve("haz una web para mi tienda", projects: projects))
-        XCTAssertNil(ProjectFinder.resolve("explícame qué es un monad", projects: projects))
-        XCTAssertNil(ProjectFinder.resolve("", projects: projects))
+        XCTAssertEqual(ProjectFinder.resolve("haz una web para mi tienda", projects: projects), .none)
+        XCTAssertEqual(ProjectFinder.resolve("explícame qué es un monad", projects: projects), .none)
+        XCTAssertEqual(ProjectFinder.resolve("", projects: projects), .none)
     }
 
     func testWrittenPathIsUsed() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("jack-finder-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
-        XCTAssertEqual(ProjectFinder.resolve("trabaja en \(folder.path), por favor", projects: projects)?.path, folder.path)
+        XCTAssertEqual(ProjectFinder.resolve("trabaja en \(folder.path), por favor", projects: projects).match?.path, folder.path)
     }
 
     func testScanStopsAtProjectRoots() throws {

@@ -59,17 +59,36 @@ public enum ProjectFinder {
         return found
     }
 
-    /// The project a request names, or nil when it names none or it is unclear which one.
-    /// `projects` should come most recently used first: on equal names, the recent one wins.
-    public static func resolve(_ text: String, projects: [String]) -> Match? {
-        if let path = explicitPath(in: text) { return Match(path: path, mention: (path as NSString).abbreviatingWithTildeInPath) }
+    public enum Resolution: Equatable, Sendable {
+        case none
+        case one(Match)
+        /// Folders that fit about equally well, e.g. two named "Orion": the user picks one.
+        case several([Match])
+
+        public var match: Match? { if case .one(let match) = self { match } else { nil } }
+        public var choices: [Match] { if case .several(let matches) = self { matches } else { [] } }
+    }
+
+    /// The project a request names. `projects` should come most recently used first,
+    /// so equally good candidates are offered in that order.
+    public static func resolve(_ text: String, projects: [String]) -> Resolution {
+        if let path = explicitPath(in: text) { return .one(Match(path: path, mention: (path as NSString).abbreviatingWithTildeInPath)) }
+        let scored = score(text, projects: projects)
+        guard let best = scored.first else { return .none }
+        // Equal scores mean the request does not tell the folders apart; one more matching letter does.
+        let close = scored.prefix { $0.score >= best.score - 3 }.prefix(4).map(\.match)
+        return close.count > 1 ? .several(close) : .one(best.match)
+    }
+
+    /// Every project the request could mean, best first.
+    static func score(_ text: String, projects: [String]) -> [(match: Match, score: Int)] {
         let words = tokens(text)
-        guard !words.isEmpty else { return nil }
+        guard !words.isEmpty else { return [] }
         let compactText = words.joined()
         // Each word, and each word glued to the next, so "llego oficina" also reads as one name.
         let joined = words.indices.map { index in index + 1 < words.count ? [words[index], words[index] + words[index + 1]] : [words[index]] }
         let candidates = words.indices.flatMap { index in joined[index].map { (index, $0) } }
-        var best: (match: Match, score: Int)?
+        var scored: [(match: Match, score: Int, rank: Int)] = []
         for (rank, path) in projects.enumerated() {
             let url = URL(fileURLWithPath: path)
             var name = url.lastPathComponent
@@ -94,10 +113,9 @@ public enum ProjectFinder {
                 if start > 0, cues.contains(words[start - 1]) { score += 40 }
             }
             guard score > 0 else { continue }
-            score -= min(rank, 30)
-            if best == nil || score > best!.score { best = (Match(path: path, mention: name), score) }
+            scored.append((Match(path: path, mention: name), score, rank))
         }
-        return best?.match
+        return scored.sorted { $0.score != $1.score ? $0.score > $1.score : $0.rank < $1.rank }.map { ($0.match, $0.score) }
     }
 
     static let cues: Set<String> = ["proyecto", "carpeta", "repo", "repositorio", "en", "a", "de", "del", "project", "folder", "in", "to", "on", "app"]

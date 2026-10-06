@@ -20,9 +20,10 @@ struct StartView: View {
     @FocusState private var focused: Bool
 
     private var provider: ChatProvider { ChatProvider(rawValue: providerValue) ?? .codex }
-    private var detected: ProjectFinder.Match? {
-        chosenProject == nil ? ProjectFinder.resolve(message, projects: index.ordered(recent: spaces)) : nil
+    private var resolution: ProjectFinder.Resolution {
+        chosenProject == nil ? ProjectFinder.resolve(message, projects: index.ordered(recent: spaces)) : .none
     }
+    private var detected: ProjectFinder.Match? { resolution.match }
     private var project: String? { chosenProject ?? detected?.path }
 
     var body: some View {
@@ -45,6 +46,9 @@ struct StartView: View {
                         .onChange(of: message) { _, _ in showHint = false }
                 }
                 .padding(.horizontal, 14).padding(.top, 13).padding(.bottom, 10)
+
+                let choices = resolution.choices
+                if !choices.isEmpty { choiceRow(choices) }
 
                 HStack(spacing: 6) {
                     projectMenu
@@ -82,7 +86,9 @@ struct StartView: View {
             }
             .overlay(alignment: .bottomLeading) {
                 if showHint {
-                    Text("No sé en qué proyecto: nómbralo en el mensaje o elígelo en el menú de la carpeta.")
+                    Text(resolution.choices.isEmpty
+                         ? "No sé en qué proyecto: nómbralo en el mensaje o elígelo en el menú de la carpeta."
+                         : "Hay varias carpetas que encajan: elige una arriba.")
                         .font(.system(size: 11)).foregroundStyle(JackPalette.amber)
                         .offset(x: 4, y: 20)
                 }
@@ -133,6 +139,42 @@ struct StartView: View {
             focused = true
             index.refreshIfStale()
         }
+    }
+
+    /// Folders that fit the request equally well, told apart by where they live.
+    private func choiceRow(_ choices: [ProjectFinder.Match]) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("¿Cuál de estas carpetas?").font(.system(size: 11, weight: .medium)).foregroundStyle(JackPalette.muted)
+            HStack(spacing: 6) {
+                ForEach(choices, id: \.path) { choice in
+                    Button {
+                        chosenProject = choice.path
+                        focused = true
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "folder").font(.system(size: 10.5)).foregroundStyle(JackPalette.accent)
+                            Text(name(of: choice.path)).font(.system(size: 11.5, weight: .medium))
+                            Text(location(of: choice.path)).font(.mono(10.5)).foregroundStyle(JackPalette.muted)
+                                .lineLimit(1).truncationMode(.head)
+                        }
+                        .padding(.horizontal, 8).frame(height: 24)
+                        .background(JackPalette.accent.opacity(0.1), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(JackPalette.accent.opacity(0.35)))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help((choice.path as NSString).abbreviatingWithTildeInPath)
+                }
+            }
+        }
+        .padding(.horizontal, 14).padding(.bottom, 10)
+        .transition(.opacity)
+    }
+
+    /// The folder that holds a project, e.g. "Proyectos Personales" for two folders named Orion.
+    private func location(of path: String) -> String {
+        let parent = URL(fileURLWithPath: path).deletingLastPathComponent()
+        return "en " + parent.lastPathComponent
     }
 
     private var projectMenu: some View {
