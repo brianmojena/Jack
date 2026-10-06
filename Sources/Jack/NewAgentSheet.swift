@@ -18,6 +18,7 @@ struct NewAgentSheet: View {
     let onCreate: (NewAgentRequest) -> Void
     let onCancel: () -> Void
 
+    /// Empty means automatic: the folder comes from the project named in the first message.
     @State private var projectPath: String
     @State private var provider: ChatProvider
     @State private var model: String
@@ -27,6 +28,7 @@ struct NewAgentSheet: View {
     /// Resolved once: checking executables touches the file system.
     @State private var installed: [ChatProvider: Bool] = [:]
     @FocusState private var messageFocused: Bool
+    @ObservedObject private var index = ProjectIndex.shared
 
     init(
         spaces: [String],
@@ -41,7 +43,7 @@ struct NewAgentSheet: View {
         self.onCreate = onCreate
         self.onCancel = onCancel
         let provider = initialProvider ?? Self.lastProvider
-        _projectPath = State(initialValue: initialSpace ?? spaces.first ?? "")
+        _projectPath = State(initialValue: initialSpace ?? "")
         _provider = State(initialValue: provider)
         _model = State(initialValue: provider.defaultModel)
     }
@@ -54,7 +56,12 @@ struct NewAgentSheet: View {
     private var efforts: [String] {
         choices.first { $0.id == model }?.efforts ?? ChatModelChoice.fallbackEfforts(provider: provider, model: model.trimmingCharacters(in: .whitespaces))
     }
-    private var canCreate: Bool { !projectPath.isEmpty }
+    private var automatic: Bool { projectPath.isEmpty }
+    private var resolution: ProjectFinder.Resolution {
+        automatic ? ProjectFinder.resolve(firstMessage, projects: index.ordered(recent: spaces)) : .none
+    }
+    private var target: String? { automatic ? resolution.match?.path : projectPath }
+    private var canCreate: Bool { target != nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -90,10 +97,10 @@ struct NewAgentSheet: View {
             }
             .padding(.bottom, 18)
 
-            label("Primer mensaje (opcional)")
+            label(automatic ? "Primer mensaje" : "Primer mensaje (opcional)")
             ZStack(alignment: .topLeading) {
                 if firstMessage.isEmpty {
-                    Text("Describe la tarea y el agente empezará en cuanto lo crees…")
+                    Text(automatic ? "Nombra el proyecto y la tarea: «en Jack arregla el login»…" : "Describe la tarea y el agente empezará en cuanto lo crees…")
                         .font(.system(size: 12)).foregroundStyle(JackPalette.faint)
                         .padding(.horizontal, 5).padding(.vertical, 1)
                         .allowsHitTesting(false)
@@ -110,7 +117,8 @@ struct NewAgentSheet: View {
             .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(messageFocused ? JackPalette.accent.opacity(0.6) : JackPalette.hairline, lineWidth: 1))
 
             HStack {
-                Text("⌘↩ para crear").font(.system(size: 11)).foregroundStyle(JackPalette.faint)
+                Text(canCreate ? "⌘↩ para crear" : "Nombra el proyecto en el mensaje o elige una carpeta")
+                    .font(.system(size: 11)).foregroundStyle(JackPalette.faint)
                 Spacer()
                 Button("Cancelar", action: onCancel).keyboardShortcut(.cancelAction)
                 Button(firstMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Crear agente" : "Crear y enviar", action: create)
@@ -130,6 +138,10 @@ struct NewAgentSheet: View {
         }
         .onChange(of: model) { _, _ in
             if !efforts.isEmpty && !efforts.contains(effort) { effort = efforts.contains("high") ? "high" : efforts.last! }
+        }
+        .onAppear {
+            if automatic { messageFocused = true }
+            index.refreshIfStale()
         }
         .task {
             var found: [ChatProvider: Bool] = [:]
@@ -153,8 +165,9 @@ struct NewAgentSheet: View {
     private var spacePicker: some View {
         let listed = spaces.contains(projectPath) || projectPath.isEmpty ? spaces : [projectPath] + spaces
         return VStack(spacing: 0) {
-            ForEach(Array(listed.prefix(5).enumerated()), id: \.element) { index, path in
-                if index > 0 { Divider().padding(.leading, 34) }
+            automaticRow
+            ForEach(listed.prefix(4), id: \.self) { path in
+                Divider().padding(.leading, 34)
                 spaceRow(path)
             }
             if !listed.isEmpty { Divider() }
@@ -185,6 +198,54 @@ struct NewAgentSheet: View {
             }
             return true
         }
+    }
+
+    /// The default: Jack reads the project from the first message, and asks when several folders fit.
+    private var automaticRow: some View {
+        Button { projectPath = ""; messageFocused = true } label: {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: resolution.match != nil ? "sparkles" : "wand.and.stars")
+                    .foregroundStyle(automatic ? JackPalette.accent : JackPalette.muted)
+                    .frame(width: 16)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Automático").font(.system(size: 12, weight: automatic ? .semibold : .regular))
+                    Text(automaticDetail)
+                        .font(.system(size: 10)).foregroundStyle(resolution.match != nil ? JackPalette.accent : JackPalette.muted)
+                        .lineLimit(1).truncationMode(.middle)
+                    let choices = resolution.choices
+                    if !choices.isEmpty {
+                        HStack(spacing: 5) {
+                            ForEach(choices, id: \.path) { choice in
+                                Button { projectPath = choice.path } label: {
+                                    Text("\(URL(fileURLWithPath: choice.path).lastPathComponent) en \(URL(fileURLWithPath: choice.path).deletingLastPathComponent().lastPathComponent)")
+                                        .font(.system(size: 10.5, weight: .medium)).lineLimit(1)
+                                        .padding(.horizontal, 7).frame(height: 20)
+                                        .background(JackPalette.accent.opacity(0.1), in: RoundedRectangle(cornerRadius: 5))
+                                        .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(JackPalette.accent.opacity(0.35)))
+                                }
+                                .buttonStyle(.plain)
+                                .help((choice.path as NSString).abbreviatingWithTildeInPath)
+                            }
+                        }
+                        .padding(.top, 4)
+                    }
+                }
+                Spacer()
+                if automatic {
+                    Image(systemName: "checkmark").font(.system(size: 11, weight: .semibold)).foregroundStyle(JackPalette.accent)
+                }
+            }
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(automatic ? JackPalette.accent.opacity(0.08) : .clear)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var automaticDetail: String {
+        if let match = resolution.match { return "Detectado: \((match.path as NSString).abbreviatingWithTildeInPath)" }
+        if !resolution.choices.isEmpty { return "Varias carpetas encajan; elige una:" }
+        return "Jack elige la carpeta según el proyecto que nombres en el mensaje"
     }
 
     private func spaceRow(_ path: String) -> some View {
@@ -266,10 +327,10 @@ struct NewAgentSheet: View {
     }
 
     private func create() {
-        guard canCreate else { return }
+        guard let target else { return }
         UserDefaults.standard.set(provider.rawValue, forKey: "lastNewAgentProvider")
         onCreate(NewAgentRequest(
-            projectPath: projectPath,
+            projectPath: target,
             provider: provider,
             model: model.trimmingCharacters(in: .whitespaces),
             effort: effort,

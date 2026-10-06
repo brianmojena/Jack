@@ -92,7 +92,7 @@ struct MainWindowView: View {
         .sheet(isPresented: $showingNewConversation) {
             NewAgentSheet(
                 spaces: recentSpaces,
-                initialSpace: pendingSpace ?? selectedConversation?.projectPath,
+                initialSpace: pendingSpace,
                 initialProvider: pendingProvider,
                 modelChoices: store.modelChoices(for:)
             ) { request in
