@@ -61,6 +61,58 @@ public enum Simulators {
 
     public static func shutdown(_ udid: String) async { _ = await run(["shutdown", udid]) }
 
+    /// For quitting: returns once the device is off.
+    public static func shutdownNow(_ udids: [String]) {
+        guard !udids.isEmpty else { return }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
+        process.arguments = ["simctl", "shutdown"] + udids
+        try? process.run()
+        process.waitUntilExit()
+    }
+
+    /// Services of a booted device that testing an app rarely needs: Siri, Apple Intelligence,
+    /// Spotlight knowledge, suggestions, photo analysis, News, Mail, Screen Time… Together they use
+    /// about 350 MB and some 40 processes. Disabling them lasts across reboots, until enabled again
+    /// or the device is erased, and takes effect on the next boot.
+    public static let lightModeServices = [
+        "com.apple.assistant_cdmd", "com.apple.assistant_service", "com.apple.assistantd",
+        "com.apple.siri.acousticsignature", "com.apple.siri.context.service", "com.apple.siriactionsd",
+        "com.apple.siriinferenced", "com.apple.siriknowledged", "com.apple.sirittsd",
+        "com.apple.intelligencecontextd", "com.apple.intelligenceflowd", "com.apple.intelligenceplatformd",
+        "com.apple.intelligencetasksd", "com.apple.generativeexperiencesd", "com.apple.callintelligenced",
+        "com.apple.fitnessintelligenced", "com.apple.finhealthd", "com.apple.knowledgeconstructiond",
+        "com.apple.spotlightknowledged", "com.apple.spotlightknowledged.updater", "com.apple.suggestd",
+        "com.apple.proactiveeventtrackerd", "com.apple.biomed", "com.apple.biomesyncd",
+        "com.apple.photoanalysisd", "com.apple.mediaanalysisd", "com.apple.mediaanalysisd.service",
+        "com.apple.newsd", "com.apple.nanonewscd", "com.apple.tipsd", "com.apple.email.maild",
+        "com.apple.ScreenTimeAgent", "com.apple.ScreenTimeSettingsAgent", "com.apple.translationd",
+        "com.apple.parsecd", "com.apple.parsec-fbf", "com.apple.AutoFillSuggestions", "com.apple.activitysharingd",
+    ]
+
+    /// Enables or disables `lightModeServices` on a booted device, a few at a time.
+    public static func setLightModeServices(_ udid: String, enabled: Bool) async {
+        let verb = enabled ? "enable" : "disable"
+        for batch in stride(from: 0, to: lightModeServices.count, by: 8).map({ Array(lightModeServices[$0..<min($0 + 8, lightModeServices.count)]) }) {
+            await withTaskGroup(of: Void.self) { group in
+                for label in batch { group.addTask { _ = await run(["spawn", udid, "launchctl", verb, "system/\(label)"]) } }
+            }
+        }
+    }
+
+    /// Whether Xcode is building or testing, possibly on a simulator.
+    public static func xcodebuildRunning() async -> Bool {
+        await Task.detached(priority: .utility) {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+            process.arguments = ["-x", "xcodebuild"]
+            process.standardOutput = FileHandle.nullDevice
+            do { try process.run() } catch { return false }
+            process.waitUntilExit()
+            return process.terminationStatus == 0
+        }.value
+    }
+
     /// Saves a PNG of the device's screen and returns its path.
     public static func screenshot(_ udid: String) async -> String? {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("JackSimulator", isDirectory: true)

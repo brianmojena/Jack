@@ -23,6 +23,9 @@ private struct GeneralSettings: View {
     @AppStorage("collapsedSpaces") private var collapsedSpaces = ""
     @AppStorage("delegationEnabled") private var delegationEnabled = true
     @AppStorage("transcriptMonospaced") private var transcriptMonospaced = true
+    @AppStorage(SimulatorSession.lightModeKey) private var simulatorLightMode = true
+    @AppStorage(SimulatorSession.idleMinutesKey) private var simulatorIdleMinutes = 10
+    @AppStorage(SimulatorSession.shutdownOnQuitKey) private var simulatorShutdownOnQuit = true
 
     var body: some View {
         Form {
@@ -47,6 +50,22 @@ private struct GeneralSettings: View {
                 Text("Codex, Claude Code y OpenCode reciben herramientas para crear otros agentes, enviarles tareas y esperar sus resultados. Los sub-agentes no pueden delegar a su vez. Los sub-agentes aparecen bajo su agente en la barra lateral y te piden permisos a ti. Se aplica al próximo mensaje.")
                     .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
             }
+            Section {
+                Toggle("Modo ligero", isOn: $simulatorLightMode)
+                Picker("Apagar si no lo miras durante", selection: $simulatorIdleMinutes) {
+                    Text("5 minutos").tag(5)
+                    Text("10 minutos").tag(10)
+                    Text("30 minutos").tag(30)
+                    Divider()
+                    Text("Nunca").tag(0)
+                }
+                Toggle("Apagarlo al salir de Jack", isOn: $simulatorShutdownOnQuit)
+            } header: {
+                Text("Simulador de iOS")
+            } footer: {
+                Text("El modo ligero desactiva en el simulador Siri, Apple Intelligence, Spotlight, sugerencias, Mail, News y Tiempo de uso: unos 350 MB y 40 procesos menos. Se aplica la próxima vez que Jack lo encienda. Jack solo apaga los simuladores que encendió él y nunca mientras Xcode compila o pasa tests.")
+                    .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
+            }
             Section("Apariencia") {
                 Toggle("Conversación con letra monoespaciada", isOn: $transcriptMonospaced)
             }
@@ -61,7 +80,7 @@ private struct GeneralSettings: View {
             }
         }
         .formStyle(.grouped)
-        .frame(height: 400)
+        .frame(height: 520)
     }
 }
 

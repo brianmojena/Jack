@@ -39,7 +39,13 @@ struct WorkspaceTab: Identifiable, Equatable {
     private var browsers: [UUID: BrowserSession] = [:]
     private var explorers: [String: FileTreeModel] = [:]
     /// Shared by every agent: there is one set of simulators on the Mac.
-    private(set) lazy var simulator = SimulatorSession()
+    var simulator: SimulatorSession {
+        if let simulatorSession { return simulatorSession }
+        let session = SimulatorSession()
+        simulatorSession = session
+        return session
+    }
+    private var simulatorSession: SimulatorSession?
     /// Adds files, such as a simulator screenshot, to an agent's next message.
     var attach: ((UUID, [String]) -> Void)?
 
@@ -130,7 +136,10 @@ struct WorkspaceTab: Identifiable, Equatable {
         }
     }
 
-    func terminateAll() { terminals.values.forEach { $0.terminate() } }
+    func terminateAll() {
+        terminals.values.forEach { $0.terminate() }
+        simulatorSession?.shutdownOnQuit()
+    }
 }
 
 // MARK: - Pane

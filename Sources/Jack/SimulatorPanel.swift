@@ -6,7 +6,7 @@ import SwiftUI
 /// The iOS simulator shown in the workspace pane. Simulators belong to the Mac, not to an agent,
 /// so every agent's "Simulador" tab shows this one session.
 @MainActor final class SimulatorSession: ObservableObject {
-    enum Phase: Equatable { case loading, off, booting, running, stopping }
+    enum Phase: Equatable { case loading, off, booting, preparing, running, stopping }
 
     @Published private(set) var devices: [SimulatorDevice] = []
     @Published private(set) var phase: Phase = .loading
@@ -16,13 +16,27 @@ import SwiftUI
     @Published private(set) var capturing = false
     private var visiblePanels = 0
     private var polling: Task<Void, Never>?
+    private var idleShutdown: Task<Void, Never>?
+    /// Devices Jack turned on; only these are turned off when idle or when Jack quits.
+    private var bootedHere = Set<String>()
     private static let deviceKey = "simulatorDevice"
+    static let lightModeKey = "simulatorLightMode"
+    static let idleMinutesKey = "simulatorIdleMinutes"
+    static let shutdownOnQuitKey = "simulatorShutdownOnQuit"
+    /// Devices whose heavy services are disabled, as "udid" entries.
+    private static let lightAppliedKey = "simulatorLightApplied"
+
+    init() {
+        UserDefaults.standard.register(defaults: [Self.lightModeKey: true, Self.idleMinutesKey: 10, Self.shutdownOnQuitKey: true])
+    }
 
     var selected: SimulatorDevice? { devices.first { $0.udid == selectedUDID } }
 
     /// Lists devices while a panel shows, so a simulator an agent boots from the terminal appears here.
     func panelAppeared() {
         visiblePanels += 1
+        idleShutdown?.cancel()
+        idleShutdown = nil
         guard polling == nil else { return }
         polling = Task { [weak self] in
             while !Task.isCancelled {
@@ -34,7 +48,35 @@ import SwiftUI
 
     func panelDisappeared() {
         visiblePanels = max(0, visiblePanels - 1)
-        if visiblePanels == 0 { polling?.cancel(); polling = nil }
+        if visiblePanels == 0 {
+            polling?.cancel()
+            polling = nil
+            scheduleIdleShutdown()
+        }
+    }
+
+    /// Turns off a simulator Jack booted once nobody has looked at it for a while, unless Xcode is using it.
+    private func scheduleIdleShutdown() {
+        let minutes = UserDefaults.standard.integer(forKey: Self.idleMinutesKey)
+        guard minutes > 0, idleShutdown == nil else { return }
+        idleShutdown = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(minutes * 60))
+                guard !Task.isCancelled, let self else { return }
+                guard self.visiblePanels == 0, let udid = self.selectedUDID, self.bootedHere.contains(udid), self.phase == .running else { break }
+                if await Simulators.xcodebuildRunning() { continue }
+                guard !Task.isCancelled, self.visiblePanels == 0 else { return }
+                self.shutdown()
+                break
+            }
+            self?.idleShutdown = nil
+        }
+    }
+
+    /// When Jack quits, the simulators it turned on go off with it.
+    func shutdownOnQuit() {
+        guard UserDefaults.standard.bool(forKey: Self.shutdownOnQuitKey) else { return }
+        Simulators.shutdownNow(Array(bootedHere))
     }
 
     func refresh() async {
@@ -58,7 +100,7 @@ import SwiftUI
 
     /// Matches the panel to the device: shows the screen of a booted one, the power button otherwise.
     private func sync() {
-        guard phase != .booting, phase != .stopping else { return }
+        guard phase != .booting, phase != .preparing, phase != .stopping else { return }
         guard let selected else {
             phase = .off
             display = nil
@@ -79,17 +121,37 @@ import SwiftUI
         error = nil
         UserDefaults.standard.set(udid, forKey: Self.deviceKey)
         Task {
-            let failure = await Simulators.boot(udid)
+            var failure = await Simulators.boot(udid)
+            if failure == nil { bootedHere.insert(udid) }
+            if failure == nil, await applyLightMode(udid) {
+                // The services change takes effect on a fresh boot; this happens once per device.
+                await Simulators.shutdown(udid)
+                phase = .booting
+                failure = await Simulators.boot(udid)
+            }
             phase = .off
             error = failure
             await refresh()
         }
     }
 
+    /// Brings the device's services in line with the light-mode setting; true when it needs a reboot.
+    private func applyLightMode(_ udid: String) async -> Bool {
+        let wanted = UserDefaults.standard.bool(forKey: Self.lightModeKey)
+        var applied = Set(UserDefaults.standard.stringArray(forKey: Self.lightAppliedKey) ?? [])
+        guard wanted != applied.contains(udid) else { return false }
+        phase = .preparing
+        await Simulators.setLightModeServices(udid, enabled: !wanted)
+        if wanted { applied.insert(udid) } else { applied.remove(udid) }
+        UserDefaults.standard.set(Array(applied), forKey: Self.lightAppliedKey)
+        return true
+    }
+
     func shutdown() {
         guard let udid = selectedUDID, phase == .running else { return }
         phase = .stopping
         display = nil
+        bootedHere.remove(udid)
         Task {
             await Simulators.shutdown(udid)
             phase = .off
@@ -185,11 +247,15 @@ struct SimulatorPanel: View {
         switch session.phase {
         case .loading:
             ProgressView().controlSize(.small)
-        case .booting, .stopping:
+        case .booting, .preparing, .stopping:
             VStack(spacing: 10) {
                 ProgressView().controlSize(.small)
-                Text(session.phase == .booting ? "Encendiendo \(session.selected?.name ?? "el simulador")…" : "Apagando…")
-                    .font(.system(size: 12)).foregroundStyle(JackPalette.muted)
+                Text(phaseTitle).font(.system(size: 12)).foregroundStyle(JackPalette.muted)
+                if session.phase == .preparing {
+                    Text("Desactivando Siri, Apple Intelligence y otros servicios que no necesitas para probar tu app. Solo la primera vez.")
+                        .font(.system(size: 11)).foregroundStyle(JackPalette.faint)
+                        .multilineTextAlignment(.center).frame(maxWidth: 280)
+                }
             }
         case .running:
             if let display = session.display {
@@ -210,6 +276,14 @@ struct SimulatorPanel: View {
                     Button("Encender", action: session.boot).controlSize(.small).keyboardShortcut(.defaultAction)
                 }
             }
+        }
+    }
+
+    private var phaseTitle: String {
+        switch session.phase {
+        case .preparing: "Preparando el modo ligero…"
+        case .stopping: "Apagando…"
+        default: "Encendiendo \(session.selected?.name ?? "el simulador")…"
         }
     }
 
