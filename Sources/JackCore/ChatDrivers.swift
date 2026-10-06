@@ -198,7 +198,8 @@ private final class CodexChatDriver: ProcessChatDriver {
         guard let executable = ExecutableResolver.resolve("codex", override: UserDefaults.standard.string(forKey: "providerExecutablePath.codex")) else { throw ChatDriverError.executableMissing("codex") }
         let arguments = ["app-server", "--listen", "stdio://"] + (delegation.map(ChatRunConfiguration.codexDelegation) ?? [])
         // The token travels in the environment, not in the command line other processes can read.
-        let process = try begin(executable, arguments: arguments, directory: conversation.projectPath, environment: delegation.map { ["JACK_MCP_TOKEN": $0.token] } ?? [:])
+        let environment = (delegation.map { ["JACK_MCP_TOKEN": $0.token] } ?? [:]).merging(ProgressFiles.environment(for: conversation.id)) { _, new in new }
+        let process = try begin(executable, arguments: arguments, directory: conversation.projectPath, environment: environment)
         let reader = StructuredLineReader(process.lines)
         do {
         let initID = id(); try process.writeJSON(["id": initID, "method": "initialize", "params": ["clientInfo": ["name": "jack", "title": "Jack", "version": "1"], "capabilities": ["experimentalApi": true]]])
@@ -208,14 +209,14 @@ private final class CodexChatDriver: ProcessChatDriver {
         try process.writeJSON(["method": "initialized", "params": [:]])
         if let saved = conversation.sessionID, !saved.isEmpty {
             var params: [String: Any] = ["threadId": saved]
-            if delegation != nil { params["developerInstructions"] = ChatDelegation.instructions }
+            if let instructions = ChatRunConfiguration.agentInstructions(delegating: delegation?.delegates == true, images: delegation?.images == true) { params["developerInstructions"] = instructions }
             let requestID = id(); try process.writeJSON(["id": requestID, "method": "thread/resume", "params": params])
             try await waitForResponse(id: requestID, process: process, reader: reader, generation: generation, onEvent: onEvent)
             threadID = saved
         } else {
             let requestID = id()
             var params: [String: Any] = ["cwd": conversation.projectPath, "model": nonempty(conversation.model), "approvalPolicy": "on-request", "sandbox": "workspace-write"]
-            if delegation != nil { params["developerInstructions"] = ChatDelegation.instructions }
+            if let instructions = ChatRunConfiguration.agentInstructions(delegating: delegation?.delegates == true, images: delegation?.images == true) { params["developerInstructions"] = instructions }
             try process.writeJSON(["id": requestID, "method": "thread/start", "params": params])
             try await waitForResponse(id: requestID, process: process, reader: reader, generation: generation, onEvent: onEvent)
         }
@@ -794,7 +795,8 @@ private final class ClaudeChatDriver: ProcessChatDriver {
     /// The running process when it was started with these settings, otherwise a new one that resumes the session.
     private func session(for conversation: ChatConversation, delegation: ChatDelegation?) throws -> StructuredChild {
         guard let executable = ExecutableResolver.resolve("claude", override: UserDefaults.standard.string(forKey: "providerExecutablePath.claude")) else { throw ChatDriverError.executableMissing("claude") }
-        let delegationArgs = delegation.map(ChatRunConfiguration.claudeDelegation) ?? []
+        let delegationArgs = (delegation.map(ChatRunConfiguration.claudeDelegation) ?? [])
+            + (ChatRunConfiguration.agentInstructions(delegating: delegation?.delegates == true, images: delegation?.images == true).map { ["--append-system-prompt", $0] } ?? [])
         let signature = [executable] + ChatRunConfiguration.claudeLaunchSignature(conversation) + delegationArgs
         // Restarting would end background subagents; new settings wait until they finish.
         if let child, signature == launch || decoder.backgroundTaskCount > 0 { return child }
@@ -807,11 +809,10 @@ private final class ClaudeChatDriver: ProcessChatDriver {
         if let saved = conversation.sessionID, !saved.isEmpty { args += ["--resume", saved] }
         // Claude Code turns prompt suggestions off when it is not interactive unless asked to; delegated agents have no one to suggest to.
         var environment: [String: String] = conversation.parentID == nil ? ["CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "true"] : [:]
-        if delegation != nil {
-            args += delegationArgs
-            // wait_for_agents may hold a call open for up to 15 minutes.
-            environment["MCP_TOOL_TIMEOUT"] = "960000"
-        }
+        args += delegationArgs
+        // wait_for_agents may hold a call open for up to 15 minutes.
+        if delegation != nil { environment["MCP_TOOL_TIMEOUT"] = "960000" }
+        environment.merge(ProgressFiles.environment(for: conversation.id)) { _, new in new }
         let process = try begin(executable, arguments: args, directory: conversation.projectPath, environment: environment)
         launch = signature
         liveMode = conversation.mode ?? "manual"
@@ -983,6 +984,7 @@ private final class OpenCodeChatDriver: ProcessChatDriver {
         let password = UUID().uuidString + UUID().uuidString
         var environment = ["OPENCODE_SERVER_USERNAME": "jack", "OPENCODE_SERVER_PASSWORD": password]
         if let config = ChatRunConfiguration.openCodeConfig(conversation, delegation: delegation) { environment["OPENCODE_CONFIG_CONTENT"] = config }
+        environment.merge(ProgressFiles.environment(for: conversation.id)) { _, new in new }
         let process = try begin(executable, arguments: ["serve", "--hostname", "127.0.0.1", "--port", String(port), "--pure"], directory: conversation.projectPath, environment: environment)
         do {
         let root = URL(string: "http://127.0.0.1:\(port)")!
@@ -1019,7 +1021,7 @@ private final class OpenCodeChatDriver: ProcessChatDriver {
                 }
             } else {
                 var body = ChatRunConfiguration.openCodePrompt(conversation, prompt: prompt)
-                if delegation != nil { body["system"] = ChatDelegation.instructions }
+                if let instructions = ChatRunConfiguration.agentInstructions(delegating: delegation?.delegates == true, images: delegation?.images == true) { body["system"] = instructions }
                 try await requestNoContent(root, path: sessionPath + "/prompt_async", method: "POST", body: body, password: password)
             }
             try await streamTask.value
@@ -1363,7 +1365,7 @@ enum ChatRunConfiguration {
         }
         return ["threadId": threadID, "input": input,
             "cwd": conversation.projectPath, "approvalPolicy": mode == "auto" ? "never" : "on-request",
-            "sandboxPolicy": ["type": "workspaceWrite", "writableRoots": [conversation.projectPath] + conversation.additionalDirectories, "networkAccess": false],
+            "sandboxPolicy": ["type": "workspaceWrite", "writableRoots": [conversation.projectPath] + conversation.additionalDirectories + [ProgressFiles.directory(for: conversation.id).path], "networkAccess": false],
             "model": nonempty(conversation.model), "effort": conversation.effort, "summary": "detailed",
             "collaborationMode": ["mode": mode == "plan" ? "plan" : "default", "settings": [
                 "model": nonempty(conversation.model), "reasoning_effort": conversation.effort,
@@ -1402,8 +1404,14 @@ enum ChatRunConfiguration {
     static func claudeDelegation(_ delegation: ChatDelegation) -> [String] {
         let server: [String: Any] = ["type": "http", "url": delegation.url.absoluteString, "headers": ["Authorization": "Bearer \(delegation.token)"]]
         let config = (try? JSONSerialization.data(withJSONObject: ["mcpServers": ["jack": server]])).map { String(decoding: $0, as: UTF8.self) } ?? "{}"
-        // Each list flag is followed by another flag, so the variadic options stop where intended.
-        return ["--mcp-config", config, "--allowedTools", "mcp__jack", "--append-system-prompt", ChatDelegation.instructions]
+        // `--allowedTools` is variadic: it goes last, or before another flag.
+        return ["--mcp-config", config, "--allowedTools", "mcp__jack"]
+    }
+    /// What Jack tells every agent: how to show progress, and the `jack` tools it gets.
+    static func agentInstructions(delegating: Bool, images: Bool = false) -> String? {
+        let parts = [ProgressFiles.isAvailable ? ProgressFiles.helperInstructions : nil, delegating ? ChatDelegation.instructions : nil,
+                     images ? ChatDelegation.imageInstructions : nil].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: "\n\n")
     }
     static func claudeSettings(_ conversation: ChatConversation) -> [String] {
         let effort = ChatModelChoice.claudeEfforts(for: conversation.model).contains(conversation.effort) ? ["--effort", conversation.effort] : []

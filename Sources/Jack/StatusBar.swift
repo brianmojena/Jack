@@ -2,15 +2,20 @@ import Darwin
 import JackCore
 import SwiftUI
 
-/// Bottom bar: each provider's quota at a glance, agents running, terminals and Jack's memory.
+/// Bottom bar: each provider's quota at a glance, the projects' servers, downloads and other progress, agents running,
+/// terminals and Jack's memory.
 struct StatusBar: View, Equatable {
     let usage: [ChatProvider: ProviderUsage]
     let refreshing: Bool
     let activeCount: Int
     let maxConcurrent: Int
     @ObservedObject var sessions: WorkspaceSessions
+    let progress: ProgressMonitor
+    let servers: ServerMonitor
     let refresh: () -> Void
     let setConcurrency: (Int) -> Void
+    let conversationTitle: (UUID) -> String?
+    let openConversation: (UUID) -> Void
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.usage == rhs.usage && lhs.refreshing == rhs.refreshing && lhs.activeCount == rhs.activeCount
@@ -53,6 +58,8 @@ struct StatusBar: View, Equatable {
 
             Spacer(minLength: 8)
 
+            ServerStatusItem(monitor: servers, title: conversationTitle)
+            ProgressStatusItem(monitor: progress, title: conversationTitle, open: openConversation)
             MemoryLabel()
             let terminalCount = sessions.terminalCount
             if terminalCount > 0 {

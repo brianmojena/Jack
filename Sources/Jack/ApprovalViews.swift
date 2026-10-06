@@ -36,6 +36,8 @@ struct ApprovalCard: View {
         }
         .padding(12)
         .background(tint.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        // Ice: floats as glass over the transcript, which scrolls beneath the composer.
+        .jackGlass(in: RoundedRectangle(cornerRadius: 10, style: .continuous), basic: .clear)
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(tint.opacity(0.35), lineWidth: 1))
     }
 

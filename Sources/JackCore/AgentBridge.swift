@@ -5,7 +5,26 @@ import Network
 public struct ChatDelegation: Equatable {
     public var url: URL
     public var token: String
-    public init(url: URL, token: String) { self.url = url; self.token = token }
+    /// The agent may create and manage other agents.
+    public var delegates: Bool
+    /// The agent may create images with Image Playground.
+    public var images: Bool
+    public init(url: URL, token: String, delegates: Bool = true, images: Bool = false) {
+        self.url = url; self.token = token; self.delegates = delegates; self.images = images
+    }
+
+    /// Tells every agent with the `jack` tools when to create an image.
+    public static let imageInstructions = """
+    The `jack` MCP server's generate_image tool creates images with Apple's Image Playground on this Mac. Use it when \
+    the task needs a specific picture (a photo for a page, an illustration, a placeholder that should look real) \
+    instead of searching the web or drawing it in code.
+    - Write the prompt as a short, concrete description of what is visible: subject, setting, light and framing. It is \
+    photorealistic by default; pass style for animation, illustration or sketch.
+    - Image Playground refuses real people's names, brands, logos, text in the image and violence. When the result says \
+    it closed without an image, write a different, simpler prompt and try again, up to three times.
+    - Pass path with where the image belongs in the project, and width and height when the size matters.
+    - The user picks the result in Image Playground, so the call waits for them.
+    """
 
     /// Tells the orchestrator what the `jack` tools are for. Sub-agents never see this conversation.
     public static let instructions = """
@@ -43,18 +62,21 @@ public struct ChatDelegation: Equatable {
     private var starting: [CheckedContinuation<UInt16, Error>] = []
     private var callers: [String: UUID] = [:]
     private var tokens: [UUID: String] = [:]
+    /// What each caller may do: the token stays the same, so a later run can change it.
+    private var permissions: [UUID: (delegates: Bool, images: Bool)] = [:]
 
     init(store: ChatStore) { self.store = store }
 
     /// Starts the server on first use; agents that never delegate cost nothing.
-    public func delegation(for conversationID: UUID) async throws -> ChatDelegation {
+    public func delegation(for conversationID: UUID, delegates: Bool = true, images: Bool = false) async throws -> ChatDelegation {
         let port = try await ensureListening()
         let token = tokens[conversationID] ?? {
             let value = (0..<4).map { _ in UUID().uuidString.replacingOccurrences(of: "-", with: "") }.joined()
             tokens[conversationID] = value; callers[value] = conversationID
             return value
         }()
-        return ChatDelegation(url: URL(string: "http://127.0.0.1:\(port)/mcp")!, token: token)
+        permissions[conversationID] = (delegates, images)
+        return ChatDelegation(url: URL(string: "http://127.0.0.1:\(port)/mcp")!, token: token, delegates: delegates, images: images)
     }
 
     public func stop() {
@@ -147,7 +169,9 @@ public struct ChatDelegation: Equatable {
         case "ping":
             return Self.result(id: id, [:])
         case "tools/list":
-            return Self.result(id: id, ["tools": Self.tools])
+            let allowed = permissions[caller] ?? (true, false)
+            let tools = (allowed.delegates ? Self.tools : []) + (allowed.images ? [Self.imageTool] : [])
+            return Self.result(id: id, ["tools": tools])
         case "tools/call":
             let name = params["name"] as? String ?? ""
             let arguments = params["arguments"] as? [String: Any] ?? [:]
@@ -193,6 +217,15 @@ public struct ChatDelegation: Equatable {
         ], required: ["agent_id"]),
     ]
 
+    static let imageTool = tool("generate_image", "Create an image with Apple's Image Playground on this Mac and save it to a file. The user sees Image Playground with your prompt and picks a result, so the call waits for them (up to 15 minutes). Photorealistic unless you pass another style. If it returns that Image Playground closed without an image, the prompt was probably refused: write a different one and try again.", [
+        "prompt": ["type": "string", "description": "Short, concrete description of what the image shows: subject, setting, light, framing. No real people's names, brands or text."],
+        "style": ["type": "string", "enum": ChatImageRequest.Style.allCases.map(\.rawValue), "description": "Defaults to realistic."],
+        "path": ["type": "string", "description": "Where to save it, absolute or relative to your folder; a folder gets a file named after the prompt. Defaults to generated-images/ in your folder. Existing files are never overwritten."],
+        "width": ["type": "integer", "description": "Wanted width in pixels; Image Playground uses the closest size it supports. Defaults to 1024."],
+        "height": ["type": "integer", "description": "Wanted height in pixels. Defaults to 1024."],
+        "reference_image": ["type": "string", "description": "Optional path of an image to start from."],
+    ], required: ["prompt"])
+
     private static func tool(_ name: String, _ description: String, _ properties: [String: Any], required: [String]) -> [String: Any] {
         ["name": name, "description": description, "inputSchema": ["type": "object", "properties": properties, "required": required, "additionalProperties": false]]
     }
@@ -200,6 +233,8 @@ public struct ChatDelegation: Equatable {
     func call(_ name: String, arguments: [String: Any], caller: UUID) async -> (String, Bool) {
         guard let store else { return ("Jack is closing.", true) }
         guard let parent = store.conversations.first(where: { $0.id == caller }) else { return ("The calling conversation no longer exists.", true) }
+        if name == "generate_image" { return await generateImage(arguments, caller: parent, store: store) }
+        guard permissions[caller]?.delegates ?? true else { return ("Only the agent the user talks to can manage other agents.", true) }
         let children = store.conversations.filter { $0.parentID == caller }
 
         func child(_ value: Any?) -> ChatConversation? {
@@ -281,6 +316,41 @@ public struct ChatDelegation: Equatable {
         default:
             return ("Unknown tool \(name).", true)
         }
+    }
+
+    private func generateImage(_ arguments: [String: Any], caller: ChatConversation, store: ChatStore) async -> (String, Bool) {
+        guard permissions[caller.id]?.images == true, store.imageGenerationAvailable else {
+            return ("Image Playground is not available on this Mac: it needs Apple Intelligence turned on in System Settings.", true)
+        }
+        guard let prompt = (arguments["prompt"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !prompt.isEmpty else {
+            return ("prompt is required.", true)
+        }
+        guard prompt.count <= 1000 else { return ("The prompt is too long: describe the image in under 1000 characters.", true) }
+        let style = (arguments["style"] as? String).flatMap(ChatImageRequest.Style.init(rawValue:)) ?? .realistic
+        func size(_ key: String) -> Int { min(max((arguments[key] as? Int) ?? (arguments[key] as? Double).map(Int.init) ?? 1024, 256), 4096) }
+        var reference: String?
+        if let path = (arguments["reference_image"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !path.isEmpty {
+            let expanded = (path as NSString).expandingTildeInPath
+            let absolute = expanded.hasPrefix("/") ? expanded : caller.projectPath + "/" + expanded
+            guard FileManager.default.fileExists(atPath: absolute) else { return ("reference_image \(absolute) does not exist.", true) }
+            reference = absolute
+        }
+        let request = ChatImageRequest(conversationID: caller.id, prompt: prompt, style: style, width: size("width"), height: size("height"),
+                                       destination: ChatImageRequest.destination(for: arguments["path"] as? String, prompt: prompt, project: caller.projectPath),
+                                       referenceImage: reference)
+        let id = store.requestImage(request)
+        let deadline = Date().addingTimeInterval(900)
+        while store.imageRequest(id)?.isPending == true {
+            // The agent was stopped: stop holding the request open.
+            guard (store.statuses[caller.id] ?? .idle).isBusy else { store.resolveImage(id, .failed("the agent was stopped")); return ("Stopped.", true) }
+            guard Date() < deadline else {
+                store.resolveImage(id, .failed("the user did not answer within 15 minutes"))
+                return ("The user did not create the image within 15 minutes. Carry on without it and mention it in your reply.", true)
+            }
+            try? await Task.sleep(nanoseconds: 500_000_000)
+        }
+        // Cancelled and declined requests leave the list as soon as they end, so read the state they ended in.
+        return (store.imageRequest(id) ?? store.endedImage(id) ?? request).resultText
     }
 
     private func summary(_ agents: [ChatConversation]) -> String {

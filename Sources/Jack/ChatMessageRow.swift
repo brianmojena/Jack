@@ -164,7 +164,7 @@ struct ToolPresentation {
         case .search: "magnifyingglass"
         case .web: "globe"
         case .agent: "person.2"
-        case .delegate: "arrow.triangle.branch"
+        case .delegate: title == "generate_image" ? "wand.and.sparkles" : "arrow.triangle.branch"
         case .todo: "checklist"
         case .question: "questionmark.bubble"
         case .plan: "list.bullet.clipboard"
@@ -188,6 +188,7 @@ struct ToolPresentation {
             case "send_message": running ? "Escribiendo a" : "Escribió a"
             case "get_agent_result": running ? "Leyendo resultado de" : "Leyó resultado de"
             case "stop_agent": running ? "Deteniendo" : "Detuvo"
+            case "generate_image": running ? "Creando imagen" : "Creó imagen"
             default: running ? "Revisando" : "Revisó"
             }
         case .todo:
@@ -306,6 +307,7 @@ struct ToolPresentation {
                 let count = (input["agent_ids"] as? [Any])?.count ?? 0
                 subject = count == 1 ? "1 agente" : count > 1 ? "\(count) agentes" : "sus agentes"
             case "list_agents": subject = "sus agentes"
+            case "generate_image": subject = string("prompt") ?? ""
             default: subject = string("agent_id") ?? ""
             }
         case .mcp:
@@ -335,7 +337,7 @@ struct ToolPresentation {
 
     /// Jack's own delegation tools, as Claude/Codex (`mcp__jack__x`) and OpenCode (`jack_x`) name them.
     static func delegateAction(_ name: String) -> String? {
-        let actions: Set<String> = ["create_agent", "send_message", "wait_for_agents", "get_agent_result", "list_agents", "stop_agent"]
+        let actions: Set<String> = ["create_agent", "send_message", "wait_for_agents", "get_agent_result", "list_agents", "stop_agent", "generate_image"]
         for prefix in ["mcp__jack__", "jack_"] where name.hasPrefix(prefix) {
             let action = String(name.dropFirst(prefix.count))
             if actions.contains(action) { return action }

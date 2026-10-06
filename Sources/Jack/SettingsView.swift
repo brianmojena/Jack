@@ -22,6 +22,7 @@ private struct GeneralSettings: View {
     @ObservedObject var store: ChatStore
     @AppStorage("collapsedSpaces") private var collapsedSpaces = ""
     @AppStorage("delegationEnabled") private var delegationEnabled = true
+    @AppStorage("imageGenerationEnabled") private var imageGenerationEnabled = true
     @AppStorage("transcriptMonospaced") private var transcriptMonospaced = true
     @AppStorage(InterfaceStyle.key) private var interfaceStyle = InterfaceStyle.basic
     @AppStorage(SimulatorSession.lightModeKey) private var simulatorLightMode = true
@@ -49,6 +50,17 @@ private struct GeneralSettings: View {
                 Text("Delegación")
             } footer: {
                 Text("Codex, Claude Code y OpenCode reciben herramientas para crear otros agentes, enviarles tareas y esperar sus resultados. Los sub-agentes no pueden delegar a su vez. Los sub-agentes aparecen bajo su agente en la barra lateral y te piden permisos a ti. Se aplica al próximo mensaje.")
+                    .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
+            }
+            Section {
+                Toggle("Los agentes pueden crear imágenes", isOn: $imageGenerationEnabled)
+                    .disabled(!store.imageGenerationSupported)
+            } header: {
+                Text("Image Playground")
+            } footer: {
+                Text(store.imageGenerationSupported
+                     ? "Cuando un agente necesita una imagen, escribe un prompt y Jack abre Image Playground en su chat, con estilo realista por defecto. Tú eliges el resultado y se guarda en el proyecto. Se aplica al próximo mensaje."
+                     : "Image Playground no está disponible en este Mac: activa Apple Intelligence en Ajustes del Sistema.")
                     .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
             }
             Section {

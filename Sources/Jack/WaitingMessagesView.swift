@@ -38,6 +38,8 @@ struct WaitingMessagesView: View {
         }
         .padding(.horizontal, 10).padding(.vertical, 8)
         .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        // Ice: floats as glass over the transcript, which scrolls beneath the composer.
+        .jackGlass(in: RoundedRectangle(cornerRadius: 8, style: .continuous), basic: .clear)
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(JackPalette.hairline, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
     }
 }
