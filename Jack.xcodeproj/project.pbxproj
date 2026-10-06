@@ -40,6 +40,7 @@
 		A2732E28952569560148E19D /* ChatDrivers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CE721E7266C74484EE01DBD /* ChatDrivers.swift */; };
 		A7D328F4FA370B7E3C7FFB6F /* ChatProcess.swift in Sources */ = {isa = PBXBuildFile; fileRef = E229CF3EA3E5C8331E30BF2D /* ChatProcess.swift */; };
 		A98FB0615710A756161AC7F6 /* JackApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC084525C4D6CE0EBEF1CF88 /* JackApp.swift */; };
+		AF626BAEB5B26D0504A10C56 /* WaitingMessagesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DCC822661DED49C89F2189E /* WaitingMessagesView.swift */; };
 		B2B738782CA7D19B82A2B3DA /* ChatModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8E5B74C47ED76F7F4E3175D /* ChatModels.swift */; };
 		B9766774E9F9FDA9D637016F /* AgentActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC1BBE9D45CBEC403EA22C82 /* AgentActivityView.swift */; };
 		BF38477F58288B2D1279DF30 /* ChatModelPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D8A6CBC10C08DC5BE8F996 /* ChatModelPicker.swift */; };
@@ -94,6 +95,7 @@
 		138D59F70F9CA07105FD1933 /* FileExplorer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileExplorer.swift; sourceTree = "<group>"; };
 		3621003C5F85DF2D65EFC584 /* AgentTabs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTabs.swift; sourceTree = "<group>"; };
 		3789D85F443A38492640A492 /* ClaudeSessionPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeSessionPicker.swift; sourceTree = "<group>"; };
+		3DCC822661DED49C89F2189E /* WaitingMessagesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaitingMessagesView.swift; sourceTree = "<group>"; };
 		48DDA04AE7E47B63803F18BB /* SessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStore.swift; sourceTree = "<group>"; };
 		49EB006FB5D21FFC9B93D8CF /* WindowChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowChrome.swift; sourceTree = "<group>"; };
 		504E39FB7DA22A1B9933C4A5 /* ChatMessageRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessageRow.swift; sourceTree = "<group>"; };
@@ -234,6 +236,7 @@
 				A3A3D7246F7BBDA7A8018807 /* SimulatorPanel.swift */,
 				50C1361476010EC1B422C026 /* StartView.swift */,
 				A093DD8DC6081C7E5DB0FA3D /* StatusBar.swift */,
+				3DCC822661DED49C89F2189E /* WaitingMessagesView.swift */,
 				49EB006FB5D21FFC9B93D8CF /* WindowChrome.swift */,
 				6164E34644769C64B3E867B1 /* WorkspacePanel.swift */,
 			);
@@ -364,6 +367,7 @@
 				6A89D2DA42A687D07F5F2C3F /* SimulatorPanel.swift in Sources */,
 				D96D2234A324FE3A3E06BAD7 /* StartView.swift in Sources */,
 				19F535BFB4481EB3F8D01D87 /* StatusBar.swift in Sources */,
+				AF626BAEB5B26D0504A10C56 /* WaitingMessagesView.swift in Sources */,
 				7441A1CC448183A8E8566D6D /* WindowChrome.swift in Sources */,
 				945101B1264E34154DC79876 /* WorkspacePanel.swift in Sources */,
 			);

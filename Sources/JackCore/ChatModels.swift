@@ -35,6 +35,18 @@ public struct ChatApprovalChoice: Identifiable, Equatable {
     public var title: String
     public init(id: String, title: String) { self.id = id; self.title = title }
 }
+/// A message written while the agent works. It waits until the agent reads it: agents that take messages
+/// mid-turn get it at once and read it when they finish their current step; others get it when the turn ends.
+public struct ChatQueuedMessage: Identifiable, Equatable {
+    public var id: String
+    public var text: String
+    public var attachments: [String]
+    /// Already handed to the agent, which holds it until it reads it.
+    public var sent = false
+    public init(id: String = UUID().uuidString.lowercased(), text: String, attachments: [String] = []) {
+        self.id = id; self.text = text; self.attachments = attachments
+    }
+}
 public struct ChatInputQuestion: Identifiable, Decodable, Equatable {
     public var id: String
     public var header: String
@@ -114,6 +126,8 @@ public enum ChatEvent {
     case approvalResolved(String)
     /// The agent switched its permission mode itself, e.g. after the user approved a plan.
     case mode(String)
+    /// The agent read a queued message; `text` is what it received.
+    case delivered(id: String, text: String)
     case completed
     case failure(String)
 }
@@ -188,8 +202,15 @@ public struct ChatCommand: Identifiable, Codable, Equatable {
     /// which the caller consumes with `follow`.
     func observe(idle: @escaping @MainActor (ChatEvent) -> Void, unprompted: @escaping @MainActor () -> Void)
     func follow(onEvent: @escaping @MainActor (ChatEvent) -> Void) async throws
-    /// Adds a user message to the turn in progress. Returns false when the driver cannot.
-    func inject(conversation: ChatConversation, prompt: String) -> Bool
+    /// Hands the agent a message to read when it finishes its current step; `.delivered` reports when it does.
+    /// Returns false when the driver cannot.
+    func inject(_ message: ChatQueuedMessage, conversation: ChatConversation) -> Bool
+    /// Takes back a message handed over with `inject`. Returns false when the agent already read it.
+    func withdraw(messageID: String) async -> Bool
+    /// Whether the agent still holds this message unread.
+    func isQueued(_ messageID: String) -> Bool
+    /// Interrupts the turn; with `keepingQueued` the agent then reads its queued messages instead of dropping them.
+    func stop(keepingQueued: Bool)
     /// Changes the permission mode, even in the middle of a turn. Returns false when the driver cannot.
     func setMode(_ mode: String) -> Bool
     /// Ends the agent's process.
@@ -208,7 +229,10 @@ public extension ChatDriver {
     var keepsAlive: Bool { false }
     func observe(idle: @escaping @MainActor (ChatEvent) -> Void, unprompted: @escaping @MainActor () -> Void) {}
     func follow(onEvent: @escaping @MainActor (ChatEvent) -> Void) async throws {}
-    func inject(conversation: ChatConversation, prompt: String) -> Bool { false }
+    func inject(_ message: ChatQueuedMessage, conversation: ChatConversation) -> Bool { false }
+    func withdraw(messageID: String) async -> Bool { false }
+    func isQueued(_ messageID: String) -> Bool { false }
+    func stop(keepingQueued: Bool) { stop() }
     func setMode(_ mode: String) -> Bool { false }
     func close() { stop() }
 }

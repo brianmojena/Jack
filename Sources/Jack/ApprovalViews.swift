@@ -9,6 +9,8 @@ struct ApprovalCard: View {
     let projectPath: String
     /// The agent reads a message typed in the chat as the reason for rejecting.
     let repliesInChat: Bool
+    /// Off while the composer holds a message, so ⌘↩ sends it instead of answering here.
+    var shortcutsEnabled = true
     let onRespond: (_ choice: String, _ message: String?) -> Void
     let onAnswer: ([String: String]) -> Void
 
@@ -20,7 +22,7 @@ struct ApprovalCard: View {
                 Spacer()
             }
             if !approval.questions.isEmpty {
-                ChatQuestionForm(approval: approval, onAnswer: onAnswer)
+                ChatQuestionForm(approval: approval, shortcutsEnabled: shortcutsEnabled, onAnswer: onAnswer)
             } else if approval.isPlan {
                 ScrollView { PlanBox(text: approval.detail) }
                     .frame(maxHeight: 340)
@@ -84,14 +86,14 @@ struct ApprovalCard: View {
                     .help("Rechazar (Esc)")
                 Button("Permitir") { onRespond("allow", nil) }
                     .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.return, modifiers: .command)
+                    .keyboardShortcut(shortcutsEnabled ? KeyboardShortcut(.return, modifiers: .command) : nil)
                     .help("Permitir una vez (⌘↩)")
             }
             ForEach(approval.choices) { choice in
                 Button { onRespond(choice.id, nil) } label: {
                     Text(choice.title).lineLimit(1).truncationMode(.middle)
                 }
-                .keyboardShortcut(.return, modifiers: [.command, .option])
+                .keyboardShortcut(shortcutsEnabled ? KeyboardShortcut(.return, modifiers: [.command, .option]) : nil)
                 .help("\(choice.title) (⌥⌘↩)")
             }
         }
@@ -115,11 +117,11 @@ struct ApprovalCard: View {
                 case "plan.acceptEdits":
                     Button(choice.title) { onRespond(choice.id, nil) }
                         .buttonStyle(.borderedProminent).tint(JackPalette.blue)
-                        .keyboardShortcut(.return, modifiers: .command)
+                        .keyboardShortcut(shortcutsEnabled ? KeyboardShortcut(.return, modifiers: .command) : nil)
                         .help("\(choice.title) (⌘↩)")
                 default:
                     Button(choice.title) { onRespond(choice.id, nil) }
-                        .keyboardShortcut(.return, modifiers: [.command, .option])
+                        .keyboardShortcut(shortcutsEnabled ? KeyboardShortcut(.return, modifiers: [.command, .option]) : nil)
                         .help("\(choice.title) (⌥⌘↩)")
                 }
             }
@@ -139,6 +141,7 @@ struct ApprovalCard: View {
 
 struct ChatQuestionForm: View {
     let approval: ChatApproval
+    var shortcutsEnabled = true
     let onAnswer: ([String: String]) -> Void
     @State private var answers: [String: String] = [:]
     @State private var selections: [String: Set<String>] = [:]
@@ -175,7 +178,7 @@ struct ChatQuestionForm: View {
                 Spacer()
                 Button("Enviar respuestas") { onAnswer(finalAnswers) }
                     .buttonStyle(.borderedProminent).tint(JackPalette.accent)
-                    .keyboardShortcut(.return, modifiers: .command)
+                    .keyboardShortcut(shortcutsEnabled ? KeyboardShortcut(.return, modifiers: .command) : nil)
                     .disabled(approval.questions.contains { (finalAnswers[$0.id] ?? "").isEmpty })
                     .help("Enviar respuestas (⌘↩)")
             }

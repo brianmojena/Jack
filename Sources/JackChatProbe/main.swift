@@ -96,7 +96,7 @@ import JackCore
                         print("APPROVAL received; rejecting smoke-test tools")
                         Task { try? await driver.respond(approvalID: approval.id, allow: false) }
                     case .tool: print("TOOL event")
-                    case .approvalResolved, .reasoning, .toolOutput, .usage, .tokens, .context, .commands, .mode: break
+                    case .approvalResolved, .reasoning, .toolOutput, .usage, .tokens, .context, .commands, .mode, .delivered: break
                     }
                 }
                 print("REPLY: \(String(output.prefix(300)))")
@@ -160,6 +160,10 @@ import JackCore
         try? await Task.sleep(for: .seconds(2))
         print("CAN SEND WHILE RUNNING \(store.canSend(to: id))")
         store.send("Además, al final añade la palabra PLATANO.", to: id)
+        let queuedAtOnce = store.waiting[id]?.first?.sent == true
+        print("WAITING \(store.waiting[id]?.count ?? 0) sent=\(queuedAtOnce)")
+        if !queuedAtOnce { failures.append("mid-turn message was not handed to Claude Code") }
+        if !(await wait(until: { store.waiting[id] == nil }, seconds: 60)) { failures.append("mid-turn message never left the waiting list") }
         if !(await wait(until: { status() == .idle }, seconds: 120)) { failures.append("steered turn did not end") }
         _ = await wait(until: { status() == .idle }, seconds: 30)
         transcript("con mensaje a mitad de turno")
@@ -169,8 +173,11 @@ import JackCore
         store.send("Ejecuta con Bash `sleep 30; echo nunca` y espera a que termine.", to: id)
         _ = await wait(until: { (store.conversations.first { $0.id == id }?.messages.last?.role == "tool") }, seconds: 60)
         try? await Task.sleep(for: .seconds(3))
+        store.send("Esto no debería leerlo", to: id)
         let stopAt = Date()
         store.stop(id)
+        if store.recalled[id]?.text != "Esto no debería leerlo" { failures.append("stopping did not return the waiting message") }
+        store.clearRecalled(id)
         if !(await wait(until: { status() == .idle }, seconds: 10)) { failures.append("interrupt did not end the turn") }
         print(String(format: "STOPPED in %.1f s, status \(status())", Date().timeIntervalSince(stopAt)))
         transcript("tras interrumpir")
@@ -180,6 +187,22 @@ import JackCore
         let alive = store.conversations.first { $0.id == id }?.messages.last { $0.role == "assistant" }?.text.contains("SIGO-AQUI") == true
         if !alive { failures.append("no reply after interrupt") }
         transcript("tras reanudar")
+        if store.conversations.first(where: { $0.id == id })?.messages.contains(where: { $0.text == "Esto no debería leerlo" }) == true { failures.append("a recalled message reached the agent") }
+
+        // Ctrl+Enter: interrupt the step in progress and have the agent read the message right away.
+        store.send("Ejecuta con Bash `sleep 40; echo nunca` y espera a que termine.", to: id)
+        _ = await wait(until: { (store.conversations.first { $0.id == id }?.messages.last?.role == "tool") }, seconds: 60)
+        try? await Task.sleep(for: .seconds(2))
+        let urgentAt = Date()
+        store.send("Olvida el comando. Responde solo: MANZANA", to: id, interrupting: true)
+        let read = await wait(until: { store.waiting[id] == nil }, seconds: 20)
+        print(String(format: "URGENT read in %.1f s", Date().timeIntervalSince(urgentAt)))
+        if !read { failures.append("interrupting did not make the agent read the message") }
+        _ = await wait(until: { status() == .running }, seconds: 10)
+        if !(await wait(until: { status() == .idle }, seconds: 60)) { failures.append("turn after interrupting did not end") }
+        let urgent = store.conversations.first { $0.id == id }?.messages.last { $0.role == "assistant" }?.text.contains("MANZANA") == true
+        if !urgent { failures.append("no reply to the interrupting message") }
+        transcript("tras interrumpir y enviar")
 
         let planFile = URL(fileURLWithPath: project).appendingPathComponent("plan-probe.txt")
         try? FileManager.default.removeItem(at: planFile)

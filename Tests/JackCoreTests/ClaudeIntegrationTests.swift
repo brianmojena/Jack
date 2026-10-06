@@ -9,6 +9,8 @@ import XCTest
     var unprompted: (@MainActor () -> Void)?
     var runs = 0, follows = 0, interrupts = 0, closed = 0
     var injected: [String] = []
+    var queued: [String] = []
+    var keptQueued: [Bool] = []
     var modes: [String] = []
     var responses: [(String, String, String?)] = []
 
@@ -29,9 +31,17 @@ import XCTest
     }
     func respond(approvalID: String, allow: Bool) async throws {}
     func respond(approvalID: String, choice: String, message: String?) async throws { responses.append((approvalID, choice, message)) }
-    func inject(conversation: ChatConversation, prompt: String) -> Bool { injected.append(prompt); return true }
+    func inject(_ message: ChatQueuedMessage, conversation: ChatConversation) -> Bool { injected.append(message.text); queued.append(message.id); return true }
+    func withdraw(messageID: String) async -> Bool {
+        guard queued.contains(messageID) else { return false }
+        queued.removeAll { $0 == messageID }; return true
+    }
+    func isQueued(_ messageID: String) -> Bool { queued.contains(messageID) }
+    func stop(keepingQueued: Bool) { keptQueued.append(keepingQueued); interrupts += 1; if !keepingQueued { queued.removeAll() } }
+    /// The agent reads a queued message between steps.
+    func read(_ index: Int = 0) { let id = queued.remove(at: index); callback?(.delivered(id: id, text: injected.last ?? "")) }
     func setMode(_ mode: String) -> Bool { modes.append(mode); return true }
-    func stop() { interrupts += 1 }
+    func stop() { stop(keepingQueued: false) }
     func close() { closed += 1 }
     func finish() { continuation?.resume(); continuation = nil }
 }
@@ -54,7 +64,13 @@ final class ClaudeIntegrationTests: XCTestCase {
         XCTAssertTrue(store.canSend(to: id))
         store.send("y además esto", to: id)
         XCTAssertEqual(driver.injected, ["y además esto"])
-        XCTAssertEqual(store.selectedConversation?.messages.map(\.text), ["primero", "y además esto"])
+        XCTAssertEqual(store.waiting[id]?.map(\.text), ["y además esto"])
+        XCTAssertEqual(store.waiting[id]?.first?.sent, true)
+        XCTAssertEqual(store.selectedConversation?.messages.map(\.text), ["primero"], "it waits until the agent reads it")
+        driver.callback?(.text(id: "a1", text: "trabajando", replace: true))
+        driver.read(); await settle()
+        XCTAssertNil(store.waiting[id])
+        XCTAssertEqual(store.selectedConversation?.messages.map(\.text), ["primero", "trabajando", "y además esto"])
 
         store.stop(id)
         XCTAssertEqual(driver.interrupts, 1)
@@ -66,6 +82,69 @@ final class ClaudeIntegrationTests: XCTestCase {
         XCTAssertEqual(drivers().count, 1, "the same process serves the next turn")
         XCTAssertEqual(driver.runs, 2)
         driver.finish(); await settle()
+    }
+
+    @MainActor func testStoppingReturnsWaitingMessagesAndInterruptingKeepsThemQueued() async throws {
+        let (store, folder, drivers) = fixture()
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        let id = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .claude))
+        store.send("primero"); await settle()
+        let driver = try XCTUnwrap(drivers().first)
+
+        store.send("uno", to: id)
+        store.send("dos", attachments: ["/tmp/a.png"], to: id)
+        let edited = await store.withdraw(try XCTUnwrap(store.waiting[id]?.first?.id), from: id)
+        XCTAssertEqual(edited?.text, "uno")
+        XCTAssertEqual(driver.queued.count, 1, "withdrawing takes it back from the agent")
+        store.stop(id)
+        XCTAssertEqual(driver.keptQueued, [false])
+        XCTAssertNil(store.waiting[id])
+        XCTAssertEqual(store.recalled[id]?.text, "dos")
+        XCTAssertEqual(store.recalled[id]?.attachments, ["/tmp/a.png"])
+        driver.callback?(.completed); driver.finish(); await settle()
+        store.clearRecalled(id)
+
+        store.send("segundo"); await settle()
+        store.send("urgente", to: id, interrupting: true)
+        XCTAssertEqual(driver.keptQueued, [false, true], "the agent reads it right after the interruption")
+        XCTAssertEqual(store.waiting[id]?.map(\.text), ["urgente"])
+        driver.callback?(.completed); driver.finish(); await settle()
+        XCTAssertEqual(store.waiting[id]?.map(\.text), ["urgente"], "still held by the agent, which starts a turn for it")
+        XCTAssertEqual(driver.runs, 2, "Jack does not send it again")
+        driver.unprompted?(); await settle()
+        driver.read(); await settle()
+        XCTAssertNil(store.waiting[id])
+        XCTAssertEqual(store.selectedConversation?.messages.last?.text, "urgente")
+        driver.callback?(.completed); driver.finish(); await settle()
+    }
+
+    @MainActor func testMessagesForAgentsThatCannotReadMidTurnAreSentWhenTheTurnEnds() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("jack-wait-tests-" + UUID().uuidString)
+        var prompts: [String] = []
+        var finish: CheckedContinuation<Void, Never>?
+        final class TurnDriver: ChatDriver {
+            let started: (String) -> Void
+            var continuation: (CheckedContinuation<Void, Never>) -> Void
+            init(started: @escaping (String) -> Void, continuation: @escaping (CheckedContinuation<Void, Never>) -> Void) { self.started = started; self.continuation = continuation }
+            func run(conversation: ChatConversation, prompt: String, onEvent: @escaping @MainActor (ChatEvent) -> Void) async throws {
+                started(prompt); await withCheckedContinuation { continuation($0) }
+            }
+            func respond(approvalID: String, allow: Bool) async throws {}
+            func stop() {}
+        }
+        let store = ChatStore(archive: ChatArchive(directory: folder), preferences: nil, driverFactory: { _ in
+            TurnDriver(started: { prompts.append($0) }, continuation: { finish = $0 })
+        })
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        let id = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .codex))
+        store.send("primero"); await settle()
+        store.send("a", to: id); store.send("b", to: id)
+        XCTAssertEqual(store.waiting[id]?.map(\.sent), [false, false])
+        finish?.resume(); finish = nil; await settle()
+        XCTAssertEqual(prompts, ["primero", "a\n\nb"], "held messages go out together as the next turn")
+        XCTAssertNil(store.waiting[id])
+        XCTAssertEqual(store.selectedConversation?.messages.last?.text, "a\n\nb")
+        finish?.resume(); await settle()
     }
 
     @MainActor func testAgentStartsTurnByItselfAndIdleEventsUpdateTheTranscript() async throws {
