@@ -6,6 +6,9 @@ struct MainWindowView: View {
     @State private var drafts: [UUID: String] = [:]
     @State private var attachments: [UUID: [String]] = [:]
     @State private var dropTargeted = false
+    @StateObject private var workspace = WorkspaceSessions()
+    @State private var showingWorkspace = false
+    @State private var workspaceTool: WorkspaceTool = .terminal
     @State private var visibleMessageCounts: [UUID: Int] = [:]
     @State private var nearBottom = true
     @State private var showingNewConversation = false
@@ -48,6 +51,8 @@ struct MainWindowView: View {
         }
         
         .frame(minWidth: 900, minHeight: 620)
+        .onChange(of: store.conversations.map(\.id)) { _, ids in workspace.prune(keeping: Set(ids)) }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in workspace.terminateAll() }
         .focusedSceneValue(\.jackActions, actions)
         .sheet(isPresented: $showingNewConversation) {
             NewAgentSheet(
@@ -133,6 +138,10 @@ struct MainWindowView: View {
             return true
         }
         .overlay { if dropTargeted { AttachmentDropOverlay() } }
+        .inspector(isPresented: $showingWorkspace) {
+            WorkspacePanel(sessions: workspace, conversation: conversation, tool: $workspaceTool)
+                .inspectorColumnWidth(min: 340, ideal: 520, max: 1100)
+        }
         .navigationTitle(conversation.title)
         .navigationSubtitle(conversationSubtitle(conversation))
         .toolbar {
@@ -151,6 +160,10 @@ struct MainWindowView: View {
                     ContextGauge(usage: context, costUSD: (store.tokenUsage[conversation.id] ?? conversation.tokenUsage)?.costUSD)
                 }
                 AgentFoldersButton(store: store, conversation: conversation)
+                ForEach(WorkspaceTool.allCases) { tool in
+                    Button { toggleWorkspace(tool) } label: { Label(tool.title, systemImage: tool.symbol) }
+                        .help(showingWorkspace && workspaceTool == tool ? "Ocultar \(tool.title.lowercased())" : "Mostrar \(tool.title.lowercased()) del proyecto")
+                }
                 Button {
                     NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: conversation.projectPath)])
                 } label: { Label("Mostrar en Finder", systemImage: "folder") }
@@ -495,6 +508,11 @@ struct MainWindowView: View {
         attachments[conversation.id] = nil
     }
 
+    private func toggleWorkspace(_ tool: WorkspaceTool) {
+        if showingWorkspace && workspaceTool == tool { showingWorkspace = false }
+        else { workspaceTool = tool; showingWorkspace = true }
+    }
+
     private func attach(_ paths: [String], to id: UUID) {
         guard !paths.isEmpty else { return }
         var current = attachments[id] ?? []
@@ -556,6 +574,8 @@ struct MainWindowView: View {
                 guard let conversation = selectedConversation else { return }
                 store.setUnread(conversation.id, conversation.hasUnread != true)
             },
+            toggleTerminal: { toggleWorkspace(.terminal) },
+            toggleBrowser: { toggleWorkspace(.browser) },
             hasSelection: selectedConversation != nil,
             agentCount: store.conversations.count
         )

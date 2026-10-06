@@ -10,10 +10,12 @@ let package = Package(
         .executable(name: "JackProbe", targets: ["JackProbe"]),
         .executable(name: "JackChatProbe", targets: ["JackChatProbe"])
     ],
-    dependencies: [],
+    dependencies: [
+        .package(url: "https://github.com/migueldeicaza/SwiftTerm", from: "1.20.0")
+    ],
     targets: [
         .target(name: "JackCore"),
-        .executableTarget(name: "Jack", dependencies: ["JackCore"]),
+        .executableTarget(name: "Jack", dependencies: ["JackCore", .product(name: "SwiftTerm", package: "SwiftTerm")]),
         .executableTarget(name: "JackProbe", dependencies: ["JackCore"]),
         .executableTarget(name: "JackChatProbe", dependencies: ["JackCore"]),
         .testTarget(name: "JackCoreTests", dependencies: ["JackCore"])

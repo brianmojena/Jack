@@ -9,6 +9,8 @@ struct JackActions {
     var focusComposer: () -> Void
     var focusSearch: () -> Void
     var toggleUnread: () -> Void
+    var toggleTerminal: () -> Void
+    var toggleBrowser: () -> Void
     var hasSelection: Bool
     var agentCount: Int
 }
@@ -51,6 +53,13 @@ struct JackCommands: Commands {
                 .disabled(actions == nil)
             Button("Marcar como leído / no leído") { actions?.toggleUnread() }
                 .keyboardShortcut("u", modifiers: [.command, .shift])
+                .disabled(actions?.hasSelection != true)
+            Divider()
+            Button("Mostrar u ocultar terminal") { actions?.toggleTerminal() }
+                .keyboardShortcut("`", modifiers: .control)
+                .disabled(actions?.hasSelection != true)
+            Button("Mostrar u ocultar navegador") { actions?.toggleBrowser() }
+                .keyboardShortcut("b", modifiers: [.command, .shift])
                 .disabled(actions?.hasSelection != true)
         }
     }

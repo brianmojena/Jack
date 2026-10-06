@@ -27,6 +27,8 @@ El botón **Carpetas** de la barra superior da acceso a carpetas fuera del proye
 
 Para adjuntar archivos, arrástralos (imágenes, documentos, carpetas…) a cualquier parte del chat o usa el clip del compositor. Todos los agentes reciben la ruta de cada adjunto y acceso de lectura a su carpeta; las imágenes PNG, JPEG, GIF y WebP de hasta 3,75 MB viajan además dentro del mensaje. Las capturas y datos de imagen sin archivo propio se guardan en `~/Library/Application Support/Jack/Attachments`.
 
+Cada agente tiene además un terminal y un navegador propios en el panel lateral: botones **Terminal** y **Navegador** de la barra superior, o ⌃` y ⇧⌘B. El terminal (SwiftTerm) abre tu shell de inicio de sesión en la carpeta del proyecto y sigue vivo al cambiar de agente. El navegador (WebKit) entiende `3000` o `localhost:5173` como servidores locales, incluye el inspector web (clic derecho → Inspeccionar elemento) y recibe los enlaces que pulses en el terminal.
+
 El valor inicial es cuatro conversaciones a la vez. Puedes cambiarlo desde el menú de paralelismo de la barra lateral o en Ajustes: de 1 a 64, o sin límite. Las conversaciones que exceden el valor elegido esperan en cola. Reducirlo no interrumpe las que ya están trabajando. **Detener** interrumpe únicamente la conversación indicada. Al salir se detienen los procesos creados por Jack; el historial guardado permite continuar después. Las sesiones existentes de Herdr siguen siendo independientes.
 
 Instala y autentica los proveedores con sus propias CLI antes de usarlos. Jack aprovecha esos accesos existentes; no administra credenciales ni cuentas. Los nombres de modelos dependen de tu proveedor y acceso. OpenCode usa el formato `proveedor/modelo`, o su modelo configurado si dejas el campo vacío.

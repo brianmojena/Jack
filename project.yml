@@ -4,6 +4,10 @@ options:
   deploymentTarget:
     macOS: "15.0"
   createIntermediateGroups: true
+packages:
+  SwiftTerm:
+    url: https://github.com/migueldeicaza/SwiftTerm
+    from: 1.20.0
 settings:
   base:
     ARCHS: arm64
@@ -29,6 +33,7 @@ targets:
       - Resources/Assets.xcassets
     dependencies:
       - target: JackCore
+      - package: SwiftTerm
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.jack.desktop
