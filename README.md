@@ -1,0 +1,68 @@
+# Jack
+
+Chat nativo y compacto para gestionar varios agentes de desarrollo en macOS. Interfaz oscura en SwiftUI/AppKit, con proyectos, conversaciones independientes, herramientas plegables y permisos dentro del chat.
+
+## Construir
+
+Requiere un Mac con Apple Silicon, macOS 15+, Xcode y XcodeGen. No necesita Electron, Node para la interfaz ni dependencias externas de Swift.
+
+```sh
+./scripts/build-app.sh
+swift test
+```
+
+La aplicación queda en `build/Build/Products/Release/Jack.app`. Es una compilación local con firma ad hoc.
+
+## Uso
+
+Pulsa **Nuevo agente**, elige la carpeta y el proveedor: Codex, Claude Code u OpenCode. Cada conversación guarda su modelo, razonamiento y sesión. Usa **Enter** para enviar y **Shift+Enter** para insertar un salto de línea. El chat muestra el razonamiento o resumen que expone cada proveedor, herramientas con entradas y resultados, comandos con salida en streaming y cambios de archivos con diff. Una franja de actividad indica qué está haciendo el agente. Las herramientas se muestran como actividades expandibles; los permisos requieren una respuesta explícita. Puedes cambiar de conversación mientras otros agentes trabajan.
+
+Cambia de modelo desde el selector en la esquina inferior izquierda del cuadro de mensaje, y ajusta el esfuerzo en el menú contiguo. Codex usa su catálogo local de modelos; Claude ofrece Fable, Opus, Sonnet y Haiku, con esfuerzo de Bajo a Máximo (Haiku no admite esfuerzo); OpenCode muestra los modelos de tus proveedores conectados, agrupados por proveedor, y permite actualizar el catálogo. **Otro modelo…** permite introducir uno nuevo. Los últimos ocho modelos se recuerdan por proveedor. El cambio se aplica al siguiente mensaje y conserva el historial y la sesión; está disponible cuando el agente termina o se detiene. El selector no realiza llamadas de inferencia. OpenCode ofrece las variantes de esfuerzo que admite cada modelo; Automático utiliza su configuración habitual. El menú de modo permite elegir Normal, Plan o Auto en Codex; Manual, Plan, Auto, Aceptar ediciones o Sin preguntas en Claude; y los modos primarios configurados en OpenCode, como Build y Plan. Auto en Codex ejecuta dentro del sandbox del proyecto y deniega las operaciones que requerirían aprobación; Auto en Claude depende de la disponibilidad que indique su CLI. Las preguntas de planificación de Codex se responden dentro del chat.
+
+Escribe `/` en el cuadro de mensaje para ver los comandos del agente: los integrados, como `/compact`, y sus skills o comandos personalizados. Las flechas eligen, Tab o Enter completan y Esc cierra la lista. Claude Code ejecuta sus propios comandos; en Codex, `/compact` y `/review` usan sus funciones nativas y las skills se invocan por nombre; en OpenCode se ejecutan sus comandos, y `/compact` resume la sesión. La lista se lee del proveedor la primera vez que escribes `/` en cada proyecto, sin gastar tokens.
+
+La barra superior muestra cuánto ocupa la ventana de contexto tras la última petición; el coste estimado aparece al pasar el puntero.
+
+El botón **Carpetas** de la barra superior da acceso a carpetas fuera del proyecto. Cada agente las recibe desde su siguiente mensaje: Claude Code con `--add-dir`, Codex como raíces escribibles de su sandbox y OpenCode como permiso `external_directory`.
+
+Para adjuntar archivos, arrástralos (imágenes, documentos, carpetas…) a cualquier parte del chat o usa el clip del compositor. Todos los agentes reciben la ruta de cada adjunto y acceso de lectura a su carpeta; las imágenes PNG, JPEG, GIF y WebP de hasta 3,75 MB viajan además dentro del mensaje. Las capturas y datos de imagen sin archivo propio se guardan en `~/Library/Application Support/Jack/Attachments`.
+
+El valor inicial es cuatro conversaciones a la vez. Puedes cambiarlo desde el menú de paralelismo de la barra lateral o en Ajustes: de 1 a 64, o sin límite. Las conversaciones que exceden el valor elegido esperan en cola. Reducirlo no interrumpe las que ya están trabajando. **Detener** interrumpe únicamente la conversación indicada. Al salir se detienen los procesos creados por Jack; el historial guardado permite continuar después. Las sesiones existentes de Herdr siguen siendo independientes.
+
+Instala y autentica los proveedores con sus propias CLI antes de usarlos. Jack aprovecha esos accesos existentes; no administra credenciales ni cuentas. Los nombres de modelos dependen de tu proveedor y acceso. OpenCode usa el formato `proveedor/modelo`, o su modelo configurado si dejas el campo vacío.
+
+## Consumo y persistencia
+
+La interfaz no renderiza terminales. Los proveedores se inician bajo demanda y se liberan al terminar. El texto en streaming se agrupa cada 50 ms. El paralelismo es configurable. Los historiales inactivos quedan en disco; solo las conversaciones seleccionadas, activas o en cola permanecen cargadas. Las herramientas tienen un límite de detalle de 64 KiB.
+
+Los chats se guardan localmente en `~/Library/Application Support/Jack/Chats`: un índice pequeño y un archivo por conversación. El proveedor mantiene también su sesión original para reanudar el contexto. El consumo de inferencia y de las CLI se suma al de la interfaz.
+
+## Uso restante
+
+**Uso y límites**, en la barra lateral, muestra porcentajes restantes por ventana, reinicios y fecha de lectura. Actualizar consulta metadatos sin enviar mensajes a los modelos.
+
+- Codex: consulta oficial `account/rateLimits/read` y actualizaciones del App Server; separa las cuotas de distintos modelos cuando la cuenta las devuelve.
+- Claude Code: lectura de `cachedUsageUtilization` en su estado local, identificada como caché con fecha; los eventos nativos `rate_limit_event` actualizan las ventanas disponibles. Los periodos vencidos no se presentan como un saldo nuevo.
+- OpenCode: su servidor no expone una cuota unificada para todas las cuentas de sus proveedores. El chat muestra los tokens y el coste que devuelve el agente y el panel identifica la ausencia de cuota.
+
+La app muestra solo el razonamiento que el proveedor envía: no reconstruye contenido oculto. La consulta y caché de cuotas no almacenan credenciales en Jack.
+
+## Arquitectura
+
+- `ChatModels`: contrato de conversaciones, mensajes, herramientas y aprobaciones.
+- `ChatStore`: cola, selección, agrupación de eventos y estados.
+- `ChatArchive`: índice y transcripciones, escrituras atómicas en cola de utilidad.
+- `ChatDrivers` y `ChatProcess`: protocolos estructurados y procesos propios.
+- `Sources/Jack`: interfaz nativa, sin emulador de terminal.
+
+Codex usa [App Server](https://learn.chatgpt.com/docs/app-server) por stdio; Claude Code usa [stream-json](https://code.claude.com/docs/en/headless); OpenCode usa su [servidor local](https://dev.opencode.ai/docs/server/). El módulo antiguo de Herdr se conserva con sus pruebas para compatibilidad y el probe de lectura; la nueva interfaz no se conecta a él.
+
+`JackChatProbe` comprueba respuesta estructurada y reanudación real con dos mensajes pequeños. Requiere autenticación y consume uso del proveedor:
+
+```sh
+swift run JackChatProbe codex /ruta/proyecto gpt-6-luna
+swift run JackChatProbe claude /ruta/proyecto sonnet
+swift run JackChatProbe opencode /ruta/proyecto proveedor/modelo
+```
+
+La validación y las medidas de esta versión están en [VALIDATION.md](VALIDATION.md).

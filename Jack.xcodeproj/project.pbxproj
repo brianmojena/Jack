@@ -1,0 +1,563 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		02B83CB51FECD80B94438A2F /* ChatArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = 094C42C6DC4B76FE4E66E40D /* ChatArchive.swift */; };
+		0BD576E2B4A206561BD3BED4 /* MainWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7BD885E59F4C6849E846404 /* MainWindowView.swift */; };
+		1426FBDE33222743A7485D0A /* JackCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A669F4C23030DFB614FB88C4 /* JackCore.framework */; };
+		1498D1DF8A8083084BF82604 /* JackDesign.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12A56C2DEDA3D8023FD61366 /* JackDesign.swift */; };
+		1758CFAF8C920737DFED7D85 /* JackCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A669F4C23030DFB614FB88C4 /* JackCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		1E4B9916484367A33AC3D959 /* ChatUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D0A660EF197200211C217B4 /* ChatUsage.swift */; };
+		26F33593401C4D6EF10CC974 /* AgentBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 112E9D6E62140F40A3F29A21 /* AgentBridge.swift */; };
+		28950F3713B14C7E4449B984 /* ProviderUsageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB76527AA8274E1DC203B419 /* ProviderUsageView.swift */; };
+		34BC32CE33FE4D40341CCE4D /* AgentFoldersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67147764C7E299C6400683A6 /* AgentFoldersView.swift */; };
+		6EB861C0B842D3CECBD7F800 /* ExecutableResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A45A93DAF44DBBC83A60C50 /* ExecutableResolver.swift */; };
+		827E3C32A16440805AD8B9D8 /* JackSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A513FA72943E495D585C29AB /* JackSidebar.swift */; };
+		88169CA35E507941B634D8BC /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CC159ECABCA798A6D404BD8 /* Models.swift */; };
+		8D901B967A33198662F4A94B /* ChatMessageRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504E39FB7DA22A1B9933C4A5 /* ChatMessageRow.swift */; };
+		96AB78C25512D6E21C9AA45B /* ChatStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55789284D46B10B50C316C86 /* ChatStore.swift */; };
+		9E32EAA13FF894FCB4AAB92D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2E1B2F8CCC4DBA9277E4269 /* SettingsView.swift */; };
+		A2732E28952569560148E19D /* ChatDrivers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CE721E7266C74484EE01DBD /* ChatDrivers.swift */; };
+		A7D328F4FA370B7E3C7FFB6F /* ChatProcess.swift in Sources */ = {isa = PBXBuildFile; fileRef = E229CF3EA3E5C8331E30BF2D /* ChatProcess.swift */; };
+		A98FB0615710A756161AC7F6 /* JackApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC084525C4D6CE0EBEF1CF88 /* JackApp.swift */; };
+		B2B738782CA7D19B82A2B3DA /* ChatModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8E5B74C47ED76F7F4E3175D /* ChatModels.swift */; };
+		B9766774E9F9FDA9D637016F /* AgentActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC1BBE9D45CBEC403EA22C82 /* AgentActivityView.swift */; };
+		BF38477F58288B2D1279DF30 /* ChatModelPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D8A6CBC10C08DC5BE8F996 /* ChatModelPicker.swift */; };
+		C119C546D022B81ABA72AAF1 /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48DDA04AE7E47B63803F18BB /* SessionStore.swift */; };
+		CEAD7B435ED39A00C2787A75 /* JackCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B8F35219BDD3B6F10A58137 /* JackCommands.swift */; };
+		D5A642CF4BCD0CB1A9FA3806 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C4E64BB6ED15B3A579DB97CE /* Assets.xcassets */; };
+		D9BC01980D4186E943774370 /* ChatCommandViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1DA779938E07CE10645928A /* ChatCommandViews.swift */; };
+		DF87C7D5B4F7163DBFBADFD0 /* NewAgentSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8816FF36883C8E65FD124DC7 /* NewAgentSheet.swift */; };
+		E60ACFDAC8A34BDB557D96DC /* UnixSocketTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09291DE01EDF91BE9972B424 /* UnixSocketTransport.swift */; };
+		E824B6F7F7B32A392DC14117 /* ChatModelChoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAA06A062E9665524A768902 /* ChatModelChoice.swift */; };
+		EC04FA625364509E11174352 /* MarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BF3FCA24BA069D694B0B6F5 /* MarkdownText.swift */; };
+		F4C4F1A3CBF9BF0DD8CEB3FB /* ContextPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AD6A284F00CF9276696D1F8 /* ContextPanelView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		8A116BAE66410D0001A37F03 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0D6918EDC0DA90E9F7119A31 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 61A0A070CDB6618923644A0D;
+			remoteInfo = JackCore;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		FF181DF229861E5FF8BBC824 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				1758CFAF8C920737DFED7D85 /* JackCore.framework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		09291DE01EDF91BE9972B424 /* UnixSocketTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnixSocketTransport.swift; sourceTree = "<group>"; };
+		094C42C6DC4B76FE4E66E40D /* ChatArchive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatArchive.swift; sourceTree = "<group>"; };
+		0AD6A284F00CF9276696D1F8 /* ContextPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextPanelView.swift; sourceTree = "<group>"; };
+		0D0A660EF197200211C217B4 /* ChatUsage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatUsage.swift; sourceTree = "<group>"; };
+		112E9D6E62140F40A3F29A21 /* AgentBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentBridge.swift; sourceTree = "<group>"; };
+		12A56C2DEDA3D8023FD61366 /* JackDesign.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JackDesign.swift; sourceTree = "<group>"; };
+		48DDA04AE7E47B63803F18BB /* SessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStore.swift; sourceTree = "<group>"; };
+		504E39FB7DA22A1B9933C4A5 /* ChatMessageRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessageRow.swift; sourceTree = "<group>"; };
+		55789284D46B10B50C316C86 /* ChatStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatStore.swift; sourceTree = "<group>"; };
+		67147764C7E299C6400683A6 /* AgentFoldersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentFoldersView.swift; sourceTree = "<group>"; };
+		6B8F35219BDD3B6F10A58137 /* JackCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JackCommands.swift; sourceTree = "<group>"; };
+		8816FF36883C8E65FD124DC7 /* NewAgentSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewAgentSheet.swift; sourceTree = "<group>"; };
+		8A45A93DAF44DBBC83A60C50 /* ExecutableResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExecutableResolver.swift; sourceTree = "<group>"; };
+		9BF3FCA24BA069D694B0B6F5 /* MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownText.swift; sourceTree = "<group>"; };
+		9CC159ECABCA798A6D404BD8 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		9CE721E7266C74484EE01DBD /* ChatDrivers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatDrivers.swift; sourceTree = "<group>"; };
+		A513FA72943E495D585C29AB /* JackSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JackSidebar.swift; sourceTree = "<group>"; };
+		A669F4C23030DFB614FB88C4 /* JackCore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = JackCore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		BAA06A062E9665524A768902 /* ChatModelChoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModelChoice.swift; sourceTree = "<group>"; };
+		BB76527AA8274E1DC203B419 /* ProviderUsageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderUsageView.swift; sourceTree = "<group>"; };
+		C3D8A6CBC10C08DC5BE8F996 /* ChatModelPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModelPicker.swift; sourceTree = "<group>"; };
+		C4E64BB6ED15B3A579DB97CE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		CC084525C4D6CE0EBEF1CF88 /* JackApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JackApp.swift; sourceTree = "<group>"; };
+		D8E5B74C47ED76F7F4E3175D /* ChatModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModels.swift; sourceTree = "<group>"; };
+		E1DA779938E07CE10645928A /* ChatCommandViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatCommandViews.swift; sourceTree = "<group>"; };
+		E229CF3EA3E5C8331E30BF2D /* ChatProcess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatProcess.swift; sourceTree = "<group>"; };
+		E2E1B2F8CCC4DBA9277E4269 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		EC1BBE9D45CBEC403EA22C82 /* AgentActivityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentActivityView.swift; sourceTree = "<group>"; };
+		F7BD885E59F4C6849E846404 /* MainWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowView.swift; sourceTree = "<group>"; };
+		FB9EA786E5FECB86077B5F5E /* Jack.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Jack.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		2001F11A96C2C405A68651E2 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1426FBDE33222743A7485D0A /* JackCore.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		10185CEDD28044A0F4B46BD2 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				FB9EA786E5FECB86077B5F5E /* Jack.app */,
+				A669F4C23030DFB614FB88C4 /* JackCore.framework */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		17659D72BFDF6A512C205A66 /* JackCore */ = {
+			isa = PBXGroup;
+			children = (
+				112E9D6E62140F40A3F29A21 /* AgentBridge.swift */,
+				094C42C6DC4B76FE4E66E40D /* ChatArchive.swift */,
+				9CE721E7266C74484EE01DBD /* ChatDrivers.swift */,
+				BAA06A062E9665524A768902 /* ChatModelChoice.swift */,
+				D8E5B74C47ED76F7F4E3175D /* ChatModels.swift */,
+				E229CF3EA3E5C8331E30BF2D /* ChatProcess.swift */,
+				55789284D46B10B50C316C86 /* ChatStore.swift */,
+				0D0A660EF197200211C217B4 /* ChatUsage.swift */,
+				8A45A93DAF44DBBC83A60C50 /* ExecutableResolver.swift */,
+				9CC159ECABCA798A6D404BD8 /* Models.swift */,
+				48DDA04AE7E47B63803F18BB /* SessionStore.swift */,
+				09291DE01EDF91BE9972B424 /* UnixSocketTransport.swift */,
+			);
+			path = JackCore;
+			sourceTree = "<group>";
+		};
+		2AF414334C3065F549E8540E /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				E4219796004773F28B8EA80D /* Jack */,
+				17659D72BFDF6A512C205A66 /* JackCore */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		3D49F9DCD5727EBDF114792D = {
+			isa = PBXGroup;
+			children = (
+				AF400410ECD3834A7BDA72DB /* Resources */,
+				2AF414334C3065F549E8540E /* Sources */,
+				10185CEDD28044A0F4B46BD2 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		AF400410ECD3834A7BDA72DB /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				C4E64BB6ED15B3A579DB97CE /* Assets.xcassets */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		E4219796004773F28B8EA80D /* Jack */ = {
+			isa = PBXGroup;
+			children = (
+				EC1BBE9D45CBEC403EA22C82 /* AgentActivityView.swift */,
+				67147764C7E299C6400683A6 /* AgentFoldersView.swift */,
+				E1DA779938E07CE10645928A /* ChatCommandViews.swift */,
+				504E39FB7DA22A1B9933C4A5 /* ChatMessageRow.swift */,
+				C3D8A6CBC10C08DC5BE8F996 /* ChatModelPicker.swift */,
+				0AD6A284F00CF9276696D1F8 /* ContextPanelView.swift */,
+				CC084525C4D6CE0EBEF1CF88 /* JackApp.swift */,
+				6B8F35219BDD3B6F10A58137 /* JackCommands.swift */,
+				12A56C2DEDA3D8023FD61366 /* JackDesign.swift */,
+				A513FA72943E495D585C29AB /* JackSidebar.swift */,
+				F7BD885E59F4C6849E846404 /* MainWindowView.swift */,
+				9BF3FCA24BA069D694B0B6F5 /* MarkdownText.swift */,
+				8816FF36883C8E65FD124DC7 /* NewAgentSheet.swift */,
+				BB76527AA8274E1DC203B419 /* ProviderUsageView.swift */,
+				E2E1B2F8CCC4DBA9277E4269 /* SettingsView.swift */,
+			);
+			path = Jack;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		30C3744496B0DE2E20AAFCC0 /* Jack */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 601924937A33EACC68F42767 /* Build configuration list for PBXNativeTarget "Jack" */;
+			buildPhases = (
+				6837138BEFBEFABFEA776BB2 /* Sources */,
+				147FA3EDF5AAEC5A55D032E6 /* Resources */,
+				2001F11A96C2C405A68651E2 /* Frameworks */,
+				FF181DF229861E5FF8BBC824 /* Embed Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B98D51581535FAF4D02E4205 /* PBXTargetDependency */,
+			);
+			name = Jack;
+			packageProductDependencies = (
+			);
+			productName = Jack;
+			productReference = FB9EA786E5FECB86077B5F5E /* Jack.app */;
+			productType = "com.apple.product-type.application";
+		};
+		61A0A070CDB6618923644A0D /* JackCore */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EB9F13B05DF9C6015CA64BAB /* Build configuration list for PBXNativeTarget "JackCore" */;
+			buildPhases = (
+				BEEBF929D4B07C77962C5DAF /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = JackCore;
+			packageProductDependencies = (
+			);
+			productName = JackCore;
+			productReference = A669F4C23030DFB614FB88C4 /* JackCore.framework */;
+			productType = "com.apple.product-type.framework";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		0D6918EDC0DA90E9F7119A31 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					30C3744496B0DE2E20AAFCC0 = {
+						ProvisioningStyle = Manual;
+					};
+					61A0A070CDB6618923644A0D = {
+						ProvisioningStyle = Manual;
+					};
+				};
+			};
+			buildConfigurationList = C38D1958DEF0BE7F8FDB073E /* Build configuration list for PBXProject "Jack" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 3D49F9DCD5727EBDF114792D;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 10185CEDD28044A0F4B46BD2 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				61A0A070CDB6618923644A0D /* JackCore */,
+				30C3744496B0DE2E20AAFCC0 /* Jack */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		147FA3EDF5AAEC5A55D032E6 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D5A642CF4BCD0CB1A9FA3806 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		6837138BEFBEFABFEA776BB2 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B9766774E9F9FDA9D637016F /* AgentActivityView.swift in Sources */,
+				34BC32CE33FE4D40341CCE4D /* AgentFoldersView.swift in Sources */,
+				D9BC01980D4186E943774370 /* ChatCommandViews.swift in Sources */,
+				8D901B967A33198662F4A94B /* ChatMessageRow.swift in Sources */,
+				BF38477F58288B2D1279DF30 /* ChatModelPicker.swift in Sources */,
+				F4C4F1A3CBF9BF0DD8CEB3FB /* ContextPanelView.swift in Sources */,
+				A98FB0615710A756161AC7F6 /* JackApp.swift in Sources */,
+				CEAD7B435ED39A00C2787A75 /* JackCommands.swift in Sources */,
+				1498D1DF8A8083084BF82604 /* JackDesign.swift in Sources */,
+				827E3C32A16440805AD8B9D8 /* JackSidebar.swift in Sources */,
+				0BD576E2B4A206561BD3BED4 /* MainWindowView.swift in Sources */,
+				EC04FA625364509E11174352 /* MarkdownText.swift in Sources */,
+				DF87C7D5B4F7163DBFBADFD0 /* NewAgentSheet.swift in Sources */,
+				28950F3713B14C7E4449B984 /* ProviderUsageView.swift in Sources */,
+				9E32EAA13FF894FCB4AAB92D /* SettingsView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BEEBF929D4B07C77962C5DAF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				26F33593401C4D6EF10CC974 /* AgentBridge.swift in Sources */,
+				02B83CB51FECD80B94438A2F /* ChatArchive.swift in Sources */,
+				A2732E28952569560148E19D /* ChatDrivers.swift in Sources */,
+				E824B6F7F7B32A392DC14117 /* ChatModelChoice.swift in Sources */,
+				B2B738782CA7D19B82A2B3DA /* ChatModels.swift in Sources */,
+				A7D328F4FA370B7E3C7FFB6F /* ChatProcess.swift in Sources */,
+				96AB78C25512D6E21C9AA45B /* ChatStore.swift in Sources */,
+				1E4B9916484367A33AC3D959 /* ChatUsage.swift in Sources */,
+				6EB861C0B842D3CECBD7F800 /* ExecutableResolver.swift in Sources */,
+				88169CA35E507941B634D8BC /* Models.swift in Sources */,
+				C119C546D022B81ABA72AAF1 /* SessionStore.swift in Sources */,
+				E60ACFDAC8A34BDB557D96DC /* UnixSocketTransport.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		B98D51581535FAF4D02E4205 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 61A0A070CDB6618923644A0D /* JackCore */;
+			targetProxy = 8A116BAE66410D0001A37F03 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		08EABF99203A71CB4719E055 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_APP_SANDBOX = NO;
+				INFOPLIST_FILE = Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = dev.jack.desktop;
+				PRODUCT_NAME = Jack;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		0CC167BC50CA643DF0DCCF10 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "";
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				GENERATE_INFOPLIST_FILE = YES;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.jack.core;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				VERSIONING_SYSTEM = "apple-generic";
+			};
+			name = Debug;
+		};
+		552248331D550A98A182552C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_APP_SANDBOX = NO;
+				INFOPLIST_FILE = Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = dev.jack.desktop;
+				PRODUCT_NAME = Jack;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		67971111F728CABDA6C283EE /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "";
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				GENERATE_INFOPLIST_FILE = YES;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.jack.core;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				VERSIONING_SYSTEM = "apple-generic";
+			};
+			name = Release;
+		};
+		7942847CDAC2E1A70B96F349 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_HARDENED_RUNTIME = NO;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		BFABA3A40624D2BF29835ACD /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_HARDENED_RUNTIME = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		601924937A33EACC68F42767 /* Build configuration list for PBXNativeTarget "Jack" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				552248331D550A98A182552C /* Debug */,
+				08EABF99203A71CB4719E055 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		C38D1958DEF0BE7F8FDB073E /* Build configuration list for PBXProject "Jack" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BFABA3A40624D2BF29835ACD /* Debug */,
+				7942847CDAC2E1A70B96F349 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		EB9F13B05DF9C6015CA64BAB /* Build configuration list for PBXNativeTarget "JackCore" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0CC167BC50CA643DF0DCCF10 /* Debug */,
+				67971111F728CABDA6C283EE /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 0D6918EDC0DA90E9F7119A31 /* Project object */;
+}
