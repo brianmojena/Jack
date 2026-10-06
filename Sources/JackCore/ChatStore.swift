@@ -206,10 +206,15 @@ import Foundation
             return
         }
         let ordinaryText = text.hasPrefix("!!") ? String(text.dropFirst()) : text
-        if runs[id] == nil, compactions[id] == nil, let c = conversations.first(where: { $0.id == id }),
+        if runs[id] == nil, compactions[id] == nil, handoffs[id] == nil, let c = conversations.first(where: { $0.id == id }),
            let threshold = c.jackContext?.autoThreshold, let target = c.jackContext?.autoTarget,
            let used = c.contextUsage?.used, used >= threshold {
             afterCompaction[id] = (text, attachments)
+            loadTranscript(id)
+            if let i = conversations.firstIndex(where: { $0.id == id }) {
+                conversations[i].messages.append(ChatMessage(role: "jack", text: "Mensaje conservado mientras se compacta el contexto:\n" + ordinaryText, attachments: attachments.isEmpty ? nil : attachments))
+                save(id)
+            }
             beginCompaction(id, target: target)
             return
         }

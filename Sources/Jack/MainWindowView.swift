@@ -596,7 +596,9 @@ struct MainWindowView: View {
         let files = attachments[conversation.id] ?? []
         guard !text.isEmpty || !files.isEmpty, store.canSend(to: conversation.id) else { return }
         if store.selectedID != conversation.id { store.select(conversation.id) }
+        store.errorMessage = nil
         store.send(text, attachments: files)
+        guard store.errorMessage == nil else { return }
         drafts[conversation.id] = ""
         attachments[conversation.id] = nil
     }
