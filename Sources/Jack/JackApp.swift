@@ -1,18 +1,20 @@
 import JackCore
 import SwiftUI
+import UserNotifications
 
 @main
 struct JackApp: App {
     /// `JACK_DATA_DIR` runs a build on a copy of the chats, beside the installed Jack.
     @StateObject private var store = ChatStore(archive: ChatArchive(directory: ProcessInfo.processInfo.environment["JACK_DATA_DIR"].map { URL(fileURLWithPath: $0) }))
     @NSApplicationDelegateAdaptor(JackAppDelegate.self) private var appDelegate
+    @StateObject private var batterySaver = BatterySaver()
 
     var body: some Scene {
         Window("Jack", id: "main") {
-            MainWindowView(store: store)
-                
+            MainWindowView(store: store, workspace: appDelegate.workspace, memory: appDelegate.memory, batterySaver: batterySaver)
                 .onAppear {
                     appDelegate.store = store
+                    appDelegate.batterySaver = batterySaver
                     store.imageGenerationSupported = ImagePlaygroundSupport.isAvailable
                 }
                 .task {
@@ -31,17 +33,60 @@ struct JackApp: App {
         Settings {
             SettingsView(store: store)
         }
+
+        MenuBarExtra(isInserted: Binding(get: { batterySaver.isOn }, set: { _ in })) {
+            BatterySaverMenu(store: store, saver: batterySaver)
+        } label: {
+            BatterySaverLabel(store: store, saver: batterySaver)
+        }
+        .menuBarExtraStyle(.window)
     }
 }
 
 @MainActor
-final class JackAppDelegate: NSObject, NSApplicationDelegate {
+final class JackAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     weak var store: ChatStore?
+    weak var batterySaver: BatterySaver?
+    /// Terminals, browsers and the simulator outlive the window, so battery saver can close it without
+    /// killing a dev server running in a terminal.
+    let workspace = WorkspaceSessions()
+    /// Unsent messages and attachments, kept while the window is closed.
+    let memory = WindowMemory()
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        UNUserNotificationCenter.jack?.delegate = self
+    }
+
+    /// In battery saver the window is closed on purpose: Jack keeps running in the menu bar.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { batterySaver?.isOn != true }
+
+    /// Opening Jack again (Finder, Spotlight) leaves battery saver.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        guard let batterySaver, batterySaver.isOn else { return true }
+        batterySaver.exit()
+        return false
+    }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        workspace.terminateAll()
         store?.shutdown()
         return .terminateNow
     }
+
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
+        [.banner, .sound]
+    }
+
+    /// Clicking a notification opens Jack on that agent's chat.
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        let id = (response.notification.request.content.userInfo["conversation"] as? String).flatMap(UUID.init(uuidString:))
+        await MainActor.run { batterySaver?.exit(showing: id) }
+    }
+}
+
+/// What the main window keeps for when it opens again.
+@MainActor
+final class WindowMemory {
+    var drafts: [UUID: String] = [:]
+    var attachments: [UUID: [String]] = [:]
 }

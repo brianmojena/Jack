@@ -16,6 +16,7 @@ struct StatusBar: View, Equatable {
     let setConcurrency: (Int) -> Void
     let conversationTitle: (UUID) -> String?
     let openConversation: (UUID) -> Void
+    let enterBatterySaver: () -> Void
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.usage == rhs.usage && lhs.refreshing == rhs.refreshing && lhs.activeCount == rhs.activeCount
@@ -66,6 +67,12 @@ struct StatusBar: View, Equatable {
                 Label("\(terminalCount)", systemImage: "apple.terminal")
                     .help(terminalCount == 1 ? "1 terminal abierto" : "\(terminalCount) terminales abiertos")
             }
+            Button(action: enterBatterySaver) {
+                Image(systemName: "leaf").font(.system(size: 11, weight: .medium))
+            }
+            .buttonStyle(.plain)
+            .help("Modo ahorro de batería: cierra la ventana y deja Jack en la barra de menús (⌃⌘B)")
+            .accessibilityLabel("Modo ahorro de batería")
             Menu {
                 Section("Agentes en paralelo") {
                     ForEach([1, 2, 3, 4, 6, 8], id: \.self) { count in

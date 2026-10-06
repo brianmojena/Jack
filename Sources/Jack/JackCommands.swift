@@ -17,6 +17,7 @@ struct JackActions {
     var toggleExplorer: () -> Void
     var toggleSidebar: () -> Void
     var closeTab: () -> Void
+    var enterBatterySaver: () -> Void
     var hasSelection: Bool
     var agentCount: Int
 }
@@ -53,6 +54,9 @@ struct JackCommands: Commands {
             Button("Mostrar u ocultar archivos") { actions?.toggleExplorer() }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
                 .disabled(actions?.hasSelection != true)
+            Button("Modo ahorro de batería") { actions?.enterBatterySaver() }
+                .keyboardShortcut("b", modifiers: [.command, .control])
+                .disabled(actions == nil)
             Divider()
         }
         CommandMenu("Agentes") {

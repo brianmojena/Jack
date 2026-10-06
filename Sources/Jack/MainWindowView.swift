@@ -3,6 +3,12 @@ import SwiftUI
 
 struct MainWindowView: View {
     @ObservedObject var store: ChatStore
+    /// Not observed here: only the panes observe it, so tabs opening never re-render the chat.
+    /// Owned by the app, so it outlives the window in battery saver.
+    let workspace: WorkspaceSessions
+    let memory: WindowMemory
+    let batterySaver: BatterySaver
+    @Environment(\.dismissWindow) private var dismissWindow
     @State private var drafts: [UUID: String] = [:]
     @State private var historyIndices: [UUID: Int] = [:]
     @State private var historyDrafts: [UUID: String] = [:]
@@ -10,8 +16,6 @@ struct MainWindowView: View {
     @State private var composingAside: UUID?
     @State private var attachments: [UUID: [String]] = [:]
     @State private var dropTargeted = false
-    /// Held as plain state: only the panes observe it, so tabs opening never re-render the chat.
-    @State private var workspace = WorkspaceSessions()
     @State private var workspaceVisible = false
     @AppStorage("explorerVisible") private var explorerVisible = false
     @AppStorage("sidebarVisible") private var sidebarVisible = true
@@ -21,6 +25,8 @@ struct MainWindowView: View {
     @State private var visibleMessageCounts: [UUID: Int] = [:]
     /// The chat follows the agent until the user scrolls up, and again once they return to the end.
     @State private var following = true
+    /// The user is dragging, flicking or wheeling the transcript; only they can stop the chat from following.
+    @State private var userScrolling = false
     @State private var showingNewConversation = false
     @State private var pendingProvider: ChatProvider?
     @State private var pendingSpace: String?
@@ -56,12 +62,19 @@ struct MainWindowView: View {
             let open = OpenTabs.opening(id, in: openTabIDs, after: previous)
             if open != openTabIDs { openTabsValue = OpenTabs.encode(open) }
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in workspace.terminateAll() }
         .onChange(of: store.imageRequests.filter(\.isPending).count) { before, now in
             // An agent is waiting for an image while the user is elsewhere: bounce the Dock icon once.
             if now > before, !NSApp.isActive { NSApp.requestUserAttention(.informationalRequest) }
         }
-        .onAppear { workspace.attach = { id, paths in attach(paths, to: id) } }
+        .onAppear {
+            workspace.attach = { id, paths in attach(paths, to: id) }
+            if drafts.isEmpty { drafts = memory.drafts }
+            if attachments.isEmpty { attachments = memory.attachments }
+        }
+        .onDisappear {
+            memory.drafts = drafts
+            memory.attachments = attachments
+        }
         // Stellar Code's local models, so its cards and pickers know what is available.
         .task { await store.refreshLocalModels() }
         .onChange(of: showingNewConversation) { _, showing in if showing { Task { await store.refreshLocalModels() } } }
@@ -200,7 +213,7 @@ struct MainWindowView: View {
         StatusBar(usage: store.usage, refreshing: store.refreshingUsage, activeCount: store.activeCount, maxConcurrent: store.maxConcurrent,
                   sessions: workspace, progress: store.progress, servers: store.servers, refresh: { Task { await store.refreshUsage() } }, setConcurrency: store.setConcurrency,
                   conversationTitle: { id in store.conversations.first { $0.id == id }?.title },
-                  openConversation: store.select)
+                  openConversation: store.select, enterBatterySaver: enterBatterySaver)
             .equatable()
     }
 
@@ -351,7 +364,10 @@ struct MainWindowView: View {
     private func messageHistory(_ conversation: ChatConversation) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
+                // A plain stack, not a lazy one: while the agent streams, the chat keeps scrolling itself to the end,
+                // and a LazyVStack then sometimes had no row created in view, leaving the chat blank until the user
+                // scrolled. Only the last 100 messages are shown, and rows are Equatable, so the cost stays small.
+                VStack(alignment: .leading, spacing: 0) {
                     if conversation.messages.isEmpty {
                         // Only on an empty chat: any row above the messages kept the bottom-anchored lazy stack
                         // from drawing the rows in view.
@@ -399,20 +415,30 @@ struct MainWindowView: View {
             .onScrollGeometryChange(for: ChatScrollMetrics.self) { geometry in
                 ChatScrollMetrics(offset: geometry.contentOffset.y, content: geometry.contentSize.height,
                                   visible: geometry.containerSize.height,
-                                  distanceToBottom: geometry.contentSize.height - geometry.visibleRect.maxY)
+                                  // Ice's composer floats over the end of the chat: its inset is part of the scrollable range.
+                                  distanceToBottom: geometry.contentSize.height + geometry.contentInsets.bottom - geometry.visibleRect.maxY)
             } action: { old, new in
                 var follow = following
                 if new.distanceToBottom < 24 {
                     follow = true
-                } else if new.offset < old.offset - 0.5, new.content >= old.content - 0.5, new.visible == old.visible {
-                    // Moving up without the content shrinking is the user scrolling back.
+                } else if userScrolling, new.offset < old.offset - 0.5 {
+                    // Only the user scrolling back stops the chat from following; SwiftUI also moves the offset
+                    // when it measures rows above, and that used to leave the chat stuck mid-conversation.
                     follow = false
                 }
                 if follow != following { following = follow }
-                if follow, new.distanceToBottom > 0.5, new.content != old.content || new.visible != old.visible {
+                if !userScrolling, new.distanceToBottom < -1 {
+                    // The content shrank (a reply rewritten shorter, a panel below gone, a row smaller than
+                    // estimated) and left the view past the last line, showing a blank chat until the next scroll.
+                    DispatchQueue.main.async { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
+                } else if follow, new.distanceToBottom > 0.5, new.content != old.content || new.visible != old.visible {
                     // New text, a tool row or a panel below the chat: stay on the agent's last line.
                     DispatchQueue.main.async { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
                 }
+            }
+            .onScrollPhaseChange { _, phase in
+                let scrolling = phase == .tracking || phase == .interacting || phase == .decelerating
+                if scrolling != userScrolling { userScrolling = scrolling }
             }
             .onChange(of: conversation.messages.count) { _, _ in
                 if following { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
@@ -1001,6 +1027,12 @@ struct MainWindowView: View {
 
     // MARK: Keyboard navigation
 
+    /// Closes the window and leaves Jack in the menu bar, notifying as agents finish.
+    private func enterBatterySaver() {
+        batterySaver.enter(store: store)
+        dismissWindow(id: "main")
+    }
+
     private var actions: JackActions {
         JackActions(
             newAgent: { openNewConversation() },
@@ -1023,6 +1055,7 @@ struct MainWindowView: View {
             toggleExplorer: toggleExplorer,
             toggleSidebar: toggleSidebar,
             closeTab: { store.selectedID.map(closeTab) },
+            enterBatterySaver: enterBatterySaver,
             hasSelection: selectedConversation != nil,
             agentCount: store.conversations.count
         )
