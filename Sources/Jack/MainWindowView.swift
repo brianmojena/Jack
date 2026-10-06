@@ -166,12 +166,14 @@ struct MainWindowView: View {
         } else {
             VStack(spacing: 0) {
                 if let error = store.errorMessage, !error.isEmpty { errorBanner(error) }
-                EmptyChatView(
-                    spaces: Array(recentSpaces.prefix(4)),
+                StartView(
+                    spaces: recentSpaces,
                     agentCount: store.conversations.count,
                     attentionCount: store.statuses.values.filter { $0 == .waiting }.count
-                ) { space, provider in
-                    openNewConversation(provider: provider, space: space)
+                ) { path, provider, message in
+                    createAgent(NewAgentRequest(projectPath: path, provider: provider, model: "", effort: "high", firstMessage: message))
+                } onMoreOptions: { path, provider in
+                    openNewConversation(provider: provider, space: path)
                 }
             }
         }
@@ -812,105 +814,6 @@ private struct ConversationHeader: View, Equatable {
         }
         .padding(.bottom, 14)
         .overlay(alignment: .bottom) { Rectangle().fill(JackPalette.hairline).frame(height: 1) }
-    }
-}
-
-private struct EmptyChatView: View {
-    let spaces: [String]
-    let agentCount: Int
-    let attentionCount: Int
-    let onNew: (String?, ChatProvider?) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 26) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(agentCount == 0 ? "Bienvenido a Jack" : "Elige un agente").font(.system(size: 24, weight: .semibold))
-                Text(subtitle).font(.system(size: 13)).foregroundStyle(JackPalette.muted)
-            }
-
-            if !spaces.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    sectionTitle("Empezar en un space")
-                    VStack(spacing: 0) {
-                        ForEach(Array(spaces.enumerated()), id: \.element) { index, path in
-                            if index > 0 { Divider().padding(.leading, 40) }
-                            Button { onNew(path, nil) } label: {
-                                HStack(spacing: 12) {
-                                    Image(systemName: "folder.fill").foregroundStyle(JackPalette.accent).frame(width: 18)
-                                    VStack(alignment: .leading, spacing: 1) {
-                                        Text(URL(fileURLWithPath: path).lastPathComponent).font(.system(size: 13, weight: .medium))
-                                        Text((path as NSString).abbreviatingWithTildeInPath)
-                                            .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
-                                            .lineLimit(1).truncationMode(.middle)
-                                    }
-                                    Spacer()
-                                    Image(systemName: "plus").font(.system(size: 11, weight: .semibold)).foregroundStyle(JackPalette.faint)
-                                }
-                                .padding(.horizontal, 12).padding(.vertical, 9)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(JackPalette.hairline, lineWidth: 0.5))
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                sectionTitle("Nuevo agente con")
-                HStack(spacing: 8) {
-                    ForEach(ChatProvider.allCases) { provider in
-                        Button { onNew(nil, provider) } label: {
-                            HStack(spacing: 8) {
-                                providerGlyph(provider, size: 22)
-                                Text(provider.title).font(.system(size: 12, weight: .medium))
-                                Spacer(minLength: 0)
-                            }
-                            .padding(9)
-                            .frame(maxWidth: .infinity)
-                            .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(JackPalette.hairline, lineWidth: 0.5))
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-
-            HStack(spacing: 18) {
-                shortcut("⌘N", "Nuevo agente")
-                shortcut("⌥⌘↓", "Siguiente")
-                shortcut("⇧⌘A", "Atención")
-                shortcut("⌘F", "Buscar")
-            }
-            .padding(.top, 2)
-        }
-        .frame(maxWidth: 520, alignment: .leading)
-        .padding(32)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(JackPalette.canvas)
-    }
-
-    private var subtitle: String {
-        if agentCount == 0 { return "Crea un agente en la carpeta de un proyecto para empezar." }
-        if attentionCount > 0 { return attentionCount == 1 ? "Un agente espera tu permiso en la barra lateral." : "\(attentionCount) agentes esperan tu permiso en la barra lateral." }
-        return "Selecciona uno en la barra lateral o crea otro."
-    }
-
-    private func sectionTitle(_ text: String) -> some View {
-        Text(text.uppercased()).font(.system(size: 10, weight: .semibold)).tracking(0.6).foregroundStyle(JackPalette.muted)
-    }
-
-    private func shortcut(_ keys: String, _ title: String) -> some View {
-        HStack(spacing: 5) {
-            Text(keys)
-                .font(.system(size: 11, weight: .medium, design: .rounded))
-                .padding(.horizontal, 5).padding(.vertical, 2)
-                .background(JackPalette.panelStrong, in: RoundedRectangle(cornerRadius: 4))
-            Text(title).font(.system(size: 11))
-        }
-        .foregroundStyle(JackPalette.muted)
     }
 }
 

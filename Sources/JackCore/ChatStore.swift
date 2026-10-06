@@ -47,7 +47,6 @@ import Foundation
         do {
             conversations = try archive.loadIndex()
             for conversation in conversations { if let value = conversation.tokenUsage { tokenUsage[conversation.id] = value } }
-            if let first = conversations.first { select(first.id) }
         } catch { errorMessage = "No se pudo abrir el historial: \(error.localizedDescription)" }
     }
     public func setConcurrency(_ count: Int) {

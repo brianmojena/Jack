@@ -40,6 +40,7 @@
 		C119C546D022B81ABA72AAF1 /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48DDA04AE7E47B63803F18BB /* SessionStore.swift */; };
 		CEAD7B435ED39A00C2787A75 /* JackCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B8F35219BDD3B6F10A58137 /* JackCommands.swift */; };
 		D5A642CF4BCD0CB1A9FA3806 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C4E64BB6ED15B3A579DB97CE /* Assets.xcassets */; };
+		D96D2234A324FE3A3E06BAD7 /* StartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C1361476010EC1B422C026 /* StartView.swift */; };
 		D9BC01980D4186E943774370 /* ChatCommandViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1DA779938E07CE10645928A /* ChatCommandViews.swift */; };
 		DF87C7D5B4F7163DBFBADFD0 /* NewAgentSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8816FF36883C8E65FD124DC7 /* NewAgentSheet.swift */; };
 		E60ACFDAC8A34BDB557D96DC /* UnixSocketTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09291DE01EDF91BE9972B424 /* UnixSocketTransport.swift */; };
@@ -85,6 +86,7 @@
 		48DDA04AE7E47B63803F18BB /* SessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStore.swift; sourceTree = "<group>"; };
 		49EB006FB5D21FFC9B93D8CF /* WindowChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowChrome.swift; sourceTree = "<group>"; };
 		504E39FB7DA22A1B9933C4A5 /* ChatMessageRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessageRow.swift; sourceTree = "<group>"; };
+		50C1361476010EC1B422C026 /* StartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartView.swift; sourceTree = "<group>"; };
 		55789284D46B10B50C316C86 /* ChatStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatStore.swift; sourceTree = "<group>"; };
 		56C4F86A9A39B8CF9807B05C /* ChatAttachments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatAttachments.swift; sourceTree = "<group>"; };
 		6164E34644769C64B3E867B1 /* WorkspacePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspacePanel.swift; sourceTree = "<group>"; };
@@ -206,6 +208,7 @@
 				BECA119E22381166808B5690 /* PaneSplit.swift */,
 				BB76527AA8274E1DC203B419 /* ProviderUsageView.swift */,
 				E2E1B2F8CCC4DBA9277E4269 /* SettingsView.swift */,
+				50C1361476010EC1B422C026 /* StartView.swift */,
 				A093DD8DC6081C7E5DB0FA3D /* StatusBar.swift */,
 				49EB006FB5D21FFC9B93D8CF /* WindowChrome.swift */,
 				6164E34644769C64B3E867B1 /* WorkspacePanel.swift */,
@@ -330,6 +333,7 @@
 				7CF0D92236427584C6ED9239 /* PaneSplit.swift in Sources */,
 				28950F3713B14C7E4449B984 /* ProviderUsageView.swift in Sources */,
 				9E32EAA13FF894FCB4AAB92D /* SettingsView.swift in Sources */,
+				D96D2234A324FE3A3E06BAD7 /* StartView.swift in Sources */,
 				19F535BFB4481EB3F8D01D87 /* StatusBar.swift in Sources */,
 				7441A1CC448183A8E8566D6D /* WindowChrome.swift in Sources */,
 				945101B1264E34154DC79876 /* WorkspacePanel.swift in Sources */,

@@ -65,6 +65,8 @@ final class ChatStoreTests: XCTestCase {
         XCTAssertEqual(store.selectedConversation?.model, ChatProvider.codex.defaultModel)
         archive.flush()
         let restored = ChatStore(archive: archive, preferences: preferences)
+        XCTAssertNil(restored.selectedID, "Launching opens the start screen, not the last agent")
+        restored.select(id)
         XCTAssertTrue(restored.modelChoices(for: .codex).contains { $0.id == "custom-codex" })
         XCTAssertEqual(restored.selectedConversation?.sessionID, "existing-session")
         restored.shutdown()
