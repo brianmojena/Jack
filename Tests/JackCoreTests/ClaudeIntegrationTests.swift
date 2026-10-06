@@ -191,6 +191,29 @@ final class ClaudeIntegrationTests: XCTestCase {
         driver.finish(); await settle()
     }
 
+    @MainActor func testFailedCommandReadIsReportedAndRetriedInsteadOfRememberedAsEmpty() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("jack-cmd-tests-" + UUID().uuidString)
+        var attempts = 0
+        let store = ChatStore(archive: ChatArchive(directory: folder), preferences: nil, driverFactory: { _ in LiveDriver() },
+                              commandLoader: { _, _ in
+            attempts += 1
+            if attempts == 1 { throw NSError(domain: "t", code: 1, userInfo: [NSLocalizedDescriptionKey: "tardó demasiado"]) }
+            return [ChatCommand(name: "review")]
+        })
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        let id = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .claude))
+        let conversation = try XCTUnwrap(store.conversations.first { $0.id == id })
+
+        store.loadCommands(for: conversation); await settle()
+        XCTAssertNil(store.commands(for: conversation), "a failure is not stored as an empty list")
+        XCTAssertEqual(store.commandError(for: conversation), "tardó demasiado")
+
+        store.loadCommands(for: conversation); await settle()
+        XCTAssertEqual(store.commands(for: conversation)?.map(\.name), ["review"])
+        XCTAssertNil(store.commandError(for: conversation))
+        XCTAssertEqual(attempts, 2)
+    }
+
     @MainActor func testRemovingConversationClosesItsProcess() async throws {
         let (store, folder, drivers) = fixture()
         defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }

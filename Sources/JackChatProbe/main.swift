@@ -30,6 +30,28 @@ import JackCore
             print("NOTA: \(usage.note) cached=\(usage.isCached)")
             return
         }
+        if args.count >= 2, args[1] == "store" {
+            // What the app does at launch and when typing "/": every provider's quota at once, then each one's commands.
+            let folder = FileManager.default.temporaryDirectory.appendingPathComponent("jack-store-probe-" + UUID().uuidString)
+            let store = ChatStore(archive: ChatArchive(directory: folder), preferences: nil)
+            defer { try? FileManager.default.removeItem(at: folder) }
+            let project = args.count > 2 ? args[2] : FileManager.default.currentDirectoryPath
+            var started = Date()
+            await store.refreshUsage()
+            print(String(format: "QUOTAS in %.1f s", Date().timeIntervalSince(started)))
+            for provider in ChatProvider.allCases {
+                let usage = store.usage[provider]
+                print("  \(provider.rawValue): \(usage?.windows.count ?? 0) windows · \(usage?.note ?? "no reading")")
+            }
+            for provider in [ChatProvider.claude, .codex] {
+                guard let id = store.create(projectPath: project, provider: provider), let conversation = store.conversations.first(where: { $0.id == id }) else { continue }
+                started = Date()
+                store.loadCommands(for: conversation)
+                while store.isLoadingCommands(for: conversation), Date().timeIntervalSince(started) < 30 { try? await Task.sleep(for: .milliseconds(100)) }
+                print(String(format: "COMMANDS \(provider.rawValue): %d in %.1f s", store.commands(for: conversation)?.count ?? -1, Date().timeIntervalSince(started)))
+            }
+            return
+        }
         if args.count >= 3, args[1] == "commands", let provider = ChatProvider(rawValue: args[2]) {
             // Lists slash commands without running a turn.
             do {

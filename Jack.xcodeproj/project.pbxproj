@@ -46,6 +46,7 @@
 		BF38477F58288B2D1279DF30 /* ChatModelPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D8A6CBC10C08DC5BE8F996 /* ChatModelPicker.swift */; };
 		C0A2D15690CE9014A9C2E443 /* Simulators.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D507CBFB46C0D8CC4191A10 /* Simulators.swift */; };
 		C119C546D022B81ABA72AAF1 /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48DDA04AE7E47B63803F18BB /* SessionStore.swift */; };
+		CE4A748AA81B0389D7907972 /* JackLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A74557C47C15953992E8937 /* JackLog.swift */; };
 		CEAD7B435ED39A00C2787A75 /* JackCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B8F35219BDD3B6F10A58137 /* JackCommands.swift */; };
 		D0940594786ADCB9DF4AD81B /* ProjectFinder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83D024EB758956F78F8FDB4B /* ProjectFinder.swift */; };
 		D5A642CF4BCD0CB1A9FA3806 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C4E64BB6ED15B3A579DB97CE /* Assets.xcassets */; };
@@ -95,6 +96,7 @@
 		138D59F70F9CA07105FD1933 /* FileExplorer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileExplorer.swift; sourceTree = "<group>"; };
 		3621003C5F85DF2D65EFC584 /* AgentTabs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTabs.swift; sourceTree = "<group>"; };
 		3789D85F443A38492640A492 /* ClaudeSessionPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeSessionPicker.swift; sourceTree = "<group>"; };
+		3A74557C47C15953992E8937 /* JackLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JackLog.swift; sourceTree = "<group>"; };
 		3DCC822661DED49C89F2189E /* WaitingMessagesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaitingMessagesView.swift; sourceTree = "<group>"; };
 		48DDA04AE7E47B63803F18BB /* SessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStore.swift; sourceTree = "<group>"; };
 		49EB006FB5D21FFC9B93D8CF /* WindowChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowChrome.swift; sourceTree = "<group>"; };
@@ -172,6 +174,7 @@
 				0D0A660EF197200211C217B4 /* ChatUsage.swift */,
 				CA9AEFCAF5C3EB12827473A9 /* ClaudeSessions.swift */,
 				8A45A93DAF44DBBC83A60C50 /* ExecutableResolver.swift */,
+				3A74557C47C15953992E8937 /* JackLog.swift */,
 				9CC159ECABCA798A6D404BD8 /* Models.swift */,
 				83D024EB758956F78F8FDB4B /* ProjectFinder.swift */,
 				48DDA04AE7E47B63803F18BB /* SessionStore.swift */,
@@ -389,6 +392,7 @@
 				1E4B9916484367A33AC3D959 /* ChatUsage.swift in Sources */,
 				56C38ADB49FAC17203F73ED4 /* ClaudeSessions.swift in Sources */,
 				6EB861C0B842D3CECBD7F800 /* ExecutableResolver.swift in Sources */,
+				CE4A748AA81B0389D7907972 /* JackLog.swift in Sources */,
 				88169CA35E507941B634D8BC /* Models.swift in Sources */,
 				D0940594786ADCB9DF4AD81B /* ProjectFinder.swift in Sources */,
 				C119C546D022B81ABA72AAF1 /* SessionStore.swift in Sources */,

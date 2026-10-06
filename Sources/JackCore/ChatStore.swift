@@ -19,6 +19,8 @@ import Foundation
     /// Slash commands per provider and project; nil while they have not been read.
     @Published public private(set) var commands: [String: [ChatCommand]] = [:]
     @Published public private(set) var loadingCommands = Set<String>()
+    /// Why a provider's commands could not be read, until the next attempt.
+    @Published public private(set) var commandErrors: [String: String] = [:]
     @Published public private(set) var jackTemplates: [JackCommandTemplate] = JackCommandCatalog.defaults
     private var seededJackTurns = Set<UUID>()
     private var cancelledJackTurns = Set<UUID>()
@@ -73,13 +75,24 @@ import Foundation
         preferences?.set(maxConcurrent, forKey: "maxConcurrentAgents")
         drainQueue()
     }
-    public func refreshUsage() async {
+    public func refreshUsage(_ providers: [ChatProvider] = ChatProvider.allCases) async {
         guard !refreshingUsage else { return }
         refreshingUsage = true
         defer { refreshingUsage = false }
         await withTaskGroup(of: ProviderUsage.self) { group in
-            for provider in ChatProvider.allCases { group.addTask { await ChatUsageService.read(provider) } }
+            for provider in providers { group.addTask { await ChatUsageService.read(provider) } }
             for await result in group { mergeUsage(result) }
+        }
+    }
+    private var usageRefresh: Task<Void, Never>?
+    /// Reads a provider's quota shortly after one of its turns, once for several turns that end together.
+    private func refreshUsageSoon(_ provider: ChatProvider) {
+        guard usageRefresh == nil, !stopped else { return }
+        usageRefresh = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard let self, !self.stopped else { return }
+            await self.refreshUsage([provider])
+            self.usageRefresh = nil
         }
     }
     private func mergeUsage(_ update: ProviderUsage) {
@@ -174,16 +187,28 @@ import Foundation
     public func isLoadingCommands(for conversation: ChatConversation) -> Bool {
         loadingCommands.contains(Self.commandKey(conversation.provider, conversation.projectPath))
     }
+    public func commandError(for conversation: ChatConversation) -> String? {
+        commandErrors[Self.commandKey(conversation.provider, conversation.projectPath)]
+    }
     /// Reads the provider's commands once per project; runs also refresh them as they report changes.
+    /// A failed read is not remembered as an empty list: the next call tries again.
     public func loadCommands(for conversation: ChatConversation) {
         let key = Self.commandKey(conversation.provider, conversation.projectPath)
         guard commands[key] == nil, !loadingCommands.contains(key) else { return }
         loadingCommands.insert(key)
+        commandErrors[key] = nil
         Task { [weak self] in
-            let list = (try? await self?.loadCommandList(conversation.provider, conversation.projectPath)) ?? []
+            var list: [ChatCommand] = []
+            var failure: String?
+            do { list = try await self?.loadCommandList(conversation.provider, conversation.projectPath) ?? [] }
+            catch { failure = error.localizedDescription }
             guard let self else { return }
             self.loadingCommands.remove(key)
-            if self.commands[key] == nil || !list.isEmpty { self.commands[key] = list }
+            if list.isEmpty, failure == nil { failure = "\(conversation.provider.title) no informó de ningún comando." }
+            if let failure {
+                self.commandErrors[key] = failure
+                JackLog.write("comandos de \(conversation.provider.title) en \(conversation.projectPath): \(failure)")
+            } else if self.commands[key] == nil || !list.isEmpty { self.commands[key] = list }
         }
     }
     public func setUnread(_ id: UUID, _ unread: Bool) {
@@ -519,6 +544,8 @@ import Foundation
             self.finishTurn(id)
             self.drivers.removeValue(forKey: id); self.runs.removeValue(forKey: id)
             self.completeJackTurn(id, cancelled: Task.isCancelled)
+            // Claude Code reports its quota as it works; Codex's has to be asked for.
+            if let provider = self.conversations.first(where: { $0.id == id })?.provider, provider == .codex { self.refreshUsageSoon(provider) }
             self.deliverWaiting(id)
             self.save(id); self.evictInactiveTranscripts(); self.drainQueue()
         }

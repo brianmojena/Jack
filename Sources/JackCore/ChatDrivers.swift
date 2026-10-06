@@ -92,7 +92,7 @@ private enum ChatDriverError: LocalizedError {
     case process(String), protocolFailure(String)
     var errorDescription: String? {
         switch self {
-        case .executableMissing(let name): return "Could not find \(name) in PATH."
+        case .executableMissing(let name): return "No se encontró \(name). Instálalo o indica su ruta en Ajustes."
         case .invalidApproval(let id): return "No pending approval has id \(id)."
         case .unsupportedApproval: return "This provider cannot resolve that approval request."
         case .process(let detail), .protocolFailure(let detail): return detail
@@ -1317,19 +1317,19 @@ public enum ChatCommandService {
         guard let executable = ExecutableResolver.resolve("claude", override: UserDefaults.standard.string(forKey: "providerExecutablePath.claude")) else { throw ChatDriverError.executableMissing("claude") }
         let child = try StructuredChild(executable: executable, arguments: ["--print", "--verbose", "--output-format", "stream-json", "--input-format", "stream-json", "--no-session-persistence"], directory: directory)
         defer { child.terminate(); Task { await child.waitForExit() } }
-        let timeout = Task { try? await Task.sleep(for: .seconds(20)); if !Task.isCancelled { child.terminate() } }
+        let timeout = Task { try? await Task.sleep(for: .seconds(45)); if !Task.isCancelled { child.terminate() } }
         defer { timeout.cancel() }
         for try await line in child.lines {
             guard let object = jsonObject(line), object["subtype"] as? String == "commands_changed", let commands = object["commands"] as? [[String: Any]] else { continue }
             return ClaudeProtocol.commands(commands)
         }
-        throw ChatDriverError.process(await child.failureDescription(default: "Claude Code no informó de sus comandos."))
+        throw ChatDriverError.process(await child.failureDescription(default: "Claude Code se cerró sin informar de sus comandos (¿tardó más de 45 s?)"))
     }
     private static func codex(directory: String) async throws -> [ChatCommand] {
         guard let executable = ExecutableResolver.resolve("codex", override: UserDefaults.standard.string(forKey: "providerExecutablePath.codex")) else { throw ChatDriverError.executableMissing("codex") }
         let child = try StructuredChild(executable: executable, arguments: ["app-server", "--listen", "stdio://"], directory: directory)
         defer { child.terminate(); Task { await child.waitForExit() } }
-        let timeout = Task { try? await Task.sleep(for: .seconds(20)); if !Task.isCancelled { child.terminate() } }
+        let timeout = Task { try? await Task.sleep(for: .seconds(45)); if !Task.isCancelled { child.terminate() } }
         defer { timeout.cancel() }
         try child.writeJSON(["id": 1, "method": "initialize", "params": ["clientInfo": ["name": "jack", "title": "Jack", "version": "1"], "capabilities": ["experimentalApi": true]]])
         for try await line in child.lines {

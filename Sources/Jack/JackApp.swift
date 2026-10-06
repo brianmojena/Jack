@@ -11,7 +11,14 @@ struct JackApp: App {
             MainWindowView(store: store)
                 
                 .onAppear { appDelegate.store = store }
-                .task { await store.refreshUsage() }
+                .task {
+                    await store.refreshUsage()
+                    // Codex's quota only changes when asked for; Claude Code reports its own as it works.
+                    while !Task.isCancelled {
+                        try? await Task.sleep(for: .seconds(600))
+                        await store.refreshUsage([.codex])
+                    }
+                }
         }
         .defaultSize(width: 1280, height: 800)
         .windowStyle(.hiddenTitleBar)

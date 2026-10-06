@@ -78,7 +78,10 @@ enum UsageDecoder {
         switch provider {
         case .codex:
             do { return try await readCodex() }
-            catch { return ProviderUsage(provider: .codex, note: "No se pudo consultar la cuota: \(error.localizedDescription)") }
+            catch {
+                JackLog.write("cuota de Codex: \(error.localizedDescription)")
+                return ProviderUsage(provider: .codex, note: "No se pudo consultar la cuota: \(error.localizedDescription)")
+            }
         case .claude:
             await refreshClaudeCache()
             return await Task.detached(priority: .utility) {
@@ -97,7 +100,7 @@ enum UsageDecoder {
                 "--print", "--output-format", "stream-json", "--verbose", "--input-format", "stream-json",
                 // Project-only settings in a temporary folder: the user's hooks do not run for this query.
                 "--no-session-persistence", "--setting-sources", "project"], directory: NSTemporaryDirectory()) else { return }
-        let deadline = Task { try? await Task.sleep(for: .seconds(20)); if !Task.isCancelled { process.terminate() } }
+        let deadline = Task { try? await Task.sleep(for: .seconds(45)); if !Task.isCancelled { JackLog.write("cuota de Claude: sin respuesta en 45 s"); process.terminate() } }
         defer { deadline.cancel() }
         try? process.writeJSON(["type": "user", "message": ["role": "user", "content": "/usage"], "parent_tool_use_id": NSNull()])
         let reader = StructuredLineReader(process.lines)
@@ -109,7 +112,7 @@ enum UsageDecoder {
     private static func readCodex() async throws -> ProviderUsage {
         guard let executable = ExecutableResolver.resolve("codex", override: UserDefaults.standard.string(forKey: "providerExecutablePath.codex")) else { throw CocoaError(.fileNoSuchFile) }
         let process = try StructuredChild(executable: executable, arguments: ["app-server", "--listen", "stdio://"], directory: NSTemporaryDirectory())
-        let deadline = Task { try? await Task.sleep(nanoseconds: 20_000_000_000); if !Task.isCancelled { process.terminate() } }
+        let deadline = Task { try? await Task.sleep(for: .seconds(45)); if !Task.isCancelled { process.terminate() } }
         defer { deadline.cancel() }
         let reader = StructuredLineReader(process.lines)
         do {
@@ -128,6 +131,6 @@ enum UsageDecoder {
             if let error = value["error"] as? [String: Any] { throw NSError(domain: "Codex", code: -1, userInfo: [NSLocalizedDescriptionKey: error["message"] as? String ?? "Cuota no disponible"]) }
             return value["result"] as? [String: Any] ?? [:]
         }
-        throw NSError(domain: "Codex", code: -1, userInfo: [NSLocalizedDescriptionKey: "La consulta terminó sin datos de cuota."])
+        throw NSError(domain: "Codex", code: -1, userInfo: [NSLocalizedDescriptionKey: "Codex cerró la consulta sin datos de cuota."])
     }
 }

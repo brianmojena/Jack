@@ -30,6 +30,12 @@ struct StatusBar: View, Equatable {
                     ForEach(providers) { provider in
                         ProviderQuota(provider: provider, windows: Array(usage[provider]?.windows.prefix(2) ?? []))
                     }
+                    // A provider whose quota could not be read says why, instead of vanishing from the bar.
+                    ForEach(ChatProvider.allCases.filter { $0 != .opencode && usage[$0]?.windows.isEmpty == true && usage[$0]?.note.isEmpty == false }) { provider in
+                        Label(provider.title, systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(JackPalette.amber)
+                            .help(usage[provider]?.note ?? "")
+                    }
                 }
                 .contentShape(Rectangle())
             }

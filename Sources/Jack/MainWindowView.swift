@@ -214,6 +214,8 @@ struct MainWindowView: View {
             if let query = commandQuery(for: conversation) {
                 let matches = CommandSuggestions.matches(availableComposerCommands(conversation), query: query)
                 CommandSuggestions(commands: matches, prefix: commandPrefix(conversation), loading: store.isLoadingCommands(for: conversation),
+                                   error: commandPrefix(conversation) == "/" ? store.commandError(for: conversation) : nil,
+                                   onRetry: { store.loadCommands(for: conversation) },
                                    selection: min(commandSelection, max(0, matches.count - 1))) { complete($0, in: conversation) }
                     .frame(maxWidth: Self.columnWidth).frame(maxWidth: .infinity)
                     .padding(.horizontal, 22)

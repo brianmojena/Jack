@@ -53,12 +53,24 @@ struct CommandSuggestions: View {
     let commands: [ChatCommand]
     var prefix: String = "/"
     let loading: Bool
+    var error: String? = nil
+    var onRetry: (() -> Void)? = nil
     let selection: Int
     let onPick: (ChatCommand) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if commands.isEmpty {
+            if commands.isEmpty, let error, !loading {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(JackPalette.amber)
+                    Text("No se pudieron leer los comandos: \(error)")
+                        .font(.system(size: 12)).foregroundStyle(JackPalette.secondaryText)
+                        .lineLimit(3).truncationMode(.tail)
+                    Spacer(minLength: 8)
+                    if let onRetry { Button("Reintentar", action: onRetry).buttonStyle(.link).font(.system(size: 12, weight: .medium)) }
+                }
+                .padding(.horizontal, 12).padding(.vertical, 9)
+            } else if commands.isEmpty {
                 Text(loading ? "Cargando comandos…" : "No hay comandos que coincidan")
                     .font(.system(size: 12)).foregroundStyle(JackPalette.muted)
                     .padding(.horizontal, 12).padding(.vertical, 9)
