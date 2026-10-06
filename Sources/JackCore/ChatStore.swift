@@ -53,6 +53,20 @@ import Foundation
     /// Orchestrators blocked in wait_for_agents; they don't take a concurrency slot from their sub-agents.
     private var delegatedWaits: [UUID: Int] = [:]
     public lazy var bridge = AgentBridge(store: self)
+    /// Progress bars agents report with `jack-progress`; created on first use so tests don't watch the real folder.
+    public lazy var progress = ProgressMonitor()
+    /// Servers running in the user's projects, whichever session started them.
+    public lazy var servers = ServerMonitor(projects: { [weak self] in Set(self?.conversations.map(\.projectPath) ?? []) })
+    /// Images agents asked for with `generate_image`, waiting for the user in Image Playground or just created.
+    @Published public private(set) var imageRequests: [ChatImageRequest] = []
+    /// Image Playground works on this Mac; set by the app, which can ask the framework.
+    public var imageGenerationSupported = false
+    /// Agents get `generate_image` when Image Playground works and the user has not turned it off.
+    public var imageGenerationAvailable: Bool {
+        imageGenerationSupported && (preferences?.object(forKey: "imageGenerationEnabled") as? Bool ?? true)
+    }
+    /// Requests that left the list, kept until the agent that asked reads how they ended.
+    private var endedImages: [String: ChatImageRequest] = [:]
     /// Lets Claude Code agents create and monitor other agents through Jack's MCP tools.
     public var delegationEnabled: Bool { preferences?.object(forKey: "delegationEnabled") as? Bool ?? true }
 
@@ -416,6 +430,37 @@ import Foundation
             } catch { self?.errorMessage = "No se pudo enviar la respuesta: \(error.localizedDescription)" }
         }
     }
+    // MARK: Images
+
+    /// Queues an image for the user to create in Image Playground; the agent waits as it does for a permission.
+    @discardableResult
+    public func requestImage(_ request: ChatImageRequest) -> String {
+        imageRequests.append(request)
+        if statuses[request.conversationID] != nil { statuses[request.conversationID] = .waiting }
+        return request.id
+    }
+
+    public func imageRequest(_ id: String) -> ChatImageRequest? { imageRequests.first { $0.id == id } }
+
+    /// Records how a request ended. Created images stay in the chat until dismissed; the rest leave it.
+    public func resolveImage(_ id: String, _ state: ChatImageRequest.State) {
+        guard let index = imageRequests.firstIndex(where: { $0.id == id }), imageRequests[index].isPending, state != .pending else { return }
+        let conversation = imageRequests[index].conversationID
+        imageRequests[index].state = state
+        if case .saved = state {} else { endedImages[id] = imageRequests.remove(at: index) }
+        guard statuses[conversation] == .waiting else { return }
+        let waiting = approvals[conversation]?.isEmpty == false || imageRequests.contains { $0.conversationID == conversation && $0.isPending }
+        statuses[conversation] = waiting ? .waiting : runs[conversation] != nil ? .running : .idle
+    }
+
+    /// How a request that already left the chat ended; read once.
+    public func endedImage(_ id: String) -> ChatImageRequest? { endedImages.removeValue(forKey: id) }
+
+    public func dismissImage(_ id: String) {
+        guard let request = imageRequest(id) else { return }
+        if request.isPending { resolveImage(id, .declined) } else { imageRequests.removeAll { $0.id == id } }
+    }
+
     public func remove(_ id: UUID) {
         guard runs[id] == nil, !queue.contains(where: { $0.0 == id }) else { return }
         liveDrivers.removeValue(forKey: id)?.close()
@@ -519,10 +564,11 @@ import Foundation
             guard let conversation = conversations.first(where: { $0.id == id }) else { continue }
             let driver = driver(for: conversation)
             let prompt = preparedJackPrompt(queuedPrompt, conversation: conversation)
-            // Only top-level agents may delegate, so sub-agents cannot spawn more agents.
+            // Only top-level agents may delegate, so sub-agents cannot spawn more agents. Every agent may create images.
             let delegates = conversation.parentID == nil && delegationEnabled
+            let images = imageGenerationAvailable
             startRun(id, driver: driver) { [weak self] onEvent in
-                let delegation = delegates ? try? await self?.bridge.delegation(for: id) : nil
+                let delegation = delegates || images ? try? await self?.bridge.delegation(for: id, delegates: delegates, images: images) : nil
                 try await driver.run(conversation: conversation, prompt: prompt, delegation: delegation, onEvent: onEvent)
             }
         }

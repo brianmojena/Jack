@@ -33,6 +33,8 @@ struct MainWindowView: View {
     @State private var commandSelection = 0
     /// Draft for which the user closed the command list with Esc.
     @State private var dismissedCommandDraft: String?
+    /// The image request open in Image Playground.
+    @State private var playgroundRequest: ChatImageRequest?
 
     private var selectedConversation: ChatConversation? { store.selectedConversation }
 
@@ -77,7 +79,9 @@ struct MainWindowView: View {
                 }
             }
             StatusBar(usage: store.usage, refreshing: store.refreshingUsage, activeCount: store.activeCount, maxConcurrent: store.maxConcurrent,
-                      sessions: workspace, refresh: { Task { await store.refreshUsage() } }, setConcurrency: store.setConcurrency)
+                      sessions: workspace, progress: store.progress, servers: store.servers, refresh: { Task { await store.refreshUsage() } }, setConcurrency: store.setConcurrency,
+                      conversationTitle: { id in store.conversations.first { $0.id == id }?.title },
+                      openConversation: store.select)
                 .equatable()
         }
         .background(WindowChrome())
@@ -95,6 +99,10 @@ struct MainWindowView: View {
             if open != openTabIDs { openTabsValue = OpenTabs.encode(open) }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in workspace.terminateAll() }
+        .onChange(of: store.imageRequests.filter(\.isPending).count) { before, now in
+            // An agent is waiting for an image while the user is elsewhere: bounce the Dock icon once.
+            if now > before, !NSApp.isActive { NSApp.requestUserAttention(.informationalRequest) }
+        }
         .onAppear { workspace.attach = { id, paths in attach(paths, to: id) } }
         .focusedSceneValue(\.jackActions, actions)
         .sheet(isPresented: $showingNewConversation) {
@@ -201,6 +209,7 @@ struct MainWindowView: View {
             if let approvals = store.approvals[conversation.id], !approvals.isEmpty {
                 approvalsPanel(approvals, conversation: conversation)
             }
+            imageRequestsPanel(conversation)
             if isActive(conversation) {
                 AgentActivityView(conversation: conversation, status: status, tokens: store.tokenUsage[conversation.id], projectPath: conversation.projectPath)
                     .frame(maxWidth: Self.columnWidth).frame(maxWidth: .infinity)
@@ -215,6 +224,7 @@ struct MainWindowView: View {
                     .frame(maxWidth: Self.columnWidth).frame(maxWidth: .infinity)
                     .padding(.horizontal, 22).padding(.top, 4)
             }
+            ChatProgressPanel(monitor: store.progress, conversationID: conversation.id, width: Self.columnWidth)
             AsideView(asides: store.asides, conversationID: conversation.id, provider: conversation.provider,
                       composing: Binding(get: { composingAside == conversation.id }, set: { composingAside = $0 ? conversation.id : nil }),
                       onAsk: { store.askAside($0, in: conversation.id); composerFocused = true })
@@ -242,6 +252,12 @@ struct MainWindowView: View {
             return true
         }
         .overlay { if dropTargeted { AttachmentDropOverlay() } }
+        .modifier(ImagePlaygroundPresenter(request: $playgroundRequest, onFinish: finishImage))
+        .onChange(of: store.imageRequests.first { $0.conversationID == conversation.id && $0.isPending }?.id, initial: true) { _, id in
+            // Opens Image Playground as soon as the agent asks, if the user is looking at this chat.
+            guard let id, playgroundRequest == nil, NSApp.isActive, let request = store.imageRequest(id) else { return }
+            playgroundRequest = request
+        }
         .onChange(of: status.isActive) { wasActive, active in
             // The agent may have changed files: refresh the tree once its turn ends.
             if wasActive, !active, explorerVisible { workspace.explorer(for: conversation.projectPath).refresh() }
@@ -402,6 +418,33 @@ struct MainWindowView: View {
         if activity.contains(previous), activity.contains(current) { return 3 }
         if previous == "reasoning" || previous == "tool" || current == "reasoning" || current == "tool" { return 10 }
         return 16
+    }
+
+    @ViewBuilder private func imageRequestsPanel(_ conversation: ChatConversation) -> some View {
+        let requests = store.imageRequests.filter { $0.conversationID == conversation.id }
+        if !requests.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(requests) { request in
+                    ImageRequestCard(request: request, projectPath: conversation.projectPath,
+                                     onCreate: { playgroundRequest = request },
+                                     onDecline: { store.resolveImage(request.id, .declined) },
+                                     onDismiss: { store.dismissImage(request.id) })
+                }
+            }
+            .frame(maxWidth: Self.columnWidth).frame(maxWidth: .infinity)
+            .padding(.horizontal, 22).padding(.bottom, 10)
+        }
+    }
+
+    /// Saves what the user created where the agent asked, and tells the agent how it went.
+    private func finishImage(_ request: ChatImageRequest, _ url: URL?) {
+        guard let url else { store.resolveImage(request.id, .cancelled); return }
+        do {
+            let size = try ImagePlaygroundSupport.save(url, to: request.destination)
+            store.resolveImage(request.id, .saved(path: request.destination.path, width: size.width, height: size.height))
+        } catch {
+            store.resolveImage(request.id, .failed(error.localizedDescription))
+        }
     }
 
     private func approvalsPanel(_ approvals: [ChatApproval], conversation: ChatConversation) -> some View {

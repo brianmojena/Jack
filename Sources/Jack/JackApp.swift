@@ -10,7 +10,10 @@ struct JackApp: App {
         Window("Jack", id: "main") {
             MainWindowView(store: store)
                 
-                .onAppear { appDelegate.store = store }
+                .onAppear {
+                    appDelegate.store = store
+                    store.imageGenerationSupported = ImagePlaygroundSupport.isAvailable
+                }
                 .task {
                     await store.refreshUsage()
                     // Codex's quota only changes when asked for; Claude Code reports its own as it works.

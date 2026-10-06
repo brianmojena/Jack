@@ -116,7 +116,8 @@ final class ChatRunConfigurationTests: XCTestCase {
         XCTAssertTrue(claude[4].hasPrefix("--"), "the variadic --add-dir must be closed by another flag")
 
         let codex = ChatRunConfiguration.codexTurn(conversation, threadID: "thread", prompt: "Hi")
-        XCTAssertEqual((codex["sandboxPolicy"] as? [String: Any])?["writableRoots"] as? [String], ["/work/app", "/work/lib", "/work/docs"])
+        XCTAssertEqual((codex["sandboxPolicy"] as? [String: Any])?["writableRoots"] as? [String],
+                       ["/work/app", "/work/lib", "/work/docs", ProgressFiles.directory(for: conversation.id).path], "the last one lets jack-progress report from the sandbox")
 
         let config = try XCTUnwrap(ChatRunConfiguration.openCodeConfig(conversation, delegation: nil))
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(config.utf8)) as? [String: Any])

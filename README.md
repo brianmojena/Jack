@@ -46,6 +46,32 @@ El valor inicial es cuatro conversaciones a la vez. Puedes cambiarlo desde el me
 
 Instala y autentica los proveedores con sus propias CLI antes de usarlos. Jack aprovecha esos accesos existentes; no administra credenciales ni cuentas. Los nombres de modelos dependen de tu proveedor y acceso. OpenCode usa el formato `proveedor/modelo`, o su modelo configurado si dejas el campo vacío.
 
+## Progreso y descargas
+
+Cuando un agente descarga algo o lanza un trabajo largo, Jack muestra una barra de progreso nativa en su chat, encima del cuadro de mensaje, y en **Descargas**, en la barra inferior, donde aparecen las de todos los chats. Cada barra indica el porcentaje, lo hecho y el total, la velocidad y el tiempo restante; **Ver detalles** añade la velocidad media, el tiempo transcurrido, el archivo, el comando y los datos extra que dé el agente. Las tareas lanzadas con `run` se pueden pausar, reanudar y cancelar, y el archivo descargado se muestra en Finder.
+
+Jack se lo indica a cada agente y le da `jack-progress`, que viene dentro de la app:
+
+```sh
+jack-progress run --title "Llama 3 8B" --kind download --file llama.gguf -- aria2c -x8 https://…/llama.gguf
+jack-progress set --id carga --title "Cargando modelo" --fraction 0.4 --detail "capa 12 de 32" --field "GPU=M3 Max"
+jack-progress done --id carga            # o: --failed "sin memoria"
+```
+
+`run` ejecuta el comando en un pseudoterminal, conserva su salida y su código de salida, e interpreta el progreso de curl, wget, aria2c, git, rsync, pip, huggingface-cli, ollama y cualquier línea con un porcentaje o un tamaño `hecho/total`. Al agente solo le llega un resumen cada 10 %. `set` y `done` sirven para tareas que el agente sigue por su cuenta. Cada tarea es un JSON en `~/Library/Application Support/Jack/Progress/<chat>/` (variable `JACK_PROGRESS_DIR`), así que un script también puede escribirlo directamente. Las terminadas se borran a los siete días.
+
+## Servidores de los proyectos
+
+**Servidores**, en la barra inferior, lista lo que escucha en un puerto dentro de tus proyectos (`npm run dev`, vite, next, rails…), aunque lo haya lanzado otra sesión de Claude Code, Codex u OpenCode o tú en una terminal: puerto, comando, quién lo inició y desde cuándo. Puedes abrirlo, detenerlo (junto con el `npm run` que lo lanzó) y ver con **ⓘ** su CPU, memoria y procesos. Jack lo lee del sistema con libproc cada tres segundos.
+
+Antes de arrancar un servidor, los agentes ejecutan `jack-servers`, que les dice qué hay ya en marcha para su carpeta; si dos sesiones trabajan en el mismo proyecto, la segunda usa el servidor de la primera en lugar de lanzar otro `npm run dev`.
+
+## Imágenes con Image Playground
+
+Los agentes tienen la herramienta `generate_image` del servidor MCP de Jack para crear imágenes con Image Playground de Apple, con estilo realista por defecto (el modelo nuevo de macOS 27) o animación, ilustración y boceto. El agente escribe el prompt, el tamaño y dónde guardarla (por defecto `generated-images/` en su carpeta). En su chat aparece una tarjeta con un brillo animado y Jack abre Image Playground ya preparado; tú eliges el resultado, se guarda en la ruta pedida y el agente la recibe. Si Image Playground rechaza el prompt o lo cierras sin imagen, el agente prueba con otro, hasta tres veces; **Ahora no** le dice que siga sin ella.
+
+macOS 27 ya no permite generar imágenes sin la ventana de Image Playground (`ImageCreator` está obsoleto y responde `notSupported`), por eso cada imagen necesita tu clic. Requiere Apple Intelligence activado; se puede desactivar en Ajustes → General.
+
 ## Consumo y persistencia
 
 La interfaz no renderiza terminales. Los proveedores se inician bajo demanda y se liberan al terminar. El texto en streaming se agrupa cada 50 ms. El paralelismo es configurable. Los historiales inactivos quedan en disco; solo las conversaciones seleccionadas, activas o en cola permanecen cargadas. Las herramientas tienen un límite de detalle de 64 KiB.
@@ -68,6 +94,9 @@ La app muestra solo el razonamiento que el proveedor envía: no reconstruye cont
 - `ChatStore`: cola, selección, agrupación de eventos y estados.
 - `ChatArchive`: índice y transcripciones, escrituras atómicas en cola de utilidad.
 - `ChatDrivers` y `ChatProcess`: protocolos estructurados y procesos propios.
+- `ProgressTasks` y `ProgressMonitor`: tareas con progreso, lectura de la salida de cada herramienta y seguimiento de las carpetas.
+- `ServerScanner`: servidores locales por proyecto, con libproc.
+- `Sources/JackProgress`: `jack-progress` (y `jack-servers`), el ayudante que usan los agentes.
 - `Sources/Jack`: interfaz nativa, sin emulador de terminal.
 
 Codex usa [App Server](https://learn.chatgpt.com/docs/app-server) por stdio; Claude Code usa [stream-json](https://code.claude.com/docs/en/headless); OpenCode usa su [servidor local](https://dev.opencode.ai/docs/server/). El módulo antiguo de Herdr se conserva con sus pruebas para compatibilidad y el probe de lectura; la nueva interfaz no se conecta a él.
