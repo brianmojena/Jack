@@ -139,7 +139,10 @@ struct MainWindowView: View {
         }
         .overlay { if dropTargeted { AttachmentDropOverlay() } }
         .inspector(isPresented: $showingWorkspace) {
-            WorkspacePanel(sessions: workspace, conversation: conversation, tool: $workspaceTool)
+            WorkspacePanel(sessions: workspace, conversationID: conversation.id, projectPath: conversation.projectPath, tool: workspaceTool,
+                           onSelect: { tool in withoutAnimation { workspaceTool = tool } },
+                           onClose: { withoutAnimation { showingWorkspace = false } })
+                .equatable()
                 .inspectorColumnWidth(min: 340, ideal: 520, max: 1100)
         }
         .navigationTitle(conversation.title)
@@ -508,9 +511,18 @@ struct MainWindowView: View {
         attachments[conversation.id] = nil
     }
 
+    /// The panel appears at once: animating its width would relayout the chat and the terminal on every frame.
     private func toggleWorkspace(_ tool: WorkspaceTool) {
-        if showingWorkspace && workspaceTool == tool { showingWorkspace = false }
-        else { workspaceTool = tool; showingWorkspace = true }
+        withoutAnimation {
+            if showingWorkspace && workspaceTool == tool { showingWorkspace = false }
+            else { workspaceTool = tool; showingWorkspace = true }
+        }
+    }
+
+    private func withoutAnimation(_ change: () -> Void) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction, change)
     }
 
     private func attach(_ paths: [String], to id: UUID) {
