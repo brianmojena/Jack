@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Window actions exposed to the menu bar, so every shortcut also appears in the "Agentes" menu.
@@ -11,6 +12,9 @@ struct JackActions {
     var toggleUnread: () -> Void
     var toggleTerminal: () -> Void
     var toggleBrowser: () -> Void
+    var toggleExplorer: () -> Void
+    var toggleSidebar: () -> Void
+    var closeTab: () -> Void
     var hasSelection: Bool
     var agentCount: Int
 }
@@ -27,6 +31,24 @@ struct JackCommands: Commands {
             Button("Nuevo agente…") { actions?.newAgent() }
                 .keyboardShortcut("n", modifiers: .command)
                 .disabled(actions == nil)
+        }
+        // ⌘W closes the agent's tab, as in a browser; ⇧⌘W closes the window.
+        CommandGroup(replacing: .saveItem) {
+            Button("Cerrar pestaña") {
+                if let actions, actions.hasSelection { actions.closeTab() } else { NSApp.keyWindow?.performClose(nil) }
+            }
+            .keyboardShortcut("w", modifiers: .command)
+            Button("Cerrar ventana") { NSApp.keyWindow?.performClose(nil) }
+                .keyboardShortcut("w", modifiers: [.command, .shift])
+        }
+        CommandGroup(before: .sidebar) {
+            Button("Mostrar u ocultar barra lateral") { actions?.toggleSidebar() }
+                .keyboardShortcut("s", modifiers: [.command, .control])
+                .disabled(actions == nil)
+            Button("Mostrar u ocultar archivos") { actions?.toggleExplorer() }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
+                .disabled(actions?.hasSelection != true)
+            Divider()
         }
         CommandMenu("Agentes") {
             Button("Agente anterior") { actions?.move(-1) }

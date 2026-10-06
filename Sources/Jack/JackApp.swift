@@ -13,8 +13,8 @@ struct JackApp: App {
                 .onAppear { appDelegate.store = store }
                 .task { await store.refreshUsage() }
         }
-        .defaultSize(width: 1140, height: 760)
-        .windowToolbarStyle(.unified(showsTitle: true))
+        .defaultSize(width: 1280, height: 800)
+        .windowStyle(.hiddenTitleBar)
         .commands { JackCommands() }
 
         Settings {

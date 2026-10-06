@@ -3,7 +3,7 @@ import JackCore
 import SwiftUI
 
 /// Leading inset that aligns agent activity with the text column of agent replies.
-let chatActivityInset: CGFloat = 33
+let chatActivityInset: CGFloat = 16
 
 struct ChatMessageRow: View, Equatable {
     let message: ChatMessage
@@ -11,6 +11,10 @@ struct ChatMessageRow: View, Equatable {
     let projectPath: String
     let isStreaming: Bool
     var topSpacing: CGFloat = 0
+    var monospaced = true
+
+    private var design: Font.Design { monospaced ? .monospaced : .default }
+    private var textSize: CGFloat { monospaced ? 12.5 : 13 }
 
     var body: some View {
         content.padding(.top, topSpacing)
@@ -18,51 +22,54 @@ struct ChatMessageRow: View, Equatable {
 
     @ViewBuilder private var content: some View {
         switch message.role {
-        case "tool": ToolActivityRow(message: message, projectPath: projectPath).padding(.leading, chatActivityInset)
+        case "tool": ToolActivityRow(message: message, projectPath: projectPath, design: design).padding(.leading, chatActivityInset - 6)
         case "error": errorMessage
         case "user": userMessage
         case "reasoning":
             // Providers often emit empty reasoning blocks; only show them while the agent is thinking.
             if isStreaming || !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                ReasoningRow(text: message.text, isStreaming: isStreaming).padding(.leading, chatActivityInset)
+                ReasoningRow(text: message.text, isStreaming: isStreaming, design: design).padding(.leading, chatActivityInset)
             }
         default: assistantMessage
         }
     }
 
     private var userMessage: some View {
-        HStack {
-            Spacer(minLength: 80)
-            VStack(alignment: .trailing, spacing: 6) {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("›").font(.system(size: textSize + 1, weight: .bold, design: .monospaced)).foregroundStyle(JackPalette.accent)
+            VStack(alignment: .leading, spacing: 6) {
+                if !message.text.isEmpty {
+                    Text(message.text)
+                        .font(.system(size: textSize, design: design))
+                        .lineSpacing(2.5)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
                 if let files = message.attachments, !files.isEmpty {
                     FlowLayout(spacing: 6) {
                         ForEach(files, id: \.self) { AttachmentChip(path: $0) }
                     }
                 }
-                if !message.text.isEmpty {
-                    Text(message.text)
-                        .font(.system(size: 13))
-                        .lineSpacing(2.5)
-                        .textSelection(.enabled)
-                        .padding(.horizontal, 13).padding(.vertical, 9)
-                        .background(JackPalette.panelStrong, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-                }
             }
-            .frame(maxWidth: 600, alignment: .trailing)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 9)
+        .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay(alignment: .leading) {
+            UnevenRoundedRectangle(topLeadingRadius: 6, bottomLeadingRadius: 6, style: .continuous)
+                .fill(JackPalette.accent.opacity(0.7)).frame(width: 2)
         }
         .contextMenu { copyButton(message.text) }
     }
 
     private var assistantMessage: some View {
-        HStack(alignment: .top, spacing: 10) {
-            providerGlyph(provider, size: 23)
-            VStack(alignment: .leading, spacing: 6) {
-                Text(provider.title).font(.system(size: 11, weight: .semibold)).foregroundStyle(JackPalette.muted)
-                if message.text.isEmpty, isStreaming {
-                    ProgressView().controlSize(.small)
-                } else {
-                    MarkdownText(text: message.text)
-                }
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Circle().fill(Color.primary.opacity(0.85)).frame(width: 6, height: 6)
+                .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 0.5 }
+                .frame(width: 8)
+            if message.text.isEmpty, isStreaming {
+                ProgressView().controlSize(.small)
+            } else {
+                MarkdownText(text: message.text, fontSize: textSize, design: design)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -72,11 +79,11 @@ struct ChatMessageRow: View, Equatable {
     private var errorMessage: some View {
         HStack(alignment: .top, spacing: 9) {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(JackPalette.red)
-            Text(message.text).font(.system(size: 12)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+            Text(message.text).font(.system(size: 12, design: design)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(11)
-        .background(JackPalette.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(JackPalette.red.opacity(0.25), lineWidth: 0.5))
+        .background(JackPalette.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(JackPalette.red.opacity(0.25), lineWidth: 0.5))
         .padding(.leading, chatActivityInset)
     }
 
@@ -93,6 +100,7 @@ struct ChatMessageRow: View, Equatable {
 private struct ReasoningRow: View {
     let text: String
     let isStreaming: Bool
+    let design: Font.Design
     @State private var expanded = false
 
     private var trimmed: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -100,18 +108,17 @@ private struct ReasoningRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "brain")
-                .font(.system(size: 11))
+            Text("✻")
+                .font(.system(size: 12, design: .monospaced))
                 .foregroundStyle(JackPalette.faint)
-                .frame(width: 16)
-                .padding(.top, 1)
+                .frame(width: 12)
             VStack(alignment: .leading, spacing: 4) {
                 if trimmed.isEmpty {
                     Text("Pensando…")
-                        .font(.system(size: 12)).italic().foregroundStyle(JackPalette.faint)
+                        .font(.system(size: 12, design: design)).italic().foregroundStyle(JackPalette.faint)
                 } else {
                     Text(trimmed)
-                        .font(.system(size: 12))
+                        .font(.system(size: 12, design: design)).italic()
                         .lineSpacing(2)
                         .foregroundStyle(JackPalette.muted)
                         .lineLimit(expanded ? nil : 4)
@@ -324,8 +331,11 @@ struct ToolActivityRow: View {
     private let diffLines: [DiffLine]
     @State private var expanded: Bool?
 
-    init(message: ChatMessage, projectPath: String) {
+    let design: Font.Design
+
+    init(message: ChatMessage, projectPath: String, design: Font.Design = .default) {
         self.message = message
+        self.design = design
         let presentation = ToolPresentation(message: message, projectPath: projectPath)
         self.presentation = presentation
         self.diffLines = Self.diffLines(for: presentation)
@@ -353,11 +363,11 @@ struct ToolActivityRow: View {
                         .foregroundStyle(failed ? JackPalette.red : JackPalette.muted)
                         .frame(width: 16)
                     Text(tool.verb(running: running))
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 12, weight: .semibold, design: design))
                         .foregroundStyle(JackPalette.secondaryText)
                     if !tool.subject.isEmpty {
                         Text(tool.subject)
-                            .font(.system(size: 11.5, design: tool.kind == .command || tool.kind == .read || tool.kind == .edit ? .monospaced : .default))
+                            .font(.system(size: 12, design: design == .monospaced || tool.kind == .command || tool.kind == .read || tool.kind == .edit ? .monospaced : .default))
                             .foregroundStyle(JackPalette.muted)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -365,7 +375,7 @@ struct ToolActivityRow: View {
                     Spacer(minLength: 8)
                     statusView
                 }
-                .padding(.vertical, 3)
+                .padding(.vertical, 2)
                 .padding(.horizontal, 6)
                 .contentShape(Rectangle())
             }
@@ -373,7 +383,7 @@ struct ToolActivityRow: View {
 
             if isExpanded {
                 expandedContent(tool)
-                    .padding(.leading, 39)
+                    .padding(.leading, 29)
                     .transition(.opacity)
             }
         }
@@ -516,7 +526,7 @@ private struct DiffView: View {
         switch kind { case .added: JackPalette.green; case .removed: JackPalette.red; case .context, .header: JackPalette.faint }
     }
     private func background(_ kind: DiffLine.Kind) -> Color {
-        switch kind { case .added: JackPalette.green.opacity(0.11); case .removed: JackPalette.red.opacity(0.10); case .context, .header: .clear }
+        switch kind { case .added: JackPalette.added; case .removed: JackPalette.removed; case .context, .header: .clear }
     }
 }
 

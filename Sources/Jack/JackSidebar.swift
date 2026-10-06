@@ -66,21 +66,15 @@ struct JackSidebar: View {
     let rows: [SidebarRowModel]
     let projectPaths: [UUID: String]
     let selectedID: UUID?
-    let activeCount: Int
-    let maxConcurrent: Int
-    let usage: [ChatProvider: ProviderUsage]
-    let refreshingUsage: Bool
-    let onRefreshUsage: () -> Void
-    let onSetConcurrency: (Int) -> Void
-    let onNewConversation: () -> Void
+    let onNewConversation: (String?) -> Void
     let onSelect: (UUID) -> Void
     let onRename: (UUID) -> Void
     let onDelete: (UUID) -> Void
     let onSetUnread: (UUID, Bool) -> Void
-    @State private var query = ""
-    @State private var showingUsage = false
+    let onHide: () -> Void
     /// Bumped by ⌘F to focus the search field.
     let searchRequest: Int
+    @State private var query = ""
     @FocusState private var searchFocused: Bool
     /// Folded spaces, stored as newline-separated project paths.
     @AppStorage("collapsedSpaces") private var collapsedSpacesValue = ""
@@ -90,9 +84,7 @@ struct JackSidebar: View {
     private func toggleSpace(_ path: String) {
         var spaces = collapsedSpaces
         if spaces.contains(path) { spaces.remove(path) } else { spaces.insert(path) }
-        withAnimation(.snappy(duration: 0.2)) {
-            collapsedSpacesValue = spaces.sorted().joined(separator: "\n")
-        }
+        collapsedSpacesValue = spaces.sorted().joined(separator: "\n")
     }
 
     private var filtered: [SidebarRowModel] {
@@ -103,261 +95,270 @@ struct JackSidebar: View {
         }
     }
 
-    private var sections: SidebarSections {
-        SidebarSections(rows: filtered, projectPaths: projectPaths)
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            VStack(spacing: 1) {
+                navButton("square.and.pencil", "Nuevo agente", shortcut: "⌘N") { onNewConversation(nil) }
+                searchField
+            }
+            .padding(.horizontal, 8).padding(.bottom, 6)
+            // One timeline for the whole list: ages refresh once a minute without a timer per row.
+            TimelineView(.everyMinute) { context in
+                list(now: context.date)
+            }
+            footer
+        }
+        .background(JackPalette.chrome)
+        .onChange(of: searchRequest) { _, _ in searchFocused = true }
     }
 
-    var body: some View {
-        let sections = self.sections
-        List(selection: Binding(get: { selectedID }, set: { if let id = $0 { onSelect(id) } })) {
-            if !sections.attention.isEmpty {
-                Section {
-                    ForEach(sections.attention) { row in
-                        rowView(row, showProject: true)
-                    }
-                } header: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "hand.raised.fill").foregroundStyle(JackPalette.amber)
-                        Text("Necesita atención")
-                        Spacer()
-                        Text("\(sections.attention.count)")
-                            .font(.system(size: 10, weight: .semibold).monospacedDigit())
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 5).padding(.vertical, 1)
-                            .background(JackPalette.amber, in: Capsule())
-                    }
-                }
+    private var header: some View {
+        HStack(spacing: 8) {
+            Text("Jack").font(.system(size: 13, weight: .semibold)).foregroundStyle(JackPalette.secondaryText)
+            Spacer(minLength: 0)
+            Button(action: onHide) {
+                Image(systemName: "sidebar.left").font(.system(size: 13, weight: .regular))
+                    .frame(width: 26, height: 24).contentShape(Rectangle())
             }
-            ForEach(sections.projects, id: \.path) { project in
-                // While searching every space stays open so no match is hidden.
-                let expanded = !collapsedSpaces.contains(project.path) || !query.isEmpty
-                Section {
-                    if expanded {
-                        ForEach(project.rows) { row in
-                            rowView(row, showProject: false)
-                        }
-                    }
-                } header: {
-                    SpaceHeader(name: project.name, path: project.path, rows: project.rows, expanded: expanded) {
-                        toggleSpace(project.path)
-                    }
-                }
+            .buttonStyle(.plain).foregroundStyle(JackPalette.muted)
+            .help("Ocultar la barra lateral (⌃⌘S)")
+        }
+        // Room for the window's traffic lights.
+        .padding(.leading, 80).padding(.trailing, 8)
+        .frame(height: JackMetrics.stripHeight)
+        .background(WindowDragArea())
+    }
+
+    private func navButton(_ symbol: String, _ title: String, shortcut: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: symbol).font(.system(size: 12)).frame(width: 16)
+                Text(title).font(.system(size: 12.5))
+                Spacer(minLength: 4)
+                Text(shortcut).font(.system(size: 10.5)).foregroundStyle(JackPalette.faint)
+            }
+            .foregroundStyle(JackPalette.secondaryText)
+            .padding(.horizontal, 8).frame(height: 27)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").font(.system(size: 12)).frame(width: 16).foregroundStyle(JackPalette.secondaryText)
+            TextField("Buscar", text: $query)
+                .textFieldStyle(.plain).font(.system(size: 12.5))
+                .focused($searchFocused)
+                .onExitCommand { query = ""; searchFocused = false }
+            if !query.isEmpty {
+                Button { query = "" } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 11)) }
+                    .buttonStyle(.plain).foregroundStyle(JackPalette.faint)
+            } else {
+                Text("⌘F").font(.system(size: 10.5)).foregroundStyle(JackPalette.faint)
             }
         }
-        .listStyle(.sidebar)
+        .padding(.horizontal, 8).frame(height: 27)
+        .background(searchFocused ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+
+    private func list(now: Date) -> some View {
+        let sections = SidebarSections(rows: filtered, projectPaths: projectPaths)
+        return ScrollView {
+            LazyVStack(alignment: .leading, spacing: 1) {
+                if !sections.attention.isEmpty {
+                    sectionLabel("Necesita atención", count: sections.attention.count, tint: JackPalette.amber)
+                    ForEach(sections.attention) { row in rowView(row, showProject: true, now: now) }
+                }
+                HStack {
+                    sectionLabel("Proyectos")
+                    Spacer()
+                    Button { onNewConversation(nil) } label: {
+                        Image(systemName: "plus").font(.system(size: 11, weight: .medium)).frame(width: 22, height: 20).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain).foregroundStyle(JackPalette.muted)
+                    .help("Nuevo agente")
+                }
+                ForEach(sections.projects, id: \.path) { project in
+                    // While searching every space stays open so no match is hidden.
+                    let expanded = !collapsedSpaces.contains(project.path) || !query.isEmpty
+                    ProjectRow(name: project.name, path: project.path, rows: project.rows, expanded: expanded,
+                               onToggle: { toggleSpace(project.path) }, onNew: { onNewConversation(project.path) })
+                    if expanded {
+                        ForEach(project.rows) { row in rowView(row, showProject: false, now: now) }
+                    }
+                }
+            }
+            .padding(.horizontal, 8).padding(.bottom, 10)
+        }
+        .scrollIndicators(.never)
         .overlay {
             if rows.isEmpty {
                 emptyState
             } else if filtered.isEmpty {
-                Text("Sin resultados para “\(query)”")
-                    .font(.system(size: 12)).foregroundStyle(JackPalette.muted)
-            }
-        }
-        .searchable(text: $query, placement: .sidebar, prompt: "Buscar agentes")
-        .searchFocused($searchFocused)
-        .onChange(of: searchRequest) { _, _ in searchFocused = true }
-        .safeAreaInset(edge: .bottom, spacing: 0) { footer }
-        .toolbar {
-            ToolbarItem {
-                Button(action: onNewConversation) { Label("Nuevo agente", systemImage: "square.and.pencil") }
-                    .help("Nuevo agente (⌘N)")
+                Text("Sin resultados para “\(query)”").font(.system(size: 12)).foregroundStyle(JackPalette.muted)
             }
         }
     }
 
-    private func rowView(_ row: SidebarRowModel, showProject: Bool) -> some View {
-        SidebarRow(row: row, showProject: showProject)
-            .equatable()
-            .tag(row.id)
-            .contextMenu {
-                Button(row.unread ? "Marcar como leído" : "Marcar como no leído", systemImage: row.unread ? "envelope.open" : "envelope.badge") {
-                    onSetUnread(row.id, !row.unread)
-                }
-                if let path = projectPaths[row.id] {
-                    Button("Mostrar space en Finder", systemImage: "folder") {
-                        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
-                    }
-                }
-                Divider()
-                Button("Renombrar…", systemImage: "pencil") { onRename(row.id) }
-                    .disabled(!row.canEdit)
-                Button("Eliminar conversación…", systemImage: "trash", role: .destructive) { onDelete(row.id) }
-                    .disabled(!row.canEdit)
+    private func sectionLabel(_ title: String, count: Int? = nil, tint: Color? = nil) -> some View {
+        HStack(spacing: 6) {
+            Text(title).font(.system(size: 11.5, weight: .medium)).foregroundStyle(tint ?? JackPalette.muted)
+            if let count {
+                Text("\(count)").font(.system(size: 10, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 5).padding(.vertical, 1)
+                    .background(tint ?? JackPalette.muted, in: Capsule())
             }
+        }
+        .padding(.horizontal, 8).padding(.top, 12).padding(.bottom, 4)
+    }
+
+    private func rowView(_ row: SidebarRowModel, showProject: Bool, now: Date) -> some View {
+        Button { onSelect(row.id) } label: {
+            SidebarRow(row: row, showProject: showProject, selected: row.id == selectedID, age: compactAge(row.updatedAt, now: now))
+                .equatable()
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button(row.unread ? "Marcar como leído" : "Marcar como no leído", systemImage: row.unread ? "envelope.open" : "envelope.badge") {
+                onSetUnread(row.id, !row.unread)
+            }
+            if let path = projectPaths[row.id] {
+                Button("Mostrar space en Finder", systemImage: "folder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+                }
+            }
+            Divider()
+            Button("Renombrar…", systemImage: "pencil") { onRename(row.id) }
+                .disabled(!row.canEdit)
+            Button("Eliminar conversación…", systemImage: "trash", role: .destructive) { onDelete(row.id) }
+                .disabled(!row.canEdit)
+        }
     }
 
     private var emptyState: some View {
         VStack(spacing: 8) {
             Image(systemName: "bubble.left.and.text.bubble.right")
-                .font(.system(size: 26)).foregroundStyle(JackPalette.faint)
+                .font(.system(size: 24)).foregroundStyle(JackPalette.faint)
             Text("Sin agentes").font(.system(size: 13, weight: .semibold))
             Text("Crea uno para empezar a trabajar en un proyecto.")
                 .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
                 .multilineTextAlignment(.center)
-            Button("Nuevo agente", action: onNewConversation).controlSize(.small).padding(.top, 2)
+            Button("Nuevo agente") { onNewConversation(nil) }.controlSize(.small).padding(.top, 2)
         }
         .padding(20)
     }
 
     private var footer: some View {
-        VStack(spacing: 0) {
-            Divider()
-            HStack(spacing: 10) {
-                Menu {
-                    Section("Agentes en paralelo") {
-                        ForEach([1, 2, 3, 4, 6, 8], id: \.self) { count in
-                            Button { onSetConcurrency(count) } label: {
-                                if count == maxConcurrent { Label("\(count)", systemImage: "checkmark") } else { Text("\(count)") }
-                            }
-                        }
-                        Button { onSetConcurrency(0) } label: {
-                            if maxConcurrent == 0 { Label("Sin límite", systemImage: "checkmark") } else { Text("Sin límite") }
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 5) {
-                        Circle().fill(activeCount > 0 ? JackPalette.green : JackPalette.faint).frame(width: 6, height: 6)
-                        Text(maxConcurrent == 0 ? "\(activeCount) activos" : "\(activeCount) de \(maxConcurrent) activos")
-                            .font(.system(size: 11).monospacedDigit())
-                    }
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help("Agentes trabajando ahora y máximo en paralelo")
-                Spacer()
-                Button { showingUsage.toggle() } label: {
-                    Image(systemName: "gauge.with.dots.needle.33percent")
-                }
-                .buttonStyle(.borderless)
-                .help("Uso y límites")
-                .popover(isPresented: $showingUsage, arrowEdge: .top) {
-                    ProviderUsageView(usage: usage, refreshing: refreshingUsage, refresh: onRefreshUsage)
-                }
+        HStack(spacing: 4) {
+            SettingsLink {
+                Image(systemName: "gearshape").font(.system(size: 12.5)).frame(width: 26, height: 24).contentShape(Rectangle())
             }
-            .foregroundStyle(JackPalette.muted)
-            .padding(.horizontal, 12).padding(.vertical, 8)
+            .buttonStyle(.plain).foregroundStyle(JackPalette.muted)
+            .help("Ajustes (⌘,)")
+            Spacer()
         }
+        .padding(.horizontal, 8).frame(height: 34)
     }
 }
 
-/// Header of a space (a project folder): larger than plain section titles and foldable.
-private struct SpaceHeader: View {
+/// A project folder: name, agent count and live work; folds its agents.
+private struct ProjectRow: View {
     let name: String
     let path: String
     let rows: [SidebarRowModel]
     let expanded: Bool
     let onToggle: () -> Void
+    let onNew: () -> Void
 
     var body: some View {
         let running = rows.filter { $0.status == .running || $0.status == .queued }.count
         let unread = rows.contains { $0.unread }
         Button(action: onToggle) {
             HStack(spacing: 7) {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(JackPalette.faint)
-                    .rotationEffect(.degrees(expanded ? 90 : 0))
-                    .frame(width: 12)
-                Image(systemName: expanded ? "folder.fill" : "folder")
-                    .font(.system(size: 13))
-                    .foregroundStyle(JackPalette.accent)
-                Text(name)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.primary)
-                    .lineLimit(1)
-                Spacer(minLength: 6)
-                if !expanded, unread {
-                    Circle().fill(JackPalette.accent).frame(width: 6, height: 6).help("Hay agentes sin leer")
-                }
+                Image(systemName: expanded ? "folder" : "folder.fill")
+                    .font(.system(size: 12)).foregroundStyle(JackPalette.muted)
+                    .frame(width: 16)
+                Text(name).font(.system(size: 12.5, weight: .medium)).foregroundStyle(Color.primary).lineLimit(1)
+                Text("\(rows.count)").font(.system(size: 11).monospacedDigit()).foregroundStyle(JackPalette.faint)
+                Spacer(minLength: 4)
+                if !expanded, unread { Circle().fill(JackPalette.accent).frame(width: 6, height: 6).help("Hay agentes sin leer") }
                 if running > 0 {
                     HStack(spacing: 3) {
-                        Circle().fill(JackPalette.green).frame(width: 6, height: 6)
-                        Text("\(running)").monospacedDigit()
+                        Circle().fill(JackPalette.green).frame(width: 5, height: 5)
+                        Text("\(running)").font(.system(size: 10.5).monospacedDigit()).foregroundStyle(JackPalette.muted)
                     }
                     .help("\(running) trabajando")
                 }
-                Text("\(rows.count)")
-                    .font(.system(size: 11, weight: .medium).monospacedDigit())
-                    .foregroundStyle(JackPalette.muted)
-                    .padding(.horizontal, 6).padding(.vertical, 1)
-                    .background(JackPalette.panelStrong, in: Capsule())
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .semibold)).foregroundStyle(JackPalette.faint)
+                    .rotationEffect(.degrees(expanded ? 90 : 0))
             }
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(JackPalette.muted)
-            .padding(.vertical, 5)
+            .padding(.horizontal, 8).frame(height: 28)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .padding(.top, 4)
         .help(path)
+        .contextMenu {
+            Button("Nuevo agente aquí", systemImage: "plus", action: onNew)
+            Button("Mostrar en Finder", systemImage: "folder") {
+                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+            }
+        }
         .accessibilityLabel("\(name), \(rows.count) agentes")
         .accessibilityValue(expanded ? "Desplegado" : "Plegado")
-        .accessibilityHint("Muestra u oculta los agentes de este space")
     }
 }
 
 struct SidebarRow: View, Equatable {
     let row: SidebarRowModel
     let showProject: Bool
+    let selected: Bool
+    let age: String
+
+    private var showsActivity: Bool { row.status == .running || row.status == .waiting || row.status == .failed }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 6) {
-            if row.depth > 0 {
-                Image(systemName: "arrow.turn.down.right")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(JackPalette.faint)
-                    .padding(.top, 4)
-                    .padding(.leading, 6)
-            }
-            Circle()
-                .fill(row.unread ? JackPalette.accent : .clear)
-                .frame(width: 7, height: 7)
-                .padding(.top, 5)
-                .accessibilityLabel(row.unread ? "No leído" : "")
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(row.title)
-                        .font(.system(size: 12, weight: row.unread || row.needsAttention ? .semibold : .medium))
-                        .lineLimit(1)
-                    Spacer(minLength: 4)
-                    RelativeTime(date: row.updatedAt)
-                        .font(.system(size: 10).monospacedDigit())
-                        .foregroundStyle(JackPalette.faint)
-                        .lineLimit(1)
-                        .fixedSize()
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 7) {
+                if row.depth > 0 {
+                    Image(systemName: "arrow.turn.down.right").font(.system(size: 8.5, weight: .semibold))
+                        .foregroundStyle(JackPalette.faint).frame(width: 10)
                 }
-                if !(row.status == .idle && row.activity.isEmpty) { activityLine }
-                if let parentTitle = row.parentTitle {
-                    Label("Delegado por \(parentTitle)", systemImage: "arrow.turn.down.right")
-                        .font(.system(size: 10)).foregroundStyle(JackPalette.muted)
-                        .lineLimit(1)
-                }
-                Text(([showProject ? row.projectName : nil, row.provider.title, row.model.isEmpty ? nil : (row.model as NSString).lastPathComponent] as [String?]).compactMap { $0 }.joined(separator: " · "))
-                    .font(.system(size: 10))
-                    .foregroundStyle(JackPalette.faint)
+                StatusDot(status: row.status, unread: row.unread)
+                ProviderMark(provider: row.provider, size: 12)
+                Text(row.title)
+                    .font(.system(size: 12.5, weight: row.unread || row.needsAttention ? .semibold : .regular))
+                    .foregroundStyle(selected || row.unread ? Color.primary : JackPalette.secondaryText)
                     .lineLimit(1)
-                    .truncationMode(.middle)
+                Spacer(minLength: 4)
+                Text(age).font(.system(size: 10.5).monospacedDigit()).foregroundStyle(JackPalette.faint).fixedSize()
+            }
+            if showsActivity || showProject || row.parentTitle != nil {
+                Text(detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(activityColor)
+                    .lineLimit(1).truncationMode(.tail)
+                    .padding(.leading, row.depth > 0 ? 55 : 38)
             }
         }
-        .padding(.vertical, 3)
+        .padding(.leading, 18 + CGFloat(row.depth) * 4).padding(.trailing, 8).padding(.vertical, 5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(selected ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityValue(row.status.title)
     }
 
-    @ViewBuilder private var activityLine: some View {
-        HStack(spacing: 4) {
-            switch row.status {
-            case .running:
-                ProgressView().controlSize(.mini).scaleEffect(0.7).frame(width: 10, height: 10)
-            case .queued, .waiting, .failed:
-                Image(systemName: row.status.symbol).font(.system(size: 9, weight: .semibold))
-            case .idle:
-                EmptyView()
-            }
-            Text(activityText).lineLimit(1).truncationMode(.tail)
-        }
-        .font(.system(size: 11))
-        .foregroundStyle(activityColor)
+    private var detail: String {
+        var parts: [String] = []
+        if showProject { parts.append(row.projectName) }
+        if let parent = row.parentTitle { parts.append("de \(parent)") }
+        if showsActivity || parts.isEmpty { parts.append(activityText) }
+        return parts.joined(separator: " · ")
     }
 
     private var activityText: String {
@@ -366,7 +367,7 @@ struct SidebarRow: View, Equatable {
         case .waiting: row.activity.isEmpty ? "Necesita tu permiso" : row.activity
         case .failed: row.activity.isEmpty ? "Error" : row.activity
         case .running: row.activity.isEmpty ? "Trabajando…" : row.activity
-        case .idle: row.activity.isEmpty ? "Sin actividad" : row.activity
+        case .idle: row.activity
         }
     }
 
@@ -374,28 +375,12 @@ struct SidebarRow: View, Equatable {
         switch row.status {
         case .waiting: JackPalette.amber
         case .failed: JackPalette.red
-        case .running: JackPalette.secondaryText
-        case .queued, .idle: JackPalette.muted
+        default: JackPalette.muted
         }
     }
 }
 
-/// Coarse relative date ("hace 5 min") refreshed once a minute; `Text(_:style: .relative)` redraws continuously.
-struct RelativeTime: View {
-    let date: Date
-    private static let formatter: RelativeDateTimeFormatter = {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .short
-        return formatter
-    }()
-
-    var body: some View {
-        TimelineView(.everyMinute) { context in
-            Text(Self.label(for: date, now: context.date))
-        }
-    }
-
-    static func label(for date: Date, now: Date) -> String {
-        now.timeIntervalSince(date) < 60 ? "ahora" : formatter.localizedString(for: date, relativeTo: now)
-    }
+enum JackMetrics {
+    /// Height of the sidebar header and the tab strips, aligned with the traffic lights.
+    static let stripHeight: CGFloat = 38
 }

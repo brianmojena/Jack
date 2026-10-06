@@ -22,6 +22,7 @@ private struct GeneralSettings: View {
     @ObservedObject var store: ChatStore
     @AppStorage("collapsedSpaces") private var collapsedSpaces = ""
     @AppStorage("delegationEnabled") private var delegationEnabled = true
+    @AppStorage("transcriptMonospaced") private var transcriptMonospaced = true
 
     var body: some View {
         Form {
@@ -45,6 +46,9 @@ private struct GeneralSettings: View {
             } footer: {
                 Text("Codex, Claude Code y OpenCode reciben herramientas para crear otros agentes, enviarles tareas y esperar sus resultados. Los sub-agentes no pueden delegar a su vez. Los sub-agentes aparecen bajo su agente en la barra lateral y te piden permisos a ti. Se aplica al próximo mensaje.")
                     .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
+            }
+            Section("Apariencia") {
+                Toggle("Conversación con letra monoespaciada", isOn: $transcriptMonospaced)
             }
             Section("Barra lateral") {
                 LabeledContent("Spaces plegados") {
@@ -161,6 +165,9 @@ private struct ShortcutsSettings: View {
         ("Permitir · rechazar permiso", "⌘↩  ⎋"),
         ("Marcar como no leído", "⇧⌘U"),
         ("Buscar agentes", "⌘F"),
+        ("Cerrar pestaña del agente", "⌘W"),
+        ("Mostrar u ocultar barra lateral", "⌃⌘S"),
+        ("Terminal · navegador · archivos", "⌃`  ⇧⌘B  ⇧⌘E"),
     ]
 
     var body: some View {

@@ -6,6 +6,7 @@ import SwiftUI
 struct MarkdownText: View {
     let text: String
     var fontSize: CGFloat = 13
+    var design: Font.Design = .default
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
@@ -20,27 +21,27 @@ struct MarkdownText: View {
     @ViewBuilder private func view(for block: MarkdownBlock) -> some View {
         switch block {
         case let .paragraph(text):
-            inline(text).font(.system(size: fontSize)).lineSpacing(2.5)
+            inline(text).font(.system(size: fontSize, design: design)).lineSpacing(2.5)
         case let .heading(level, text):
             inline(text)
-                .font(.system(size: level == 1 ? fontSize + 5 : level == 2 ? fontSize + 3 : fontSize + 1, weight: .semibold))
+                .font(.system(size: level == 1 ? fontSize + 4 : level == 2 ? fontSize + 2 : fontSize + 1, weight: .semibold, design: design))
                 .padding(.top, 4)
         case let .list(items, ordered):
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(Array(items.enumerated()), id: \.offset) { index, item in
                     HStack(alignment: .firstTextBaseline, spacing: 7) {
                         Text(ordered ? "\(index + 1)." : "•")
-                            .font(.system(size: fontSize, weight: ordered ? .medium : .bold).monospacedDigit())
+                            .font(.system(size: fontSize, weight: ordered ? .medium : .bold, design: design).monospacedDigit())
                             .foregroundStyle(JackPalette.muted)
                             .frame(minWidth: ordered ? 18 : 10, alignment: .trailing)
-                        inline(item.text).font(.system(size: fontSize)).lineSpacing(2.5)
+                        inline(item.text).font(.system(size: fontSize, design: design)).lineSpacing(2.5)
                     }
                     .padding(.leading, CGFloat(item.indent) * 16)
                 }
             }
         case let .quote(text):
             inline(text)
-                .font(.system(size: fontSize)).foregroundStyle(JackPalette.muted)
+                .font(.system(size: fontSize, design: design)).foregroundStyle(JackPalette.muted)
                 .padding(.leading, 11)
                 .overlay(alignment: .leading) { Rectangle().fill(JackPalette.hairline).frame(width: 3) }
         case let .code(language, code):
