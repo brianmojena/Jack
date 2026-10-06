@@ -88,6 +88,7 @@ private struct AgentExecutablesSettings: View {
     @AppStorage("providerExecutablePath.codex") private var codexPath = ""
     @AppStorage("providerExecutablePath.claude") private var claudePath = ""
     @AppStorage("providerExecutablePath.opencode") private var opencodePath = ""
+    @AppStorage(ChatDriverFactory.claudeKeepAliveKey) private var claudeKeepAlive = 5
 
     var body: some View {
         Form {
@@ -101,9 +102,24 @@ private struct AgentExecutablesSettings: View {
                 Text("Jack busca cada agente en tu PATH. Elige una ruta solo si está instalado en otro sitio; no cambia la configuración global del agente.")
                     .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
             }
+            Section {
+                Picker("Mantener abierto tras responder", selection: $claudeKeepAlive) {
+                    Text("1 minuto").tag(1)
+                    Text("5 minutos").tag(5)
+                    Text("15 minutos").tag(15)
+                    Text("30 minutos").tag(30)
+                    Divider()
+                    Text("Cerrar al responder").tag(0)
+                }
+            } header: {
+                Text("Claude Code")
+            } footer: {
+                Text("Abierto, el siguiente mensaje empieza al instante, puedes escribirle mientras trabaja y sus subagentes en segundo plano siguen hasta avisarte. Cada sesión abierta ocupa unos 350 MB; nunca se cierra mientras tiene tareas en segundo plano.")
+                    .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
+            }
         }
         .formStyle(.grouped)
-        .frame(height: 330)
+        .frame(height: 440)
     }
 }
 
@@ -181,7 +197,9 @@ private struct ShortcutsSettings: View {
         ("Escribir mensaje", "⌘L"),
         ("Enviar · nueva línea", "↩  ⇧↩"),
         ("Detener agente", "⌘."),
+        ("Cambiar modo de Claude Code", "⇧⇥"),
         ("Permitir · rechazar permiso", "⌘↩  ⎋"),
+        ("Permitir siempre", "⌥⌘↩"),
         ("Marcar como no leído", "⇧⌘U"),
         ("Buscar agentes", "⌘F"),
         ("Cerrar pestaña del agente", "⌘W"),

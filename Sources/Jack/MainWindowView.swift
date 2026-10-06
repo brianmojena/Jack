@@ -25,6 +25,7 @@ struct MainWindowView: View {
     @State private var renamingConversation: ChatConversation?
     @State private var renameText = ""
     @State private var deletingConversation: ChatConversation?
+    @State private var showingSessionPicker = false
     @State private var commandSelection = 0
     /// Draft for which the user closed the command list with Esc.
     @State private var dismissedCommandDraft: String?
@@ -44,6 +45,8 @@ struct MainWindowView: View {
                     onRename: { id in store.conversations.first { $0.id == id }.map(beginRename) },
                     onDelete: { id in deletingConversation = store.conversations.first { $0.id == id } },
                     onSetUnread: store.setUnread,
+                    onContinueInTerminal: continueInTerminal,
+                    onReloadFromClaude: reloadFromClaude,
                     onHide: toggleSidebar,
                     searchRequest: searchRequest
                 )
@@ -102,6 +105,12 @@ struct MainWindowView: View {
             } onCancel: {
                 showingNewConversation = false
             }
+        }
+        .sheet(isPresented: $showingSessionPicker) {
+            ClaudeSessionPicker(imported: Set(store.conversations.compactMap { $0.provider == .claude ? $0.sessionID : nil })) { session in
+                showingSessionPicker = false
+                resumeClaudeSession(session)
+            } onCancel: { showingSessionPicker = false }
         }
         .sheet(item: $renamingConversation) { conversation in
             ChatRenameSheet(title: $renameText) {
@@ -175,7 +184,7 @@ struct MainWindowView: View {
                     createAgent(NewAgentRequest(projectPath: path, provider: provider, model: "", effort: "high", firstMessage: message))
                 } onMoreOptions: { path, provider in
                     openNewConversation(provider: provider, space: path)
-                }
+                } onResumeClaude: { showingSessionPicker = true }
             }
         }
     }
@@ -186,7 +195,7 @@ struct MainWindowView: View {
             if let error = store.errorMessage, !error.isEmpty { errorBanner(error) }
             messageHistory(conversation)
             if let approvals = store.approvals[conversation.id], !approvals.isEmpty {
-                approvalsPanel(approvals, conversationID: conversation.id)
+                approvalsPanel(approvals, conversation: conversation)
             }
             if isActive(conversation) {
                 AgentActivityView(conversation: conversation, status: status, tokens: store.tokenUsage[conversation.id], projectPath: conversation.projectPath)
@@ -194,8 +203,8 @@ struct MainWindowView: View {
                     .padding(.horizontal, 22)
             }
             if let query = commandQuery(for: conversation) {
-                let matches = CommandSuggestions.matches(store.commands(for: conversation) ?? [], query: query)
-                CommandSuggestions(commands: matches, loading: store.isLoadingCommands(for: conversation),
+                let matches = CommandSuggestions.matches(availableComposerCommands(conversation), query: query)
+                CommandSuggestions(commands: matches, prefix: commandPrefix(conversation), loading: store.isLoadingCommands(for: conversation),
                                    selection: min(commandSelection, max(0, matches.count - 1))) { complete($0, in: conversation) }
                     .frame(maxWidth: Self.columnWidth).frame(maxWidth: .infinity)
                     .padding(.horizontal, 22)
@@ -372,49 +381,13 @@ struct MainWindowView: View {
         return 16
     }
 
-    private func approvalsPanel(_ approvals: [ChatApproval], conversationID: UUID) -> some View {
+    private func approvalsPanel(_ approvals: [ChatApproval], conversation: ChatConversation) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(approvals) { approval in
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 8) {
-                        Image(systemName: approval.questions.isEmpty ? "hand.raised.fill" : "questionmark.bubble.fill")
-                            .foregroundStyle(JackPalette.amber)
-                        Text(approval.questions.isEmpty ? "El agente necesita tu permiso" : "El agente tiene preguntas")
-                            .font(.system(size: 11, weight: .semibold)).foregroundStyle(JackPalette.amber)
-                        Spacer()
-                    }
-                    if !approval.questions.isEmpty {
-                        ChatQuestionForm(approval: approval) { answers in
-                            store.answer(conversationID: conversationID, approvalID: approval.id, answers: answers)
-                        }
-                    } else {
-                        Text(approval.title).font(.system(size: 13, weight: .medium)).textSelection(.enabled)
-                        if !approval.detail.isEmpty {
-                            Text(approval.detail.count > 4_000 ? approval.detail.prefix(4_000) + "\n…" : approval.detail)
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(JackPalette.secondaryText)
-                                .textSelection(.enabled)
-                                .lineLimit(12)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(9)
-                                .background(JackPalette.codeBackground, in: RoundedRectangle(cornerRadius: 7))
-                        }
-                        HStack(spacing: 8) {
-                            Spacer()
-                            Button("Rechazar") { store.respond(conversationID: conversationID, approvalID: approval.id, allow: false) }
-                                .keyboardShortcut(.escape, modifiers: [])
-                                .help("Rechazar (Esc)")
-                            Button("Permitir") { store.respond(conversationID: conversationID, approvalID: approval.id, allow: true) }
-                                .buttonStyle(.borderedProminent)
-                                .keyboardShortcut(.return, modifiers: .command)
-                                .help("Permitir (⌘↩)")
-                        }
-                        .controlSize(.regular)
-                    }
-                }
-                .padding(12)
-                .background(JackPalette.amber.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(JackPalette.amber.opacity(0.35), lineWidth: 1))
+                ApprovalCard(approval: approval, provider: conversation.provider, projectPath: conversation.projectPath,
+                             repliesInChat: store.canSend(to: conversation.id) && store.statuses[conversation.id]?.isActive == true,
+                             onRespond: { choice, message in store.respond(conversationID: conversation.id, approvalID: approval.id, choice: choice, message: message) },
+                             onAnswer: { answers in store.answer(conversationID: conversation.id, approvalID: approval.id, answers: answers) })
             }
         }
         .frame(maxWidth: Self.columnWidth).frame(maxWidth: .infinity)
@@ -426,7 +399,10 @@ struct MainWindowView: View {
         let busy = status.isActive
         let draft = drafts[conversation.id] ?? ""
         let attached = attachments[conversation.id] ?? []
-        let canSend = !busy && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attached.isEmpty)
+        // Claude Code takes messages while it works, as in its terminal.
+        let steerable = busy && store.canSend(to: conversation.id)
+        let hasContent = !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attached.isEmpty
+        let canSend = (!busy || steerable) && hasContent
         let design: Font.Design = monospaced ? .monospaced : .default
         let textSize: CGFloat = monospaced ? 12.5 : 13
         return VStack(alignment: .leading, spacing: 6) {
@@ -441,7 +417,7 @@ struct MainWindowView: View {
             }
             HStack(alignment: .top, spacing: 8) {
                 Text("›").font(.system(size: textSize + 2, weight: .bold, design: .monospaced))
-                    .foregroundStyle(busy ? JackPalette.faint : JackPalette.accent)
+                    .foregroundStyle(busy && !steerable ? JackPalette.faint : JackPalette.accent)
                 ZStack(alignment: .topLeading) {
                     // Invisible copy of the draft sizes the editor to its content.
                     Text(draft.isEmpty ? " " : draft + " ")
@@ -451,7 +427,7 @@ struct MainWindowView: View {
                         .opacity(0)
                         .accessibilityHidden(true)
                     if draft.isEmpty {
-                        Text(busy ? "\(conversation.provider.title) está trabajando…" : "Escribe a \(conversation.provider.title)…  /  para comandos")
+                        Text(placeholder(conversation, status: status, steerable: steerable))
                             .font(.system(size: textSize, design: design))
                             .foregroundStyle(JackPalette.faint)
                             .padding(.horizontal, 5)
@@ -474,9 +450,16 @@ struct MainWindowView: View {
                         sendDraft(in: conversation)
                         return .handled
                     }
+                    .onKeyPress(keys: [.tab, KeyEquivalent("\u{19}")], phases: .down) { press in
+                        // Shift+Tab cycles Claude Code's permission modes, as in its terminal.
+                        guard press.modifiers.contains(.shift) || press.key == KeyEquivalent("\u{19}"), conversation.provider == .claude,
+                              commandQuery(for: conversation) == nil else { return .ignored }
+                        store.cycleMode(conversation.id)
+                        return .handled
+                    }
                     .onKeyPress(keys: [.upArrow, .downArrow, .tab, .escape], phases: .down) { press in
                         guard commandQuery(for: conversation) != nil else { return .ignored }
-                        let count = CommandSuggestions.matches(store.commands(for: conversation) ?? [], query: commandQuery(for: conversation) ?? "").count
+                        let count = CommandSuggestions.matches(availableComposerCommands(conversation), query: commandQuery(for: conversation) ?? "").count
                         switch press.key {
                         case .upArrow: commandSelection = max(0, min(commandSelection, count - 1) - 1)
                         case .downArrow: commandSelection = min(max(0, count - 1), commandSelection + 1)
@@ -535,7 +518,8 @@ struct MainWindowView: View {
                     .keyboardShortcut(".", modifiers: .command)
                     .help("Detener (⌘.)")
                     .accessibilityLabel("Detener")
-                } else {
+                }
+                if !busy || (steerable && hasContent) {
                     Button { sendDraft(in: conversation) } label: {
                         Image(systemName: "arrow.up").font(.system(size: 11, weight: .bold))
                             .foregroundStyle(canSend ? Color.white : JackPalette.faint)
@@ -544,7 +528,7 @@ struct MainWindowView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(!canSend)
-                    .help("Enviar (Enter)")
+                    .help(busy ? "Enviar mientras trabaja (Enter)" : "Enviar (Enter)")
                     .accessibilityLabel("Enviar")
                 }
             }
@@ -561,18 +545,25 @@ struct MainWindowView: View {
     /// The command name being typed, while the draft is just `/name` with no arguments yet.
     private func commandQuery(for conversation: ChatConversation) -> String? {
         let draft = drafts[conversation.id] ?? ""
-        guard draft.hasPrefix("/"), draft != dismissedCommandDraft, !draft.contains(where: \.isWhitespace), !isActive(conversation) else { return nil }
+        guard (draft.hasPrefix("/") || draft.hasPrefix("!")), draft != dismissedCommandDraft, !draft.contains(where: \.isWhitespace), !isActive(conversation) else { return nil }
         let name = String(draft.dropFirst())
-        return name.contains("/") ? nil : name
+        return name.contains("/") || name.contains("!") ? nil : name
+    }
+
+    private func commandPrefix(_ conversation: ChatConversation) -> String {
+        (drafts[conversation.id] ?? "").hasPrefix("!") ? "!" : "/"
+    }
+    private func availableComposerCommands(_ conversation: ChatConversation) -> [ChatCommand] {
+        commandPrefix(conversation) == "!" ? store.jackCommands : (store.commands(for: conversation) ?? [])
     }
 
     private func selectedCommand(for conversation: ChatConversation) -> ChatCommand? {
-        let matches = CommandSuggestions.matches(store.commands(for: conversation) ?? [], query: commandQuery(for: conversation) ?? "")
+        let matches = CommandSuggestions.matches(availableComposerCommands(conversation), query: commandQuery(for: conversation) ?? "")
         return matches.isEmpty ? nil : matches[min(commandSelection, matches.count - 1)]
     }
 
     private func complete(_ command: ChatCommand, in conversation: ChatConversation) {
-        drafts[conversation.id] = "/\(command.name) "
+        drafts[conversation.id] = "\(commandPrefix(conversation))\(command.name) "
         commandSelection = 0
         composerFocused = true
     }
@@ -590,12 +581,24 @@ struct MainWindowView: View {
         .padding(.horizontal, 16).padding(.vertical, 9).background(JackPalette.red.opacity(0.08))
     }
 
+    private func placeholder(_ conversation: ChatConversation, status: ChatStatus, steerable: Bool) -> String {
+        let name = conversation.provider.title
+        guard status.isActive else { return "Escribe a \(name)…  ! Jack · / proveedor" }
+        guard steerable else { return "\(name) está trabajando…" }
+        if status == .waiting, store.approvals[conversation.id]?.contains(where: { $0.questions.isEmpty }) == true {
+            return "Escribe para rechazar y decirle qué hacer en su lugar…"
+        }
+        return "\(name) está trabajando · escribe para añadir instrucciones…"
+    }
+
     private func sendDraft(in conversation: ChatConversation) {
         let text = (drafts[conversation.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let files = attachments[conversation.id] ?? []
-        guard !text.isEmpty || !files.isEmpty, !isActive(conversation) else { return }
+        guard !text.isEmpty || !files.isEmpty, store.canSend(to: conversation.id) else { return }
         if store.selectedID != conversation.id { store.select(conversation.id) }
+        store.errorMessage = nil
         store.send(text, attachments: files)
+        guard store.errorMessage == nil else { return }
         drafts[conversation.id] = ""
         attachments[conversation.id] = nil
     }
@@ -647,6 +650,42 @@ struct MainWindowView: View {
         return status == .running || status == .waiting || status == .queued
     }
 
+    private func resumeClaudeSession(_ session: ClaudeSessionSummary) {
+        Task {
+            let loaded = await Task.detached(priority: .userInitiated) { ClaudeSessions.load(session) }.value
+            store.importClaudeSession(session, messages: loaded.messages, model: loaded.model)
+            composerFocused = true
+        }
+    }
+
+    /// Hands the session to `claude --resume` in the agent's terminal; Jack's own process closes first
+    /// so both never write to the session at once.
+    private func continueInTerminal(_ id: UUID) {
+        guard let conversation = store.conversations.first(where: { $0.id == id }) else { return }
+        guard let session = conversation.sessionID, !session.isEmpty else {
+            store.errorMessage = "Esta conversación aún no tiene sesión de Claude Code: envía un mensaje primero."
+            return
+        }
+        guard store.closeSession(id) else { store.errorMessage = "Detén el agente antes de seguir en la terminal."; return }
+        if store.selectedID != id { store.select(id) }
+        withoutAnimation {
+            let tab = workspace.open(.terminal, for: id)
+            workspace.terminal(tab.id, conversation: id, directory: conversation.projectPath).type("claude --resume \(session)\r")
+            workspaceVisible = true
+        }
+    }
+
+    /// Rereads the session after it continued in a terminal: Claude Code's file holds every turn, Jack's and the terminal's.
+    private func reloadFromClaude(_ id: UUID) {
+        guard let conversation = store.conversations.first(where: { $0.id == id }), let session = conversation.sessionID else { return }
+        let summary = ClaudeSessionSummary(id: session, title: conversation.title, projectPath: conversation.projectPath, updatedAt: conversation.updatedAt)
+        Task {
+            let loaded = await Task.detached(priority: .userInitiated) { ClaudeSessions.load(summary) }.value
+            guard !loaded.messages.isEmpty else { store.errorMessage = "No se encontró la sesión de Claude Code en esta carpeta."; return }
+            store.replaceTranscript(id, messages: loaded.messages)
+        }
+    }
+
     private func openNewConversation(provider: ChatProvider? = nil, space: String? = nil) {
         pendingProvider = provider
         pendingSpace = space
@@ -677,6 +716,7 @@ struct MainWindowView: View {
     private var actions: JackActions {
         JackActions(
             newAgent: { openNewConversation() },
+            resumeClaudeSession: { showingSessionPicker = true },
             move: moveSelection,
             selectIndex: { index in
                 let ids = navigationOrder(includeFolded: false)
@@ -730,51 +770,6 @@ struct MainWindowView: View {
         guard !isActive(conversation) else { return }
         renameText = conversation.title
         renamingConversation = conversation
-    }
-}
-
-private struct ChatQuestionForm: View {
-    let approval: ChatApproval
-    let onAnswer: ([String: String]) -> Void
-    @State private var answers: [String: String] = [:]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ForEach(approval.questions) { question in
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(question.question).font(.system(size: 12, weight: .medium))
-                    if let options = question.options, !options.isEmpty {
-                        ForEach(options, id: \.label) { option in
-                            Button {
-                                answers[question.id] = option.label
-                            } label: {
-                                HStack(alignment: .top, spacing: 7) {
-                                    Image(systemName: answers[question.id] == option.label ? "largecircle.fill.circle" : "circle")
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(option.label)
-                                        Text(option.description).foregroundStyle(JackPalette.muted)
-                                    }
-                                }
-                                .font(.system(size: 11))
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    let binding = Binding(get: { answers[question.id] ?? "" }, set: { answers[question.id] = $0 })
-                    if question.isSecret == true {
-                        SecureField("Respuesta", text: binding).textFieldStyle(.roundedBorder)
-                    } else {
-                        TextField("Escribe tu respuesta", text: binding).textFieldStyle(.roundedBorder)
-                    }
-                }
-            }
-            HStack {
-                Spacer()
-                Button("Enviar respuestas") { onAnswer(answers) }
-                    .buttonStyle(.borderedProminent).tint(JackPalette.accent)
-                    .disabled(approval.questions.contains { (answers[$0.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
-            }
-        }
     }
 }
 

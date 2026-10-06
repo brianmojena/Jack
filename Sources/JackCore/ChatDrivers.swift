@@ -2,6 +2,9 @@ import Foundation
 
 /// Creates the native, structured driver for a chat provider.
 public enum ChatDriverFactory {
+    /// Minutes an idle Claude Code process stays open after a turn; 0 closes it at once.
+    public static let claudeKeepAliveKey = "claudeKeepAliveMinutes"
+
     @MainActor
     public static func make(_ provider: ChatProvider) -> any ChatDriver {
         switch provider {
@@ -46,6 +49,17 @@ private class ProcessChatDriver: ChatDriver {
     func resolve(_ pending: PendingApproval, allow: Bool) async throws {
         throw ChatDriverError.unsupportedApproval
     }
+
+    // Declared here, not only in the protocol extension, so subclasses can override them.
+    func respond(approvalID: String, choice: String, message: String?) async throws {
+        try await respond(approvalID: approvalID, allow: choice != "deny")
+    }
+    var keepsAlive: Bool { false }
+    func observe(idle: @escaping @MainActor (ChatEvent) -> Void, unprompted: @escaping @MainActor () -> Void) {}
+    func follow(onEvent: @escaping @MainActor (ChatEvent) -> Void) async throws {}
+    func inject(conversation: ChatConversation, prompt: String) -> Bool { false }
+    func setMode(_ mode: String) -> Bool { false }
+    func close() { stop() }
 
     func begin(_ executable: String, arguments: [String], directory: String, environment: [String: String] = [:]) throws -> StructuredChild {
         let process = try StructuredChild(executable: executable, arguments: arguments, directory: directory, environment: environment)
@@ -318,6 +332,110 @@ enum ClaudeProtocol {
             return ChatCommand(name: name, description: value["description"] as? String ?? "", argumentHint: value["argumentHint"] as? String ?? "")
         }
     }
+    /// Calls that are bookkeeping rather than work, such as loading another tool's schema.
+    static let hiddenTools: Set<String> = ["ToolSearch"]
+
+    /// Claude Code reports Jack's "manual" mode as "default".
+    static func jackMode(_ mode: String) -> String { mode == "default" ? "manual" : mode }
+    static func cliMode(_ mode: String) -> String { mode == "manual" ? "default" : mode }
+
+    /// A tool result as text: plain, or the text blocks of a content list.
+    static func resultText(_ content: Any?) -> String {
+        if let text = content as? String { return text }
+        if let blocks = content as? [[String: Any]] {
+            let texts = blocks.compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }
+            if !texts.isEmpty { return texts.joined(separator: "\n") }
+        }
+        return boundedJSON(content ?? [])
+    }
+
+    /// What a permission request asks for, as the sidebar and the request's header show it.
+    static func permissionTitle(tool: String, input: [String: Any]) -> String {
+        let file = ((input["file_path"] ?? input["notebook_path"] ?? input["path"]) as? String).map { URL(fileURLWithPath: $0).lastPathComponent }
+        switch tool {
+        case "Bash": return "Ejecutar un comando"
+        case "Edit", "MultiEdit", "NotebookEdit": return file.map { "Editar \($0)" } ?? "Editar un archivo"
+        case "Write": return file.map { "Escribir \($0)" } ?? "Escribir un archivo"
+        case "Read": return file.map { "Leer \($0)" } ?? "Leer un archivo"
+        case "WebFetch": return (input["url"] as? String).flatMap { URL(string: $0)?.host }.map { "Abrir \($0)" } ?? "Abrir una página web"
+        case "WebSearch": return "Buscar en la web"
+        case "Agent", "Task": return "Lanzar un subagente"
+        default:
+            if tool.hasPrefix("mcp__") { return "Usar " + tool.dropFirst(5).replacingOccurrences(of: "__", with: " · ") }
+            return "Usar \(tool)"
+        }
+    }
+
+    /// The "don't ask again" answer Claude Code offers with a request, from the permission updates it suggests.
+    static func alwaysChoice(_ suggestions: [[String: Any]]) -> ChatApprovalChoice? {
+        func scope(_ destination: Any?) -> String {
+            switch destination as? String {
+            case "session": return "en esta sesión"
+            case "userSettings": return "en todos tus proyectos"
+            case "projectSettings": return "en este proyecto, para todo el equipo"
+            default: return "en este proyecto"
+            }
+        }
+        for suggestion in suggestions where suggestion["type"] as? String == "addRules" {
+            let rules = (suggestion["rules"] as? [[String: Any]] ?? []).compactMap { rule -> String? in
+                guard let tool = rule["toolName"] as? String else { return nil }
+                return (rule["ruleContent"] as? String).map { "\(tool)(\($0))" } ?? tool
+            }
+            if !rules.isEmpty { return ChatApprovalChoice(id: "always", title: "Permitir siempre \(rules.joined(separator: ", ")) \(scope(suggestion["destination"]))") }
+        }
+        if let mode = suggestions.first(where: { $0["type"] as? String == "setMode" }), mode["mode"] as? String == "acceptEdits" {
+            return ChatApprovalChoice(id: "always", title: "Aceptar todas las ediciones \(scope(mode["destination"]))")
+        }
+        if let folders = suggestions.first(where: { $0["type"] as? String == "addDirectories" }), let list = folders["directories"] as? [String], !list.isEmpty {
+            return ChatApprovalChoice(id: "always", title: "Permitir siempre \(list.map { URL(fileURLWithPath: $0).lastPathComponent }.joined(separator: ", ")) \(scope(folders["destination"]))")
+        }
+        return nil
+    }
+
+    static let planChoices = [
+        ChatApprovalChoice(id: "plan.acceptEdits", title: "Sí, y aceptar las ediciones"),
+        ChatApprovalChoice(id: "plan.manual", title: "Sí, revisando cada edición"),
+        ChatApprovalChoice(id: "deny", title: "No, seguir planificando"),
+    ]
+
+    /// How Jack answers a `can_use_tool` request with one of its choices.
+    static func permissionResponse(_ pending: PendingApproval, choice: String, message: String?) -> [String: Any] {
+        let input = pending.payload["input"] ?? [String: Any]()
+        let reason = message?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        switch choice {
+        case "deny":
+            if pending.payload["plan"] as? Bool == true {
+                return ["behavior": "deny", "message": reason.map { "The user wants to keep planning and said: \($0)" } ?? "The user wants to keep planning. Ask what should change in the plan."]
+            }
+            return ["behavior": "deny", "message": reason.map { "The user rejected this action and said: \($0)" } ?? "User denied this action."]
+        case "always":
+            return ["behavior": "allow", "updatedInput": input, "updatedPermissions": pending.payload["suggestions"] ?? [Any]()]
+        case "plan.acceptEdits", "plan.manual":
+            let mode = choice == "plan.acceptEdits" ? "acceptEdits" : "default"
+            return ["behavior": "allow", "updatedInput": input, "updatedPermissions": [["type": "setMode", "mode": mode, "destination": "session"]]]
+        default:
+            return ["behavior": "allow", "updatedInput": input]
+        }
+    }
+
+    /// AskUserQuestion is allowed with the answers added to its input, keyed by question.
+    static func questionResponse(_ pending: PendingApproval, answers: [String: String]) -> [String: Any] {
+        var input = pending.payload["input"] as? [String: Any] ?? [:]
+        input["answers"] = answers
+        return ["behavior": "allow", "updatedInput": input]
+    }
+
+    /// A line or the start of a turn the agent begins by itself, outside any turn Jack started.
+    static func startsTurn(_ object: [String: Any]) -> Bool {
+        let parent = object["parent_tool_use_id"]
+        let topLevel = parent == nil || parent is NSNull
+        switch object["type"] as? String {
+        case "assistant", "stream_event": return topLevel
+        case "system": return object["subtype"] as? String == "status" && object["status"] as? String == "requesting"
+        default: return false
+        }
+    }
+
     struct Decoder {
         var sessionID: String?
         var messageID = "claude-message"
@@ -329,24 +447,58 @@ enum ClaudeProtocol {
         /// What each block id holds, so a snapshot never reuses an id that belongs to another kind of block.
         var blockKinds: [String: String] = [:]
         var approvals: [String: PendingApproval] = [:]
+        var hiddenBlocks: Set<String> = []
+        /// Tools still working after their call returned, such as background subagents, until their task ends.
+        var backgroundTools: Set<String> = []
+        /// What each subagent has done so far, by the id of the call that started it.
+        var subagentActivity: [String: [String]] = [:]
+        /// Background tasks still running, which keep the process alive between turns.
+        var backgroundTaskCount = 0
 
         mutating func events(_ object: [String: Any]) -> [ChatEvent] {
             let type = object["type"] as? String ?? ""
+            if let parent = object["parent_tool_use_id"] as? String, ["assistant", "user", "stream_event"].contains(type) {
+                return subagentEvents(object, parent: parent)
+            }
             if type == "rate_limit_event", let usage = UsageDecoder.claudeEvent(object) { return [.usage(usage)] }
             if type == "user", let message = object["message"] as? [String: Any], let blocks = message["content"] as? [[String: Any]] {
                 return blocks.compactMap { block in
-                    guard block["type"] as? String == "tool_result", let nativeID = block["tool_use_id"] as? String, let tool = tools[nativeID] else { return nil }
-                    let content = block["content"] as? String ?? boundedJSON(block["content"] ?? [])
-                    let detail = toolInputs[nativeID].map { $0 + "\n" + content } ?? content
-                    return .tool(id: tool.id, title: tool.name, detail: detail, status: block["is_error"] as? Bool == true ? "failed" : "completed")
+                    guard block["type"] as? String == "tool_result", let nativeID = block["tool_use_id"] as? String, let tool = tools[nativeID],
+                          !backgroundTools.contains(nativeID) else { return nil }
+                    return .tool(id: tool.id, title: tool.name, detail: detail(nativeID, ClaudeProtocol.resultText(block["content"])),
+                                 status: block["is_error"] as? Bool == true ? "failed" : "completed")
                 }
             }
-            if type == "system", object["subtype"] as? String == "commands_changed", let commands = object["commands"] as? [[String: Any]] {
-                return [.commands(ClaudeProtocol.commands(commands))]
-            }
-            if type == "system", object["subtype"] as? String == "init", let id = object["session_id"] as? String {
-                sessionID = id
-                return [.session(id)]
+            if type == "system" {
+                switch object["subtype"] as? String {
+                case "commands_changed":
+                    if let commands = object["commands"] as? [[String: Any]] { return [.commands(ClaudeProtocol.commands(commands))] }
+                case "init":
+                    guard let id = object["session_id"] as? String else { break }
+                    sessionID = id
+                    return [.session(id)] + ((object["permissionMode"] as? String).map { [.mode(ClaudeProtocol.jackMode($0))] } ?? [])
+                case "status":
+                    if let mode = object["permissionMode"] as? String { return [.mode(ClaudeProtocol.jackMode(mode))] }
+                case "background_tasks_changed":
+                    backgroundTaskCount = (object["tasks"] as? [Any])?.count ?? 0
+                case "task_started":
+                    // "background" is not a running status, so ending the turn leaves the row as it is.
+                    if object["is_backgrounded"] as? Bool == true, let id = object["tool_use_id"] as? String, let tool = tools[id] {
+                        backgroundTools.insert(id)
+                        return [.tool(id: tool.id, title: tool.name, detail: detail(id, ""), status: "background")]
+                    }
+                case "task_notification":
+                    guard let id = object["tool_use_id"] as? String, backgroundTools.remove(id) != nil, let tool = tools[id] else { break }
+                    let status: String
+                    switch object["status"] as? String {
+                    case "completed": status = "completed"
+                    case "failed": status = "failed"
+                    default: status = "interrupted"
+                    }
+                    return [.tool(id: tool.id, title: tool.name, detail: detail(id, object["summary"] as? String ?? ""), status: status)]
+                default: break
+                }
+                return []
             }
             if type == "stream_event" {
                 let event = object["event"] as? [String: Any] ?? [:]
@@ -354,9 +506,11 @@ enum ClaudeProtocol {
                 let delta = event["delta"] as? [String: Any] ?? [:]
                 let index = event["index"].map(String.init(describing:)) ?? "0"
                 let blockID = "\(messageID):\(index)"
+                if hiddenBlocks.contains(blockID) { return [] }
                 if event["type"] as? String == "content_block_start", let block = event["content_block"] as? [String: Any] {
                     if block["type"] as? String == "tool_use" {
                         let name = block["name"] as? String ?? "Herramienta"
+                        if ClaudeProtocol.hiddenTools.contains(name) { hiddenBlocks.insert(blockID); return [] }
                         toolNames[blockID] = name
                         blockKinds[blockID] = "tool"
                         if let id = block["id"] as? String { tools[id] = (blockID, name) }
@@ -397,6 +551,7 @@ enum ClaudeProtocol {
                     }
                     if kind == "tool_use" {
                         let name = block["name"] as? String ?? "Herramienta"
+                        if ClaudeProtocol.hiddenTools.contains(name) { return nil }
                         let input = boundedJSON(block["input"] ?? [:])
                         let nativeID = block["id"] as? String
                         let id = nativeID.flatMap { tools[$0]?.id } ?? snapshotID("tool")
@@ -421,12 +576,7 @@ enum ClaudeProtocol {
             if type == "control_request" {
                 let id = object["request_id"] as? String ?? UUID().uuidString
                 let request = object["request"] as? [String: Any] ?? [:]
-                if request["subtype"] as? String == "can_use_tool" {
-                    let name = request["tool_name"] as? String ?? "tool"
-                    let input = request["input"] ?? [:]
-                    approvals[id] = PendingApproval(payload: ["requestID": id, "input": input], provider: "claude")
-                    return [.approval(ChatApproval(id: id, title: "Claude requests \(name)", detail: boundedJSON(input)))]
-                }
+                if request["subtype"] as? String == "can_use_tool" { return [.approval(approval(id: id, request: request))] }
             }
             if type == "result" {
                 if let error = object["is_error"] as? Bool, error { return [.failure((object["result"] as? String) ?? "Claude reported an error.")] }
@@ -438,56 +588,302 @@ enum ClaudeProtocol {
             }
             return []
         }
+
+        /// A tool's input as JSON, then what its subagent did, then its result.
+        private func detail(_ nativeID: String, _ result: String) -> String {
+            let activity = subagentActivity[nativeID].map { $0.joined(separator: "\n") + (result.isEmpty ? "" : "\n\n") } ?? ""
+            return (toolInputs[nativeID].map { $0 + "\n" } ?? "") + activity + result
+        }
+
+        /// A subagent's own tool calls are listed under the call that started it instead of joining the transcript.
+        private mutating func subagentEvents(_ object: [String: Any], parent: String) -> [ChatEvent] {
+            guard object["type"] as? String == "assistant", let tool = tools[parent],
+                  let blocks = (object["message"] as? [String: Any])?["content"] as? [[String: Any]] else { return [] }
+            let calls = blocks.filter { $0["type"] as? String == "tool_use" && !ClaudeProtocol.hiddenTools.contains($0["name"] as? String ?? "") }
+            guard !calls.isEmpty else { return [] }
+            for call in calls {
+                let input = call["input"] as? [String: Any] ?? [:]
+                let subject = ["command", "file_path", "pattern", "url", "query", "description"].lazy.compactMap { input[$0] as? String }.first ?? ""
+                let line = "› \(call["name"] as? String ?? "Herramienta")" + (subject.isEmpty ? "" : " " + subject.replacingOccurrences(of: "\n", with: " "))
+                subagentActivity[parent, default: []].append(String(line.prefix(160)))
+            }
+            return [.tool(id: tool.id, title: tool.name, detail: detail(parent, ""), status: backgroundTools.contains(parent) ? "background" : "running")]
+        }
+
+        private mutating func approval(id: String, request: [String: Any]) -> ChatApproval {
+            let name = request["tool_name"] as? String ?? "tool"
+            let input = request["input"] as? [String: Any] ?? [:]
+            var payload: [String: Any] = ["requestID": id, "input": input]
+            var approval: ChatApproval
+            if name == "AskUserQuestion", let list = input["questions"] as? [[String: Any]], !list.isEmpty {
+                approval = ChatApproval(id: id, title: "Claude tiene preguntas", detail: "")
+                approval.questions = list.compactMap { question in
+                    guard let text = question["question"] as? String else { return nil }
+                    let options = (question["options"] as? [[String: Any]])?.compactMap { option in
+                        (option["label"] as? String).map { ChatInputOption(label: $0, description: option["description"] as? String ?? "") }
+                    }
+                    return ChatInputQuestion(id: text, header: question["header"] as? String ?? "", question: text, options: options, multiSelect: question["multiSelect"] as? Bool)
+                }
+            } else if name == "ExitPlanMode" {
+                approval = ChatApproval(id: id, title: "Plan listo para revisar", detail: input["plan"] as? String ?? "")
+                approval.isPlan = true
+                approval.choices = ClaudeProtocol.planChoices
+                payload["plan"] = true
+            } else {
+                let suggestions = request["permission_suggestions"] as? [[String: Any]] ?? []
+                payload["suggestions"] = suggestions
+                approval = ChatApproval(id: id, title: ClaudeProtocol.permissionTitle(tool: name, input: input), detail: boundedJSON(input))
+                approval.tool = name
+                approval.choices = ClaudeProtocol.alwaysChoice(suggestions).map { [$0] } ?? []
+            }
+            approvals[id] = PendingApproval(payload: payload, provider: "claude")
+            return approval
+        }
     }
 }
 
+/// Claude Code stays open between turns, as it does in a terminal: the next message skips its startup,
+/// background subagents and commands keep working after a reply, and stopping interrupts the turn
+/// instead of ending the process. An idle process closes after a few minutes to free its memory;
+/// the next message resumes the session.
 @MainActor
 private final class ClaudeChatDriver: ProcessChatDriver {
     private var decoder = ClaudeProtocol.Decoder()
+    /// The launch settings the running process was started with; mode and model change live.
+    private var launch: [String] = []
+    private var liveMode: String?
+    private var liveModel: String?
+    private var reader: Task<Void, Never>?
+    private var sink: (@MainActor (ChatEvent) -> Void)?
+    private var turnEnded: CheckedContinuation<Void, Error>?
+    private var idleSink: (@MainActor (ChatEvent) -> Void)?
+    private var unprompted: (@MainActor () -> Void)?
+    /// Events of a turn the agent started by itself, until the caller follows it.
+    private var unpromptedEvents: [ChatEvent]?
+    private var interrupting: Task<Void, Never>?
+    private var idleClose: Task<Void, Never>?
+    private var requests = 0
+    /// Delegated agents close right after their turn: an orchestrator may start several, and memory is scarce.
+    private var closesWhenIdle = false
+
+    override var keepsAlive: Bool { true }
+
+    override func observe(idle: @escaping @MainActor (ChatEvent) -> Void, unprompted: @escaping @MainActor () -> Void) {
+        idleSink = idle
+        self.unprompted = unprompted
+    }
 
     override func run(conversation: ChatConversation, prompt: String, onEvent: @escaping @MainActor (ChatEvent) -> Void) async throws {
         try await run(conversation: conversation, prompt: prompt, delegation: nil, onEvent: onEvent)
     }
 
     override func run(conversation: ChatConversation, prompt: String, delegation: ChatDelegation?, onEvent: @escaping @MainActor (ChatEvent) -> Void) async throws {
-        stop(); let generation = UUID(); runGeneration = generation
+        guard sink == nil else { throw ChatDriverError.process("Claude Code ya está trabajando en esta conversación.") }
+        idleClose?.cancel()
+        closesWhenIdle = conversation.parentID != nil
+        let process = try session(for: conversation, delegation: delegation)
+        _ = setMode(conversation.mode ?? "manual")
+        if !conversation.model.isEmpty, conversation.model != liveModel {
+            control(["subtype": "set_model", "model": conversation.model])
+            liveModel = conversation.model
+        }
+        let buffered = unpromptedEvents ?? []
+        unpromptedEvents = nil
+        try await awaitTurn(onEvent) {
+            buffered.forEach(self.deliver)
+            do { try process.writeJSON(Self.userMessage(conversation, prompt: prompt)) }
+            catch { self.endTurn(ChatDriverError.process("No se pudo escribir a Claude Code: \(error.localizedDescription)")) }
+        }
+    }
+
+    override func follow(onEvent: @escaping @MainActor (ChatEvent) -> Void) async throws {
+        guard sink == nil, let buffered = unpromptedEvents else { return }
+        unpromptedEvents = nil
+        try await awaitTurn(onEvent) { buffered.forEach(self.deliver) }
+    }
+
+    override func inject(conversation: ChatConversation, prompt: String) -> Bool {
+        guard sink != nil, interrupting == nil, let child else { return false }
+        return (try? child.writeJSON(Self.userMessage(conversation, prompt: prompt))) != nil
+    }
+
+    override func setMode(_ mode: String) -> Bool {
+        guard child != nil else { return true }
+        if liveMode == mode { return true }
+        guard control(["subtype": "set_permission_mode", "mode": ClaudeProtocol.cliMode(mode)]) else { return false }
+        liveMode = mode
+        return true
+    }
+
+    /// Interrupts the turn as Esc does in the terminal; the process and its background tasks stay.
+    override func stop() {
+        guard sink != nil, interrupting == nil else { return }
+        pendingApprovals.removeAll()
+        guard control(["subtype": "interrupt"]) else { closeSession(); endTurn(nil); return }
+        interrupting = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled, let self, self.sink != nil else { return }
+            // It did not stop in time: end the process; the next message resumes the session.
+            self.closeSession()
+            self.endTurn(nil)
+        }
+    }
+
+    override func close() {
+        idleClose?.cancel()
+        closeSession()
+        unpromptedEvents = nil
+        if sink != nil { endTurn(CancellationError()) }
+    }
+
+    override func respond(approvalID: String, choice: String, message: String?) async throws {
+        guard let pending = pendingApprovals.removeValue(forKey: approvalID) else { throw ChatDriverError.invalidApproval(approvalID) }
+        try reply(pending, ClaudeProtocol.permissionResponse(pending, choice: choice, message: message))
+    }
+
+    override func resolve(_ pending: PendingApproval, allow: Bool) async throws {
+        try reply(pending, ClaudeProtocol.permissionResponse(pending, choice: allow ? "allow" : "deny", message: nil))
+    }
+
+    override func answer(approvalID: String, answers: [String: String]) async throws {
+        guard let pending = pendingApprovals.removeValue(forKey: approvalID) else { throw ChatDriverError.invalidApproval(approvalID) }
+        try reply(pending, ClaudeProtocol.questionResponse(pending, answers: answers))
+    }
+
+    private func reply(_ pending: PendingApproval, _ response: [String: Any]) throws {
+        guard let child, let requestID = pending.payload["requestID"] as? String else { throw ChatDriverError.invalidApproval("expired") }
+        try child.writeJSON(["type": "control_response", "response": ["subtype": "success", "request_id": requestID, "response": response]])
+    }
+
+    static func userMessage(_ conversation: ChatConversation, prompt: String) -> [String: Any] {
+        ["type": "user", "message": ["role": "user", "content": ChatRunConfiguration.claudeContent(conversation, prompt: prompt)], "parent_tool_use_id": NSNull()]
+    }
+
+    // MARK: Process
+
+    /// The running process when it was started with these settings, otherwise a new one that resumes the session.
+    private func session(for conversation: ChatConversation, delegation: ChatDelegation?) throws -> StructuredChild {
         guard let executable = ExecutableResolver.resolve("claude", override: UserDefaults.standard.string(forKey: "providerExecutablePath.claude")) else { throw ChatDriverError.executableMissing("claude") }
-        var args = ["--print", "--verbose", "--output-format", "stream-json", "--input-format", "stream-json", "--include-partial-messages", "--permission-prompts", "host"] + ChatRunConfiguration.claudeSettings(conversation)
+        let delegationArgs = delegation.map(ChatRunConfiguration.claudeDelegation) ?? []
+        let signature = [executable] + ChatRunConfiguration.claudeLaunchSignature(conversation) + delegationArgs
+        // Restarting would end background subagents; new settings wait until they finish.
+        if let child, signature == launch || decoder.backgroundTaskCount > 0 { return child }
+        closeSession()
+        // The SDK's permission channel, which also enables AskUserQuestion and plan approval.
+        var args = ["--print", "--verbose", "--output-format", "stream-json", "--input-format", "stream-json", "--include-partial-messages", "--permission-prompt-tool", "stdio"]
+            + ChatRunConfiguration.claudeSettings(conversation)
         if let saved = conversation.sessionID, !saved.isEmpty { args += ["--resume", saved] }
         var environment: [String: String] = [:]
-        if let delegation {
-            args += ChatRunConfiguration.claudeDelegation(delegation)
+        if delegation != nil {
+            args += delegationArgs
             // wait_for_agents may hold a call open for up to 15 minutes.
             environment["MCP_TOOL_TIMEOUT"] = "960000"
         }
         let process = try begin(executable, arguments: args, directory: conversation.projectPath, environment: environment)
-        do {
-        try process.writeJSON(["type": "user", "message": ["role": "user", "content": ChatRunConfiguration.claudeContent(conversation, prompt: prompt)], "parent_tool_use_id": NSNull()])
-        var receivedResult = false
-        for try await line in process.lines {
-            try Task.checkCancellation(); guard runGeneration == generation else { throw CancellationError() }
-            guard let object = jsonObject(line) else { continue }
-            var finished = false
-            for event in decoder.events(object) {
-                if case .approval(let approval) = event { pendingApprovals[approval.id] = decoder.approvals[approval.id] }
-                emit(event, generation: generation, to: onEvent)
-                if case .failure(let message) = event { throw ChatDriverError.protocolFailure(message) }
-                if case .completed = event { finished = true }
-            }
-            if finished { receivedResult = true; break }
+        launch = signature
+        liveMode = conversation.mode ?? "manual"
+        liveModel = conversation.model
+        decoder = ClaudeProtocol.Decoder()
+        reader = Task { [weak self] in
+            do { for try await line in process.lines { self?.handle(line) } } catch {}
+            await self?.ended(process)
         }
-        if !receivedResult { throw ChatDriverError.process(await process.failureDescription(default: "Claude Code ended before returning a result.")) }
-        } catch {
-            await finish(process, generation: generation)
-            throw error
-        }
-        await finish(process, generation: generation)
+        return process
     }
 
-    override func resolve(_ pending: PendingApproval, allow: Bool) async throws {
-        guard let process = child, let requestID = pending.payload["requestID"] as? String else { throw ChatDriverError.invalidApproval("expired") }
-        let response: [String: Any] = allow ? ["behavior": "allow", "updatedInput": pending.payload["input"] ?? [:]] : ["behavior": "deny", "message": "User denied this action."]
-        try process.writeJSON(["type": "control_response", "response": ["subtype": "success", "request_id": requestID, "response": response]])
+    private func closeSession() {
+        reader?.cancel(); reader = nil
+        launch = []
+        guard let process = child else { return }
+        child = nil
+        process.terminate()
+        Task { await process.waitForExit() }
+    }
+
+    private func ended(_ process: StructuredChild) async {
+        guard child === process else { return }
+        child = nil; launch = []; reader = nil
+        unpromptedEvents = nil
+        guard sink != nil else { return }
+        let message = await process.failureDescription(default: "Claude Code se cerró antes de terminar.")
+        if sink != nil, child == nil { endTurn(ChatDriverError.process(message)) }
+    }
+
+    @discardableResult
+    private func control(_ request: [String: Any]) -> Bool {
+        guard let child else { return false }
+        requests += 1
+        return (try? child.writeJSON(["type": "control_request", "request_id": "jack-\(requests)", "request": request])) != nil
+    }
+
+    // MARK: Turns
+
+    private func handle(_ line: Data) {
+        guard let object = jsonObject(line), object["type"] as? String != "control_response" else { return }
+        if sink == nil, unpromptedEvents == nil, ClaudeProtocol.startsTurn(object) {
+            idleClose?.cancel()
+            unpromptedEvents = []
+            unprompted?()
+        }
+        for var event in decoder.events(object) {
+            if case .approval(let approval) = event { pendingApprovals[approval.id] = decoder.approvals[approval.id] }
+            if case .mode(let mode) = event { liveMode = mode }
+            // An interrupted turn ends with an error result; it is the stop the user asked for.
+            if interrupting != nil, case .failure = event { event = .completed }
+            deliver(event)
+        }
+        if sink == nil, unpromptedEvents == nil, object["subtype"] as? String == "background_tasks_changed" { scheduleIdleClose() }
+    }
+
+    private func deliver(_ event: ChatEvent) {
+        if let sink {
+            sink(event)
+            if case .completed = event { endTurn(nil) }
+            if case .failure(let message) = event { endTurn(ChatDriverError.protocolFailure(message)) }
+        } else if unpromptedEvents != nil {
+            unpromptedEvents?.append(event)
+        } else {
+            idleSink?(event)
+        }
+    }
+
+    private func awaitTurn(_ onEvent: @escaping @MainActor (ChatEvent) -> Void, then start: @escaping () -> Void) async throws {
+        sink = onEvent
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                turnEnded = continuation
+                start()
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                guard let self, self.sink != nil else { return }
+                self.control(["subtype": "interrupt"])
+                self.endTurn(CancellationError())
+            }
+        }
+    }
+
+    private func endTurn(_ error: Error?) {
+        sink = nil
+        interrupting?.cancel(); interrupting = nil
+        pendingApprovals.removeAll()
+        let continuation = turnEnded
+        turnEnded = nil
+        if let error { continuation?.resume(throwing: error) } else { continuation?.resume() }
+        scheduleIdleClose()
+    }
+
+    /// Closes the idle process after the configured minutes, but never while a background task runs.
+    private func scheduleIdleClose() {
+        idleClose?.cancel()
+        guard child != nil, sink == nil else { return }
+        let minutes = closesWhenIdle ? 0 : UserDefaults.standard.object(forKey: ChatDriverFactory.claudeKeepAliveKey) as? Int ?? 5
+        let seconds = decoder.backgroundTaskCount > 0 ? max(60, minutes * 60) : minutes * 60
+        idleClose = Task { [weak self] in
+            if seconds > 0 { try? await Task.sleep(for: .seconds(seconds)) }
+            guard !Task.isCancelled, let self, self.sink == nil, self.unpromptedEvents == nil else { return }
+            if self.decoder.backgroundTaskCount > 0 { self.scheduleIdleClose() } else { self.closeSession() }
+        }
     }
 }
 
@@ -933,11 +1329,17 @@ enum ChatRunConfiguration {
         // Each list flag is followed by another flag, so the variadic options stop where intended.
         return ["--mcp-config", config, "--allowedTools", "mcp__jack", "--append-system-prompt", ChatDelegation.instructions]
     }
-        static func claudeSettings(_ conversation: ChatConversation) -> [String] {
+    static func claudeSettings(_ conversation: ChatConversation) -> [String] {
         let effort = ChatModelChoice.claudeEfforts(for: conversation.model).contains(conversation.effort) ? ["--effort", conversation.effort] : []
         // `--add-dir` is variadic, so each one is followed by another flag.
         let directories = (conversation.additionalDirectories + conversation.attachmentDirectories).flatMap { ["--add-dir", $0] }
         return directories + ["--permission-mode", conversation.mode ?? "manual", "--model", nonempty(conversation.model)] + effort
+    }
+    /// The launch settings a running Claude Code process cannot change. Mode and model change live, and the
+    /// folders of one message's attachments are left out so attaching a file does not restart the session.
+    static func claudeLaunchSignature(_ conversation: ChatConversation) -> [String] {
+        let effort = ChatModelChoice.claudeEfforts(for: conversation.model).contains(conversation.effort) ? conversation.effort : ""
+        return [conversation.projectPath, effort] + conversation.additionalDirectories
     }
     /// Plain text, or text plus image blocks when the message carries attachments.
     static func claudeContent(_ conversation: ChatConversation, prompt: String) -> Any {
@@ -1015,7 +1417,7 @@ private func jsonObject(_ data: Data) -> [String: Any]? {
     (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
 }
 
-private func boundedJSON(_ value: Any, limit: Int = 64 * 1024) -> String {
+func boundedJSON(_ value: Any, limit: Int = 64 * 1024) -> String {
     guard let data = try? JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed, .sortedKeys]) else { return String(describing: value).prefix(limit).description }
     if data.count <= limit { return String(data: data, encoding: .utf8) ?? "" }
     return String(data: data.prefix(limit), encoding: .utf8).map { $0 + "\n… output truncated at 64 KB" } ?? "[output truncated at 64 KB]"
@@ -1063,3 +1465,7 @@ private func readableDetails(type: String, item: [String: Any]) -> String {
 }
 
 private func nonempty(_ value: String) -> String { value.isEmpty ? "" : value }
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
+}

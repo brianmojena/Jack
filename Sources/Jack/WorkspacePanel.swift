@@ -295,6 +295,11 @@ private struct BrowserTitle: View {
         running = true
     }
 
+    /// Types into the shell as if from the keyboard; input sent before the shell is ready waits in the terminal.
+    func type(_ text: String) {
+        view.send(txt: text)
+    }
+
     func restart() {
         terminate()
         view.getTerminal().resetToInitialState()

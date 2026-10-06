@@ -19,6 +19,18 @@ Pulsa **Nuevo agente**, elige la carpeta y el proveedor: Codex, Claude Code u Op
 
 Cambia de modelo desde el selector en la esquina inferior izquierda del cuadro de mensaje, y ajusta el esfuerzo en el menú contiguo. Codex usa su catálogo local de modelos; Claude ofrece Fable, Opus, Sonnet y Haiku, con esfuerzo de Bajo a Máximo (Haiku no admite esfuerzo); OpenCode muestra los modelos de tus proveedores conectados, agrupados por proveedor, y permite actualizar el catálogo. **Otro modelo…** permite introducir uno nuevo. Los últimos ocho modelos se recuerdan por proveedor. El cambio se aplica al siguiente mensaje y conserva el historial y la sesión; está disponible cuando el agente termina o se detiene. El selector no realiza llamadas de inferencia. OpenCode ofrece las variantes de esfuerzo que admite cada modelo; Automático utiliza su configuración habitual. El menú de modo permite elegir Normal, Plan o Auto en Codex; Manual, Plan, Auto, Aceptar ediciones o Sin preguntas en Claude; y los modos primarios configurados en OpenCode, como Build y Plan. Auto en Codex ejecuta dentro del sandbox del proyecto y deniega las operaciones que requerirían aprobación; Auto en Claude depende de la disponibilidad que indique su CLI. Las preguntas de planificación de Codex se responden dentro del chat.
 
+### Claude Code
+
+Claude Code funciona en Jack como en su terminal:
+
+- **Sesión abierta.** El proceso sigue vivo entre mensajes, así que el siguiente empieza al instante. Los subagentes y comandos en segundo plano siguen trabajando después de la respuesta; al terminar, Claude informa en un turno propio. Una sesión inactiva se cierra pasados unos minutos (**Ajustes → Agentes**; ocupa unos 350 MB) y el siguiente mensaje la reanuda. Nunca se cierra mientras tenga tareas en segundo plano. Los agentes delegados se cierran al terminar.
+- **Escribir mientras trabaja.** El mensaje se suma al turno en curso. Si hay un permiso pendiente, lo rechaza y le dice qué hacer en su lugar. **⌘.** interrumpe el turno sin cerrar la sesión.
+- **Permisos.** Cada petición se previsualiza como en el chat: el comando o el diff de la edición. Ofrece **Permitir siempre** con la regla que propone Claude Code (⌥⌘↩).
+- **Plan y preguntas.** El plan se revisa en Markdown, con *Sí, y aceptar las ediciones*, *Sí, revisando cada edición* o *No, seguir planificando*. Las preguntas de `AskUserQuestion`, de una o varias opciones, se responden en el chat.
+- **Modos.** **⇧⇥** cambia entre Manual, Aceptar ediciones y Plan, también a mitad de turno. El selector refleja los cambios que hace el propio Claude, como salir del modo plan.
+- **Subagentes y tareas.** Cada subagente agrupa sus herramientas bajo su fila. La lista de tareas (`TaskCreate`/`TaskUpdate`) se ve en vivo sobre el cuadro de mensaje.
+- **Terminal ↔ Jack.** **Archivo → Retomar sesión de Claude Code…** (⇧⌘R) abre en Jack cualquier sesión empezada en la terminal, con su historial. En la barra lateral, **Continuar en la terminal** abre `claude --resume` en la terminal del agente, y **Actualizar desde Claude Code** relee la sesión al volver.
+
 Escribe `/` en el cuadro de mensaje para ver los comandos del agente: los integrados, como `/compact`, y sus skills o comandos personalizados. Las flechas eligen, Tab o Enter completan y Esc cierra la lista. Claude Code ejecuta sus propios comandos; en Codex, `/compact` y `/review` usan sus funciones nativas y las skills se invocan por nombre; en OpenCode se ejecutan sus comandos, y `/compact` resume la sesión. La lista se lee del proveedor la primera vez que escribes `/` en cada proyecto, sin gastar tokens.
 
 La barra superior muestra cuánto ocupa la ventana de contexto tras la última petición; el coste estimado aparece al pasar el puntero.
@@ -68,3 +80,26 @@ swift run JackChatProbe opencode /ruta/proyecto proveedor/modelo
 ```
 
 La validación y las medidas de esta versión están en [VALIDATION.md](VALIDATION.md).
+
+## Comandos personalizados de Jack
+
+Escribe `!` en el cuadro de mensaje para ver sugerencias; Tab completa, Enter envía y Shift+Enter inserta un salto de línea. Los comandos `/` siguen perteneciendo al proveedor. Usa `!!` para enviar un signo de exclamación literal al comienzo del mensaje. Ejecuta comandos `!` entre turnos, sin archivos adjuntos.
+
+| Comando | Acción |
+| --- | --- |
+| `!compact 8000` | Genera un resumen hacia un objetivo aproximado y continúa en una sesión nueva. Conserva el historial visible. |
+| `!autocompact 30000 8000` | Compacta antes del siguiente mensaje cuando el proveedor informa al menos 30000 tokens de contexto. `off` lo desactiva. |
+| `!contexto` | Muestra contexto reportado o una estimación identificada, instrucciones fijadas y presupuesto. |
+| `!fijar texto` | Conserva una instrucción al continuar o compactar. `listar` y `quitar número` permiten gestionarlas. |
+| `!resumen` | Pide un resumen de avances, decisiones y pendientes. |
+| `!checkpoint nombre` | Guarda una copia local de la conversación. `restaurar nombre` abre una copia independiente; no restaura archivos del proyecto. |
+| `!rama nombre` | Abre una conversación independiente con contexto del historial actual. |
+| `!traspasar` | Genera un resumen de traspaso. Añade `codex`, `claude` u `opencode` para abrir una conversación con ese proveedor y su modelo predeterminado. |
+| `!plan tarea` | Activa el modo Plan del proveedor y pide un plan de la tarea. |
+| `!revisar` | Pide revisar cambios sin editar archivos. |
+| `!presupuesto 20000` | Inicia un presupuesto aproximado desde cero y avisa al 80 %. No detiene la ejecución. `off` lo desactiva. |
+| `!comandos` | Lista comandos y plantillas personales. |
+
+Crea una plantilla con `!comandos crear mi-comando instrucciones {{args}}` y úsala con `!mi-comando argumentos`. Repetir el nombre actualiza su plantilla; `!comandos eliminar mi-comando` la elimina. Las plantillas son globales a Jack y se guardan en `Chats/commands.json`; inicialmente se incluyen `!revisar-pr`, `!documentar` y `!preparar-release`.
+
+La compactación y los resúmenes consumen uso del modelo. El objetivo de tokens no es un límite exacto: Jack estima el tamaño del resumen a partir de bytes UTF-8, y las instrucciones y herramientas del proveedor también ocupan contexto. Autocompact requiere datos de contexto del proveedor; si faltan, no dispara por estimaciones. Una compactación cancelada o fallida mantiene la sesión anterior y muestra el mensaje pendiente para reenviarlo. Los checkpoints se conservan localmente en `Chats/Checkpoints`.

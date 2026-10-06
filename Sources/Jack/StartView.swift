@@ -10,6 +10,7 @@ struct StartView: View {
     /// Creates the agent; an empty message just opens it.
     let onStart: (_ projectPath: String, _ provider: ChatProvider, _ message: String) -> Void
     let onMoreOptions: (_ projectPath: String?, _ provider: ChatProvider) -> Void
+    var onResumeClaude: (() -> Void)? = nil
 
     @AppStorage("lastNewAgentProvider") private var providerValue = ChatProvider.codex.rawValue
     @ObservedObject private var index = ProjectIndex.shared
@@ -67,6 +68,14 @@ struct StartView: View {
                         .help("Usar \(option.title)")
                     }
                     Spacer(minLength: 6)
+                    if provider == .claude, let onResumeClaude {
+                        Button(action: onResumeClaude) {
+                            Image(systemName: "clock.arrow.circlepath").font(.system(size: 11.5))
+                                .frame(width: 24, height: 24).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain).foregroundStyle(JackPalette.muted)
+                        .help("Retomar una sesión de Claude Code de la terminal (⇧⌘R)")
+                    }
                     Button { onMoreOptions(project, provider) } label: {
                         Image(systemName: "slider.horizontal.3").font(.system(size: 11.5))
                             .frame(width: 24, height: 24).contentShape(Rectangle())

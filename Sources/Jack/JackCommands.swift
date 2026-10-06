@@ -4,6 +4,7 @@ import SwiftUI
 /// Window actions exposed to the menu bar, so every shortcut also appears in the "Agentes" menu.
 struct JackActions {
     var newAgent: () -> Void
+    var resumeClaudeSession: () -> Void
     var move: (Int) -> Void
     var selectIndex: (Int) -> Void
     var nextAttention: () -> Void
@@ -31,6 +32,9 @@ struct JackCommands: Commands {
         CommandGroup(replacing: .newItem) {
             Button("Nuevo agente…") { actions?.newAgent() }
                 .keyboardShortcut("n", modifiers: .command)
+                .disabled(actions == nil)
+            Button("Retomar sesión de Claude Code…") { actions?.resumeClaudeSession() }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
                 .disabled(actions == nil)
         }
         // ⌘W closes the agent's tab, as in a browser; ⇧⌘W closes the window.
