@@ -96,13 +96,17 @@ struct MainWindowView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in workspace.terminateAll() }
         .onAppear { workspace.attach = { id, paths in attach(paths, to: id) } }
+        // Stellar Code's local models, so its cards and pickers know what is available.
+        .task { await store.refreshLocalModels() }
+        .onChange(of: showingNewConversation) { _, showing in if showing { Task { await store.refreshLocalModels() } } }
         .focusedSceneValue(\.jackActions, actions)
         .sheet(isPresented: $showingNewConversation) {
             NewAgentSheet(
                 spaces: recentSpaces,
                 initialSpace: pendingSpace,
                 initialProvider: pendingProvider,
-                modelChoices: store.modelChoices(for:)
+                modelChoices: store.modelChoices(for:),
+                localModels: store.localModels
             ) { request in
                 createAgent(request)
                 showingNewConversation = false

@@ -58,6 +58,7 @@ struct StartView: View {
                             HStack(spacing: 5) {
                                 ProviderMark(provider: option, size: 11)
                                 Text(option.title).font(.system(size: 11.5, weight: .medium))
+                                if option.isBeta { BetaBadge() }
                             }
                             .padding(.horizontal, 8).frame(height: 24)
                             .background(option == provider ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))

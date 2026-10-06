@@ -31,7 +31,7 @@ public extension ChatModelChoice {
         switch provider {
         case .claude: claudeEfforts(for: model)
         case .codex: ["low", "medium", "high"]
-        case .opencode: []
+        case .opencode, .stellar: []
         }
     }
     static func effortTitle(_ effort: String) -> String {

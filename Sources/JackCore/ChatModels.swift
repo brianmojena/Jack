@@ -1,10 +1,14 @@
 import Foundation
 
 public enum ChatProvider: String, Codable, CaseIterable, Identifiable {
-    case codex, claude, opencode
+    case codex, claude, opencode, stellar
     public var id: String { rawValue }
-    public var title: String { switch self { case .codex: return "Codex"; case .claude: return "Claude Code"; case .opencode: return "OpenCode" } }
-    public var defaultModel: String { switch self { case .codex: return "gpt-6-luna"; case .claude: return "sonnet"; case .opencode: return "" } }
+    public var title: String { switch self { case .codex: return "Codex"; case .claude: return "Claude Code"; case .opencode: return "OpenCode"; case .stellar: return "Stellar Code" } }
+    /// Jack's own agent; it runs local models and needs no executable.
+    public var isBuiltIn: Bool { self == .stellar }
+    /// Shown on its cards while it is being built.
+    public var isBeta: Bool { self == .stellar }
+    public var defaultModel: String { switch self { case .codex: return "gpt-6-luna"; case .claude: return "sonnet"; case .opencode, .stellar: return "" } }
 }
 public enum ChatStatus: String, Codable { case idle, queued, running, waiting, failed }
 public struct ChatMessage: Identifiable, Codable, Equatable {
@@ -108,6 +112,7 @@ public struct ChatRunMode: Identifiable, Equatable {
         case .codex: return [.init(id: "default", title: "Normal"), .init(id: "plan", title: "Plan"), .init(id: "auto", title: "Auto")]
         case .claude: return [.init(id: "manual", title: "Manual"), .init(id: "plan", title: "Plan"), .init(id: "auto", title: "Auto"), .init(id: "acceptEdits", title: "Aceptar ediciones"), .init(id: "dontAsk", title: "Sin preguntas")]
         case .opencode: return []
+        case .stellar: return [.init(id: "manual", title: "Manual"), .init(id: "acceptEdits", title: "Aceptar ediciones"), .init(id: "auto", title: "Auto")]
         }
     }
 }

@@ -89,9 +89,28 @@ private struct AgentExecutablesSettings: View {
     @AppStorage("providerExecutablePath.claude") private var claudePath = ""
     @AppStorage("providerExecutablePath.opencode") private var opencodePath = ""
     @AppStorage(ChatDriverFactory.claudeKeepAliveKey) private var claudeKeepAlive = 5
+    @AppStorage(StellarServer.contextLengthKey) private var stellarContext = StellarServer.defaultContextLength
+    @AppStorage(StellarServer.customServerURLKey) private var stellarServer = ""
 
     var body: some View {
         Form {
+            Section {
+                Picker("Contexto máximo", selection: $stellarContext) {
+                    Text("8 K tokens").tag(8_192)
+                    Text("16 K tokens").tag(16_384)
+                    Text("32 K tokens").tag(32_768)
+                    Text("64 K tokens").tag(65_536)
+                }
+                TextField("Otro servidor compatible con OpenAI", text: $stellarServer, prompt: Text("http://127.0.0.1:8000"))
+                if !stellarServer.isEmpty, URL(string: stellarServer).map(StellarServer.isLocal) != true {
+                    Text("Solo se admiten direcciones locales o de tu red privada.").font(.system(size: 11)).foregroundStyle(JackPalette.amber)
+                }
+            } header: {
+                HStack(spacing: 6) { Text("Stellar Code"); BetaBadge() }
+            } footer: {
+                Text("Stellar Code usa solo modelos locales: Ollama (11434, se inicia solo si está instalado), MLX (mlx_lm.server, 8080) y LM Studio (1234). Más contexto necesita más memoria.")
+                    .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
+            }
             Section {
                 ProviderExecutableRow(provider: .codex, path: $codexPath)
                 ProviderExecutableRow(provider: .claude, path: $claudePath)

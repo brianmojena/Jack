@@ -11,6 +11,7 @@ public enum ChatDriverFactory {
         case .codex: return CodexChatDriver()
         case .claude: return ClaudeChatDriver()
         case .opencode: return OpenCodeChatDriver()
+        case .stellar: return StellarChatDriver()
         }
     }
 }
@@ -1306,6 +1307,7 @@ public enum ChatCommandService {
     public static func load(_ provider: ChatProvider, directory: String) async throws -> [ChatCommand] {
         switch provider {
         case .claude: return try await claude(directory: directory)
+        case .stellar: return []
         case .codex: return try await codex(directory: directory)
         case .opencode:
             return try await OpenCodeModelService.withServer(directory: directory) { root, password in

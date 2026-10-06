@@ -60,6 +60,7 @@
 		EC04FA625364509E11174352 /* MarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BF3FCA24BA069D694B0B6F5 /* MarkdownText.swift */; };
 		F08A921CC43E600748CC33B8 /* ChatAttachments.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56C4F86A9A39B8CF9807B05C /* ChatAttachments.swift */; };
 		F4C4F1A3CBF9BF0DD8CEB3FB /* ContextPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AD6A284F00CF9276696D1F8 /* ContextPanelView.swift */; };
+		F68F4CEAD8E711BE50639E5C /* StellarCode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C9731344B7463E74671F52C /* StellarCode.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -97,6 +98,7 @@
 		12A56C2DEDA3D8023FD61366 /* JackDesign.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JackDesign.swift; sourceTree = "<group>"; };
 		138D59F70F9CA07105FD1933 /* FileExplorer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileExplorer.swift; sourceTree = "<group>"; };
 		1FCA7EE32BDFA05868D21D74 /* ChatAside.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatAside.swift; sourceTree = "<group>"; };
+		2C9731344B7463E74671F52C /* StellarCode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StellarCode.swift; sourceTree = "<group>"; };
 		3621003C5F85DF2D65EFC584 /* AgentTabs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTabs.swift; sourceTree = "<group>"; };
 		3789D85F443A38492640A492 /* ClaudeSessionPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeSessionPicker.swift; sourceTree = "<group>"; };
 		3A74557C47C15953992E8937 /* JackLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JackLog.swift; sourceTree = "<group>"; };
@@ -184,6 +186,7 @@
 				83D024EB758956F78F8FDB4B /* ProjectFinder.swift */,
 				48DDA04AE7E47B63803F18BB /* SessionStore.swift */,
 				0D507CBFB46C0D8CC4191A10 /* Simulators.swift */,
+				2C9731344B7463E74671F52C /* StellarCode.swift */,
 				09291DE01EDF91BE9972B424 /* UnixSocketTransport.swift */,
 			);
 			path = JackCore;
@@ -405,6 +408,7 @@
 				D0940594786ADCB9DF4AD81B /* ProjectFinder.swift in Sources */,
 				C119C546D022B81ABA72AAF1 /* SessionStore.swift in Sources */,
 				C0A2D15690CE9014A9C2E443 /* Simulators.swift in Sources */,
+				F68F4CEAD8E711BE50639E5C /* StellarCode.swift in Sources */,
 				E60ACFDAC8A34BDB557D96DC /* UnixSocketTransport.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

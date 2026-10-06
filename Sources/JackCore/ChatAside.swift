@@ -71,6 +71,7 @@ enum ChatAsideService {
     @MainActor
     static func ask(_ question: String, about conversation: ChatConversation, partial: @escaping @MainActor (String) -> Void) async throws -> String {
         let provider = conversation.provider
+        if provider == .stellar { return try await StellarAside.ask(question, prompt: prompt(question), about: conversation, partial: partial) }
         // Each provider's executable is named after it.
         guard let executable = ExecutableResolver.resolve(provider.rawValue, override: UserDefaults.standard.string(forKey: "providerExecutablePath.\(provider.rawValue)")) else {
             throw AsideError.failure("No se encontró \(provider.rawValue). Instálalo o indica su ruta en Ajustes.")
@@ -126,6 +127,8 @@ enum ChatAsideService {
             if let variant = conversation.variant, !variant.isEmpty { args += ["--variant", variant] }
             if let session { args += ["--session", session, "--fork"] }
             return args + [prompt]
+        case .stellar:
+            return []
         }
     }
 
@@ -180,7 +183,7 @@ enum ChatAsideService {
                 if type == "turn.failed" { failure = (object["error"] as? [String: Any])?["message"] as? String ?? "Codex no pudo responder." }
                 if type == "error", let message = object["message"] as? String { failure = message }
                 return false
-            case .opencode:
+            case .opencode, .stellar:
                 if let session = object["sessionID"] as? String { sessions.insert(session) }
                 if type == "text", let part = object["part"] as? [String: Any], let text = part["text"] as? String {
                     return set(text, for: part["id"] as? String ?? UUID().uuidString)

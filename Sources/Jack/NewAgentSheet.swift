@@ -15,6 +15,8 @@ struct NewAgentRequest {
 struct NewAgentSheet: View {
     let spaces: [String]
     let modelChoices: (ChatProvider) -> [ChatModelChoice]
+    /// Stellar Code's models; it is ready when a local server offers one.
+    let localModels: [StellarModel]
     let onCreate: (NewAgentRequest) -> Void
     let onCancel: () -> Void
 
@@ -35,18 +37,22 @@ struct NewAgentSheet: View {
         initialSpace: String?,
         initialProvider: ChatProvider?,
         modelChoices: @escaping (ChatProvider) -> [ChatModelChoice],
+        localModels: [StellarModel] = [],
         onCreate: @escaping (NewAgentRequest) -> Void,
         onCancel: @escaping () -> Void
     ) {
         self.spaces = spaces
         self.modelChoices = modelChoices
+        self.localModels = localModels
         self.onCreate = onCreate
         self.onCancel = onCancel
         let provider = initialProvider ?? Self.lastProvider
         _projectPath = State(initialValue: initialSpace ?? "")
         _provider = State(initialValue: provider)
-        _model = State(initialValue: provider.defaultModel)
+        _model = State(initialValue: provider == .stellar ? Self.firstLocal(localModels) : provider.defaultModel)
     }
+
+    private static func firstLocal(_ models: [StellarModel]) -> String { (models.first { $0.tools } ?? models.first)?.id ?? "" }
 
     private static var lastProvider: ChatProvider {
         UserDefaults.standard.string(forKey: "lastNewAgentProvider").flatMap(ChatProvider.init(rawValue:)) ?? .codex
@@ -133,8 +139,11 @@ struct NewAgentSheet: View {
         .frame(width: 540)
         .background(JackPalette.canvas)
         .onChange(of: provider) { _, value in
-            model = value.defaultModel
+            model = value == .stellar ? Self.firstLocal(localModels) : value.defaultModel
             if !efforts.isEmpty && !efforts.contains(effort) { effort = efforts.contains("high") ? "high" : efforts.last! }
+        }
+        .onChange(of: localModels.map(\.id)) { _, _ in
+            if provider == .stellar, model.isEmpty { model = Self.firstLocal(localModels) }
         }
         .onChange(of: model) { _, _ in
             if !efforts.isEmpty && !efforts.contains(effort) { effort = efforts.contains("high") ? "high" : efforts.last! }
@@ -145,7 +154,7 @@ struct NewAgentSheet: View {
         }
         .task {
             var found: [ChatProvider: Bool] = [:]
-            for provider in ChatProvider.allCases {
+            for provider in ChatProvider.allCases where !provider.isBuiltIn {
                 let override = UserDefaults.standard.string(forKey: "providerExecutablePath.\(provider.rawValue)")
                 found[provider] = ExecutableResolver.resolve(provider.rawValue, override: override?.isEmpty == false ? override : nil) != nil
             }
@@ -280,13 +289,16 @@ struct NewAgentSheet: View {
         HStack(spacing: 8) {
             ForEach(ChatProvider.allCases) { option in
                 let selected = option == provider
-                let available = installed[option] ?? true
+                let available = option == .stellar ? !localModels.isEmpty : installed[option] ?? true
                 Button { provider = option } label: {
                     HStack(spacing: 9) {
                         providerGlyph(option, size: 26)
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(option.title).font(.system(size: 12, weight: .semibold))
-                            Text(available ? "Listo" : "No encontrado")
+                            HStack(spacing: 4) {
+                                Text(option.title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                                if option.isBeta { BetaBadge() }
+                            }
+                            Text(option == .stellar ? (available ? "\(localModels.count) local\(localModels.count == 1 ? "" : "es")" : "Sin modelos locales") : available ? "Listo" : "No encontrado")
                                 .font(.system(size: 10))
                                 .foregroundStyle(available ? JackPalette.muted : JackPalette.amber)
                         }
@@ -299,7 +311,9 @@ struct NewAgentSheet: View {
                     .contentShape(RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.plain)
-                .help(available ? option.title : "No se encontró \(option.rawValue). Configura su ruta en Ajustes.")
+                .help(option == .stellar
+                      ? (available ? "Stellar Code (beta): el agente de Jack, solo con modelos locales" : "Stellar Code (beta) necesita un modelo local: inicia Ollama, MLX o LM Studio")
+                      : available ? option.title : "No se encontró \(option.rawValue). Configura su ruta en Ajustes.")
             }
         }
     }

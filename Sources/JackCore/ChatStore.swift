@@ -13,6 +13,9 @@ import Foundation
     @Published public private(set) var suggestions: [UUID: String] = [:]
     /// Side questions about each conversation; observed by their own view so streaming answers don't redraw the chat.
     public let asides = ChatAsides()
+    /// Models Stellar Code can use, from the local servers that answered last time.
+    @Published public private(set) var localModels: [StellarModel] = []
+    @Published public private(set) var loadingLocalModels = false
     @Published public var errorMessage: String?
     @Published public private(set) var maxConcurrent = 4
     @Published public private(set) var usage: [ChatProvider: ProviderUsage] = [:]
@@ -119,6 +122,10 @@ import Foundation
             return nil
         }
         var conversation = ChatConversation(projectPath: projectPath, provider: provider, model: model, effort: effort)
+        // Stellar Code has no default model: the first local one that can use tools.
+        if provider == .stellar, conversation.model.isEmpty {
+            conversation.model = (localModels.first { $0.tools } ?? localModels.first)?.id ?? ""
+        }
         conversation.effort = Self.clamp(effort, to: supportedEfforts(provider: provider, model: conversation.model))
         conversation.parentID = parentID
         if let title { conversation.title = String(title.prefix(120)) }
@@ -311,6 +318,12 @@ import Foundation
     }
     public func clearRecalled(_ id: UUID) { recalled.removeValue(forKey: id) }
     public func clearSuggestion(_ id: UUID) { suggestions.removeValue(forKey: id) }
+    public func refreshLocalModels() async {
+        guard !loadingLocalModels else { return }
+        loadingLocalModels = true
+        localModels = await StellarModels.discover()
+        loadingLocalModels = false
+    }
     /// Answers a question about the conversation from a copy of its session, without interrupting the agent.
     public func askAside(_ question: String, in id: UUID) {
         guard !stopped, let conversation = conversations.first(where: { $0.id == id }) else { return }
@@ -480,6 +493,7 @@ import Foundation
         case .codex: catalog = codexModels
         case .claude: catalog = ChatModelChoice.claudeCatalog
         case .opencode: catalog = [ChatModelChoice(id: "", efforts: [])]
+        case .stellar: catalog = localModels.map { ChatModelChoice(id: $0.id, title: $0.title, efforts: []) }
         }
         let ids = (recentModels[provider] ?? []) + conversations.filter { $0.provider == provider }.map(\.model) + [provider.defaultModel] + catalog.map(\.id)
         var seen = Set<String>()
@@ -504,6 +518,7 @@ import Foundation
     public func shutdown() {
         stopped = true; queue.removeAll(); flushTask?.cancel(); flushTask = nil
         asides.cancelAll()
+        StellarRuntime.shutdown()
         for id in Array(pending.keys) { flush(id) }
         for (id, driver) in drivers { driver.stop(); runs[id]?.cancel(); settleActivities(id); save(id) }
         for driver in liveDrivers.values { driver.close() }

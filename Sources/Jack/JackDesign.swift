@@ -133,12 +133,12 @@ func displayPath(_ path: String, project: String) -> String {
 
 /// Official provider logos, stored as template vectors in the asset catalog.
 func providerLogo(_ provider: ChatProvider) -> String {
-    switch provider { case .codex: "ProviderCodex"; case .claude: "ProviderClaude"; case .opencode: "ProviderOpenCode" }
+    switch provider { case .codex: "ProviderCodex"; case .claude: "ProviderClaude"; case .opencode: "ProviderOpenCode"; case .stellar: "ProviderStellar" }
 }
 
 /// Fallback when the asset catalog is not bundled (e.g. `swift run`).
 func providerSymbol(_ provider: ChatProvider) -> String {
-    switch provider { case .codex: "chevron.left.forwardslash.chevron.right"; case .claude: "asterisk"; case .opencode: "terminal" }
+    switch provider { case .codex: "chevron.left.forwardslash.chevron.right"; case .claude: "asterisk"; case .opencode: "terminal"; case .stellar: "sparkle" }
 }
 
 /// The provider's logo at `size` points, falling back to its SF Symbol.
@@ -162,6 +162,7 @@ func providerColor(_ provider: ChatProvider) -> Color {
     case .claude: Color(nsColor: JackPalette.rgb(0xD97757))
     case .codex: Color.primary
     case .opencode: Color(nsColor: .systemTeal)
+    case .stellar: Color(nsColor: .systemIndigo)
     }
 }
 
@@ -175,6 +176,18 @@ struct ProviderMark: View {
             .foregroundStyle(providerColor(provider))
             .frame(width: size, height: size)
             .accessibilityLabel(provider.title)
+    }
+}
+
+/// "Beta" next to Stellar Code's name while it is being built.
+struct BetaBadge: View {
+    var body: some View {
+        Text("BETA").font(.system(size: 8, weight: .bold)).tracking(0.4)
+            .padding(.horizontal, 4).padding(.vertical, 1.5)
+            .foregroundStyle(providerColor(.stellar))
+            .background(providerColor(.stellar).opacity(0.14), in: RoundedRectangle(cornerRadius: 3, style: .continuous))
+            .help("Stellar Code está en beta")
+            .accessibilityLabel("Beta")
     }
 }
 

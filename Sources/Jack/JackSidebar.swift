@@ -344,6 +344,7 @@ struct SidebarRow: View, Equatable {
                     .font(.system(size: 12.5, weight: row.unread || row.needsAttention ? .semibold : .regular))
                     .foregroundStyle(selected || row.unread ? Color.primary : JackPalette.secondaryText)
                     .lineLimit(1)
+                if row.provider.isBeta { BetaBadge() }
                 Spacer(minLength: 4)
                 Text(age).font(.system(size: 10.5).monospacedDigit()).foregroundStyle(JackPalette.faint).fixedSize()
             }

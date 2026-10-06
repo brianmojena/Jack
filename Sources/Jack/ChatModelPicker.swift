@@ -32,7 +32,7 @@ struct ChatModelPicker: View {
 
     /// Claude Code's colors for the modes that change what it may do without asking.
     private var modeColor: Color {
-        guard conversation.provider == .claude else { return JackPalette.muted }
+        guard conversation.provider == .claude || conversation.provider == .stellar else { return JackPalette.muted }
         switch conversation.mode {
         case "plan": return JackPalette.blue
         case "acceptEdits": return JackPalette.purple
@@ -43,6 +43,7 @@ struct ChatModelPicker: View {
     private var modeHelp: String {
         switch conversation.provider {
         case .claude: return "Modo de permisos · ⇧⇥ para cambiar, también mientras trabaja"
+        case .stellar: return "Manual pide permiso para editar y ejecutar; Aceptar ediciones solo para comandos; Auto no pregunta dentro del proyecto"
         case .codex where conversation.mode == "auto": return "Auto ejecuta dentro del proyecto; las acciones que requieren permiso se deniegan"
         default: return "Modo de trabajo para el próximo mensaje"
         }
@@ -66,6 +67,13 @@ struct ChatModelPicker: View {
                     }
                     Button("Actualizar modelos") { Task { await refreshModels() } }
                         .disabled(loadingModels)
+                } else if conversation.provider == .stellar {
+                    ForEach(choices) { choice in modelButton(choice) }
+                    Divider()
+                    if store.loadingLocalModels { Text("Buscando modelos locales…") }
+                    else if store.localModels.isEmpty { Text("Sin modelos: inicia Ollama, MLX o LM Studio") }
+                    Button("Actualizar modelos locales") { Task { await store.refreshLocalModels() } }
+                        .disabled(store.loadingLocalModels)
                 } else {
                     ForEach(choices) { choice in modelButton(choice) }
                 }
@@ -82,7 +90,7 @@ struct ChatModelPicker: View {
             .popover(isPresented: $custom) {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Otro modelo · \(conversation.provider.title)").font(.headline)
-                    TextField(conversation.provider == .opencode ? "proveedor/modelo" : "Identificador del modelo", text: $customModel)
+                    TextField(conversation.provider == .opencode ? "proveedor/modelo" : conversation.provider == .stellar ? "servidor/modelo, p. ej. ollama/qwen3:8b" : "Identificador del modelo", text: $customModel)
                         .textFieldStyle(.roundedBorder)
                         .onSubmit { applyCustom() }
                     HStack {

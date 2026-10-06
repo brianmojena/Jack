@@ -89,6 +89,8 @@ enum UsageDecoder {
                 guard let bytes = try? Data(contentsOf: url), let data = (try? JSONSerialization.jsonObject(with: bytes)) as? [String: Any] else { return UsageDecoder.claudeCache([:]) }
                 return UsageDecoder.claudeCache(data)
             }.value
+        case .stellar:
+            return ProviderUsage(provider: .stellar, note: "Stellar Code usa modelos locales: sin cuotas ni coste.")
         case .opencode:
             return ProviderUsage(provider: .opencode, note: "OpenCode no expone una cuota unificada: depende de la cuenta del proveedor del modelo. El consumo de tokens y coste se muestra en cada conversación.")
         }

@@ -30,6 +30,37 @@ import JackCore
             print("NOTA: \(usage.note) cached=\(usage.isCached)")
             return
         }
+        if args.count >= 2, args[1] == "stellar" {
+            // stellar [model] [prompt…]: a Stellar Code turn through the store, in a throwaway project, in Auto mode.
+            let folder = FileManager.default.temporaryDirectory.appendingPathComponent("jack-stellar-probe-" + UUID().uuidString)
+            let project = folder.appendingPathComponent("project")
+            try? FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+            try? "let greeting = \"hola\"\n".write(to: project.appendingPathComponent("main.swift"), atomically: true, encoding: .utf8)
+            let store = ChatStore(archive: ChatArchive(directory: folder.appendingPathComponent("chats")), preferences: nil)
+            defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+            await store.refreshLocalModels()
+            print("MODELS: " + store.localModels.map { "\($0.id) tools=\($0.tools) ctx=\($0.contextLength.map(String.init) ?? "-")" }.joined(separator: ", "))
+            guard let id = store.create(projectPath: project.path, provider: .stellar, model: args.count > 2 ? args[2] : nil) else { exit(1) }
+            // STELLAR_MODE=manual approves each permission request as it arrives, as clicking "Permitir" does.
+            let manual = ProcessInfo.processInfo.environment["STELLAR_MODE"] == "manual"
+            store.updateMode(id: id, mode: manual ? "manual" : "auto", supported: ChatRunMode.choices(for: .stellar))
+            let prompt = args.count > 3 ? args[3...].joined(separator: " ")
+                : "Lee main.swift y cambia \"hola\" por \"hola, Stellar\". Luego crea notas.txt con una línea que diga listo."
+            store.send(prompt, to: id)
+            let started = Date()
+            while store.statuses[id] != .idle && store.statuses[id] != .failed || Date().timeIntervalSince(started) < 1, Date().timeIntervalSince(started) < 400 {
+                if manual, let approval = store.approvals[id]?.first {
+                    print("APPROVAL \(approval.title)"); store.respond(conversationID: id, approvalID: approval.id, allow: true)
+                }
+                try? await Task.sleep(for: .milliseconds(300))
+            }
+            let conversation = store.conversations.first { $0.id == id }
+            for message in conversation?.messages ?? [] { print("[\(message.role)\(message.status.isEmpty ? "" : " " + message.status)] \(message.text.prefix(300))") }
+            print("STATUS \(store.statuses[id].map { "\($0)" } ?? "-") after \(Int(Date().timeIntervalSince(started))) s, tokens \(conversation?.tokenUsage.map { "\($0.input)/\($0.output)" } ?? "-")")
+            print("main.swift: " + ((try? String(contentsOf: project.appendingPathComponent("main.swift"), encoding: .utf8)) ?? "-"))
+            print("notas.txt: " + ((try? String(contentsOf: project.appendingPathComponent("notas.txt"), encoding: .utf8)) ?? "-"))
+            return
+        }
         if args.count >= 5, args[1] == "aside", let provider = ChatProvider(rawValue: args[2]) {
             // aside <provider> <session|-> <model|-> <question>: a side question from a copy of the session, as ⌥↩ asks it.
             let conversation = ChatConversation(projectPath: FileManager.default.currentDirectoryPath, provider: provider,
