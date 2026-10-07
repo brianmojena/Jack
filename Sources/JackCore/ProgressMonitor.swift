@@ -23,11 +23,17 @@ import Foundation
         self.root = root
         prune()
         scan()
-        guard watching else { return }
+        setWatching(watching)
+    }
+
+    var isWatching: Bool { polling != nil }
+    public func setWatching(_ watching: Bool) {
+        guard watching else { stop(); return }
+        guard polling == nil else { return }
         self.polling = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(500))
-                guard let self else { return }
+                guard !Task.isCancelled, let self else { return }
                 self.poll()
             }
         }

@@ -5,23 +5,33 @@ import UserNotifications
 @main
 struct JackApp: App {
     /// `JACK_DATA_DIR` runs a build on a copy of the chats, beside the installed Jack.
-    @StateObject private var store = ChatStore(archive: ChatArchive(directory: ProcessInfo.processInfo.environment["JACK_DATA_DIR"].map { URL(fileURLWithPath: $0) }))
+    @StateObject private var store = ChatStore(archive: ChatArchive(directory: ProcessInfo.processInfo.environment["JACK_DATA_DIR"].map { URL(fileURLWithPath: $0) }), lightMode: UserDefaults.standard.bool(forKey: "lightModeEnabled"))
+    @AppStorage("lightModeEnabled") private var lightMode = false
     @NSApplicationDelegateAdaptor(JackAppDelegate.self) private var appDelegate
     @StateObject private var batterySaver = BatterySaver()
 
     var body: some Scene {
         Window("Jack", id: "main") {
-            MainWindowView(store: store, workspace: appDelegate.workspace, memory: appDelegate.memory, batterySaver: batterySaver)
+            Group {
+                if lightMode {
+                    LightWindowView(store: store, memory: appDelegate.memory)
+                } else {
+                    MainWindowView(store: store, workspace: appDelegate.workspace, memory: appDelegate.memory, batterySaver: batterySaver)
+                }
+            }
                 .onAppear {
                     appDelegate.store = store
                     appDelegate.batterySaver = batterySaver
                     store.imageGenerationSupported = ImagePlaygroundSupport.isAvailable
                 }
-                .task {
+                .onChange(of: lightMode, initial: true) { _, enabled in store.setLightMode(enabled) }
+                .task(id: lightMode) {
+                    guard !lightMode else { return }
                     await store.refreshUsage()
                     // Codex's quota only changes when asked for; Claude Code reports its own as it works.
                     while !Task.isCancelled {
                         try? await Task.sleep(for: .seconds(600))
+                        guard !Task.isCancelled else { return }
                         await store.refreshUsage([.codex])
                     }
                 }
@@ -80,7 +90,15 @@ final class JackAppDelegate: NSObject, NSApplicationDelegate, UNUserNotification
     /// Clicking a notification opens Jack on that agent's chat.
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         let id = (response.notification.request.content.userInfo["conversation"] as? String).flatMap(UUID.init(uuidString:))
-        await MainActor.run { batterySaver?.exit(showing: id) }
+        await MainActor.run {
+            if store?.lightModeEnabled == true {
+                if let id { store?.select(id) }
+                for window in NSApp.windows where window.isMiniaturized { window.deminiaturize(nil) }
+                NSApp.activate()
+            } else {
+                batterySaver?.exit(showing: id)
+            }
+        }
     }
 }
 

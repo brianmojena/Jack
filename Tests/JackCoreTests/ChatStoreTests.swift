@@ -6,6 +6,8 @@ import XCTest
     var continuation: CheckedContinuation<Void, Never>?
     var answers: [(String, Bool)] = []
     var stopped = false
+    var energySavingChanges: [Bool] = []
+    func setEnergySaving(_ enabled: Bool) { energySavingChanges.append(enabled) }
     func run(conversation: ChatConversation, prompt: String, onEvent: @escaping @MainActor (ChatEvent) -> Void) async throws {
         callback = onEvent
         await withCheckedContinuation { continuation = $0 }
@@ -300,6 +302,158 @@ final class ChatStoreTests: XCTestCase {
         XCTAssertEqual(restored.selectedConversation?.title, "Renamed")
         XCTAssertEqual(restored.selectedConversation?.messages.last?.text, "Saved reply")
         restored.shutdown()
+    }
+    @MainActor func testLightKeepsItsExistingLocatorInsteadOfNormalsNewAutomaticRouting() async throws {
+        let (store, _, folder, drivers) = fixture()
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        let project = folder.appendingPathComponent("LightProject")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        store.setLightMode(true)
+        _ = try XCTUnwrap(store.create(projectPath: project.path, provider: .claude))
+        var requests: [String] = []
+        store.locateProject = { request, _, _, _ in requests.append(request); return nil }
+        let id = try XCTUnwrap(store.createLocating("arregla LightProject", provider: .claude, projects: [project.path]))
+        await settle()
+        XCTAssertEqual(requests, ["arregla LightProject"], "Light still asks its existing locator, even for a known project")
+        XCTAssertTrue(store.isUnplaced(id))
+        XCTAssertEqual(store.statuses[id], .idle)
+        XCTAssertTrue(drivers().isEmpty, "Normal's new automatic routing must not start an agent in Light")
+    }
+    @MainActor func testLightParallelismDoesNotOverwriteNormalOrInterruptRunningAgents() async throws {
+        let (store, _, folder, drivers) = fixture()
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        let first = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .claude))
+        store.send("uno", to: first)
+        let second = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .claude))
+        store.send("dos", to: second)
+        await settle()
+        XCTAssertEqual(store.activeCount, 2)
+        store.setLightMode(true)
+        XCTAssertEqual(store.maxConcurrent, 2)
+        XCTAssertEqual(store.effectiveMaxConcurrent, 1)
+        XCTAssertEqual(store.activeCount, 2, "entering Light does not stop existing work")
+        let third = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .claude))
+        store.send("tres", to: third)
+        await settle()
+        XCTAssertEqual(store.statuses[third], .queued)
+        XCTAssertEqual(drivers().count, 2)
+        store.setLightConcurrency(4)
+        await settle()
+        XCTAssertEqual(store.activeCount, 3)
+        XCTAssertEqual(drivers().last?.energySavingChanges, [true])
+        store.setLightMode(false)
+        XCTAssertEqual(store.maxConcurrent, 2)
+        XCTAssertEqual(store.effectiveMaxConcurrent, 2)
+        XCTAssertEqual(store.lightMaxConcurrent, 4)
+        XCTAssertTrue(drivers().allSatisfy { !$0.stopped })
+        XCTAssertTrue(drivers().allSatisfy { $0.energySavingChanges.last == false })
+    }
+    @MainActor func testLightBuffersHiddenDetailsButKeepsThemWhenReturningToNormal() async throws {
+        let (store, _, folder, drivers) = fixture()
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        store.setLightMode(true)
+        let id = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .claude))
+        store.send("hola", to: id)
+        await settle()
+        let driver = try XCTUnwrap(drivers().first)
+        driver.callback?(.reasoning(id: "thinking", text: "detalle", replace: false))
+        driver.callback?(.tool(id: "command", title: "echo hola", detail: "", status: "running"))
+        driver.callback?(.toolOutput(id: "command", text: "hola"))
+        try await Task.sleep(for: .milliseconds(1200))
+        XCTAssertEqual(store.selectedConversation?.messages.map(\.role), ["user"], "hidden details do not schedule view updates")
+        store.setLightMode(false)
+        XCTAssertEqual(store.selectedConversation?.messages.map(\.role), ["user", "reasoning", "tool"])
+        XCTAssertEqual(store.selectedConversation?.messages.last?.detail, "hola")
+        driver.callback?(.text(id: "reply", text: "respuesta", replace: false))
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(store.selectedConversation?.messages.last?.text, "respuesta", "Normal resumes its existing stream cadence")
+    }
+    @MainActor func testLightInvisibleTextResumesAndPermissionsRemainImmediate() async throws {
+        let (store, archive, folder, drivers) = fixture()
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        store.setLightMode(true)
+        let id = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .claude))
+        store.send("hola", to: id)
+        await settle()
+        let driver = try XCTUnwrap(drivers().first)
+        store.setLightWindowVisible(false)
+        driver.callback?(.text(id: "reply", text: "🙂 primero", replace: false))
+        try await Task.sleep(for: .milliseconds(1200))
+        XCTAssertEqual(store.selectedConversation?.messages.count, 1)
+        store.setLightWindowVisible(true)
+        XCTAssertEqual(store.selectedConversation?.messages.last?.text, "🙂 primero")
+        store.setLightWindowVisible(false)
+        driver.callback?(.text(id: "reply", text: " segundo", replace: false))
+        driver.callback?(.approval(ChatApproval(id: "ask", title: "Permiso", detail: "echo hola")))
+        XCTAssertEqual(store.statuses[id], .waiting)
+        XCTAssertEqual(store.approvals[id]?.first?.id, "ask")
+        driver.finish(); await settle()
+        archive.flush()
+        XCTAssertEqual(try archive.load(id)?.messages.last?.text, "🙂 primero segundo", "finishing a hidden turn persists all text")
+    }
+    @MainActor func testLightDetailsCanBeOpenedDuringATurn() async throws {
+        let (store, _, folder, drivers) = fixture()
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        store.setLightMode(true)
+        let id = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .claude))
+        store.send("hola", to: id); await settle()
+        let driver = try XCTUnwrap(drivers().first)
+        driver.callback?(.tool(id: "command", title: "Build", detail: "inicio", status: "running"))
+        store.setLightDetailsVisible(true)
+        XCTAssertEqual(store.selectedConversation?.messages.last?.detail, "inicio")
+        driver.callback?(.toolOutput(id: "command", text: " fin"))
+        try await Task.sleep(for: .milliseconds(1200))
+        XCTAssertEqual(store.selectedConversation?.messages.last?.detail, "inicio fin")
+    }
+    @MainActor func testLightHiddenChatsKeepTheirTextUntilSelectedAndBoundToolOutput() async throws {
+        let (store, archive, folder, drivers) = fixture()
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        store.setLightMode(true); store.setLightConcurrency(2)
+        let hidden = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .claude))
+        store.send("primero", to: hidden); await settle()
+        let visible = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .claude))
+        store.send("segundo", to: visible); await settle()
+        drivers()[0].callback?(.text(id: "hidden", text: "a", replace: false))
+        drivers()[0].callback?(.text(id: "hidden", text: "b", replace: false))
+        drivers()[1].callback?(.text(id: "visible", text: "respuesta", replace: false))
+        try await Task.sleep(for: .milliseconds(1200))
+        XCTAssertEqual(store.conversations.first { $0.id == hidden }?.messages.count, 1)
+        XCTAssertEqual(store.selectedConversation?.messages.last?.text, "respuesta")
+        store.select(hidden)
+        XCTAssertEqual(store.selectedConversation?.messages.last?.text, "ab")
+        drivers()[0].callback?(.text(id: "hidden", text: "snapshot", replace: true))
+        drivers()[0].callback?(.text(id: "hidden", text: " + delta", replace: false))
+        drivers()[0].callback?(.tool(id: "command", title: "log", detail: "", status: "running"))
+        for _ in 0..<20 { drivers()[0].callback?(.toolOutput(id: "command", text: String(repeating: "x", count: 8192))) }
+        drivers()[0].finish(); await settle(); archive.flush()
+        let messages = try XCTUnwrap(archive.load(hidden)?.messages)
+        XCTAssertEqual(messages.first { $0.id == "hidden" }?.text, "snapshot + delta")
+        XCTAssertEqual(messages.last?.detail.count, 65_536)
+    }
+    @MainActor func testLightBatchesTextForOneSecondButPermissionsAndCompletionRemainImmediate() async throws {
+        let (store, archive, folder, drivers) = fixture()
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        store.setLightMode(true)
+        let id = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .claude))
+        store.send("hola", to: id); await settle()
+        let driver = try XCTUnwrap(drivers().first)
+        driver.callback?(.text(id: "reply", text: "uno", replace: false))
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertEqual(store.selectedConversation?.messages.map(\.role), ["user"], "Light no longer flushes at 250 ms")
+        driver.callback?(.text(id: "reply", text: " dos", replace: false))
+        try await Task.sleep(for: .milliseconds(800))
+        XCTAssertEqual(store.selectedConversation?.messages.last?.text, "uno dos", "the timer batches all deltas after one second")
+
+        driver.callback?(.text(id: "reply", text: " permiso", replace: false))
+        driver.callback?(.approval(ChatApproval(id: "ask", title: "Permiso", detail: "echo hola")))
+        XCTAssertEqual(store.approvals[id]?.first?.id, "ask")
+        XCTAssertEqual(store.statuses[id], .waiting)
+        XCTAssertEqual(store.selectedConversation?.messages.last?.text, "uno dos permiso", "permissions flush pending text immediately")
+
+        driver.callback?(.text(id: "reply", text: " final", replace: false))
+        driver.finish(); await settle(); archive.flush()
+        XCTAssertEqual(store.statuses[id], .idle)
+        XCTAssertEqual(try archive.load(id)?.messages.last?.text, "uno dos permiso final", "completion saves the last delta without waiting a second")
     }
     @MainActor private func settle() async { for _ in 0..<8 { await Task.yield() }; try? await Task.sleep(nanoseconds: 10_000_000) }
     @MainActor func testIncreasingParallelismDrainsQueueAndUnlimitedDoesNotCancelActiveRuns() async throws {

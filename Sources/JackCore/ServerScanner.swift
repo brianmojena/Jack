@@ -250,7 +250,13 @@ public enum ServerScanner {
 
     public init(projects: @escaping () -> Set<String>, watching: Bool = true) {
         self.projects = projects
-        guard watching else { return }
+        setWatching(watching)
+    }
+
+    var isWatching: Bool { polling != nil }
+    public func setWatching(_ watching: Bool) {
+        guard watching else { stop(); return }
+        guard polling == nil else { return }
         polling = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.refresh()

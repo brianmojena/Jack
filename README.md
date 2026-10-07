@@ -84,6 +84,18 @@ macOS 27 ya no permite generar imágenes sin la ventana de Image Playground (`Im
 
 ## Consumo y persistencia
 
+### Modo Light
+
+**Regla de desarrollo para todos los agentes:** las nuevas funcionalidades y ampliaciones se implementan únicamente en el modo Normal, salvo que el prompt del usuario solicite explícitamente su implementación en Light. También deben evitarse incorporaciones indirectas a Light mediante componentes o servicios compartidos. La regla completa está en [AGENTS.md](AGENTS.md).
+
+Activa el toggle **Light** de la barra inferior del modo Normal para usar una ventana sencilla orientada al ahorro de batería. En Light, el mismo toggle permanece en la barra inferior y permite volver a Normal. También está disponible **Visualización → Modo Light** (⌃⌘L). Comparte chats, sesiones, borradores y adjuntos con el modo Normal. El chat y el editor usan texto nativo de AppKit. El chat renderiza Markdown directamente con el mismo parser de bloques y de formato inline que Normal: títulos, listas, citas, negritas, enlaces, código y tablas; los mensajes del usuario se conservan literales. Los mensajes sin cambios conservan su formato en una caché acotada al historial visible. El transcript usa TextKit 1 para las tablas nativas y el editor TextKit 2. No muestra thinking ni filas de herramientas. **Actividad** abre los comandos ejecutados y su salida, y **Comandos** permite insertar comandos `/` del proveedor y `!` de Jack. Los permisos, preguntas y mensajes en espera siguen disponibles.
+
+El menú **⋯** abre modelo y carpetas, límites, archivos, progreso, servidores y una lectura del texto con formato. Las cuotas se consultan al pulsar **Actualizar**; progreso y servidores se leen al abrir su panel o actualizarlo. Light no mantiene sus consultas periódicas. El texto visible se agrupa cada 1 segundo; los permisos y el cierre del turno vacían el texto pendiente inmediatamente. Los detalles ocultos quedan pendientes hasta que se solicitan, llega texto visible o termina el turno. Una ventana minimizada o completamente tapada suspende las actualizaciones visuales y recupera el texto al volver. Hay notificaciones al terminar, fallar o necesitar respuesta mientras estás fuera.
+
+Light tiene su propio paralelismo, inicialmente un agente. Al activarlo, los agentes que ya trabajan siguen; los siguientes esperan según ese límite. Claude conserva hasta 30 segundos una sesión inactiva, respetando un cierre más corto configurado y sin cerrar tareas de fondo o mensajes pendientes. **Volver al modo Normal** recupera su interfaz, cadencia y configuración habituales. Los navegadores, terminales y simuladores que ya estaban abiertos pueden seguir consumiendo recursos: Light no termina esos procesos automáticamente.
+
+Estas medidas reducen trabajo de la aplicación; no representan todavía una medición del ahorro de batería.
+
 La interfaz no renderiza terminales. Los proveedores se inician bajo demanda y se liberan al terminar. El texto en streaming se agrupa cada 50 ms. El paralelismo es configurable. Los historiales inactivos quedan en disco; solo las conversaciones seleccionadas, activas o en cola permanecen cargadas. Las herramientas tienen un límite de detalle de 64 KiB.
 
 Los chats se guardan localmente en `~/Library/Application Support/Jack/Chats`: un índice pequeño y un archivo por conversación. El proveedor mantiene también su sesión original para reanudar el contexto. El consumo de inferencia y de las CLI se suma al de la interfaz.

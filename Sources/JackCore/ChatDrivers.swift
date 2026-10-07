@@ -64,6 +64,7 @@ private class ProcessChatDriver: ChatDriver {
     func stop(keepingQueued: Bool) { stop() }
     func setMode(_ mode: String) -> Bool { false }
     func close() { stop() }
+    func setEnergySaving(_ enabled: Bool) {}
 
     func begin(_ executable: String, arguments: [String], directory: String, environment: [String: String] = [:]) throws -> StructuredChild {
         let process = try StructuredChild(executable: executable, arguments: arguments, directory: directory, environment: environment)
@@ -675,6 +676,13 @@ private final class ClaudeChatDriver: ProcessChatDriver {
     private var queued: [String: String] = [:]
     /// Delegated agents close right after their turn: an orchestrator may start several, and memory is scarce.
     private var closesWhenIdle = false
+    private var energySaving = false
+
+    override func setEnergySaving(_ enabled: Bool) {
+        guard energySaving != enabled else { return }
+        energySaving = enabled
+        scheduleIdleClose()
+    }
 
     override var keepsAlive: Bool { true }
 
@@ -954,7 +962,8 @@ private final class ClaudeChatDriver: ProcessChatDriver {
         // Queued messages start a turn of their own as soon as the agent reads them.
         guard child != nil, sink == nil, queued.isEmpty else { return }
         let minutes = closesWhenIdle ? 0 : UserDefaults.standard.object(forKey: ChatDriverFactory.claudeKeepAliveKey) as? Int ?? 5
-        let seconds = decoder.backgroundTaskCount > 0 ? max(60, minutes * 60) : minutes * 60
+        let idleSeconds = energySaving ? min(30, minutes * 60) : minutes * 60
+        let seconds = decoder.backgroundTaskCount > 0 ? max(60, minutes * 60) : idleSeconds
         idleClose = Task { [weak self] in
             if seconds > 0 { try? await Task.sleep(for: .seconds(seconds)) }
             guard !Task.isCancelled, let self, self.sink == nil, self.unpromptedEvents == nil, self.queued.isEmpty else { return }
