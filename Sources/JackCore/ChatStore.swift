@@ -207,13 +207,15 @@ import Foundation
         } else { usage[update.provider] = update }
     }
     @discardableResult
-    public func create(projectPath: String, provider: ChatProvider, model: String? = nil, effort: String = "high", parentID: UUID? = nil, title: String? = nil, select: Bool = true) -> UUID? {
+    public func create(projectPath: String, provider: ChatProvider, model: String? = nil, effort: String = "high", parentID: UUID? = nil, title: String? = nil, select: Bool = true, remote: ChatRemoteEndpoint? = nil) -> UUID? {
         var isDirectory: ObjCBool = false
         guard projectPath.hasPrefix("/"), FileManager.default.fileExists(atPath: projectPath, isDirectory: &isDirectory), isDirectory.boolValue else {
             if select { errorMessage = "Selecciona una carpeta de proyecto válida." }
             return nil
         }
         var conversation = ChatConversation(projectPath: projectPath, provider: provider, model: model, effort: effort)
+        // SSH remote agents only exist for top-level Claude Code chats.
+        if provider == .claude, parentID == nil, let remote, remote.isValid { conversation.remote = remote }
         // Stellar Code has no default model: the first local one that can use tools.
         if provider == .stellar, conversation.model.isEmpty {
             conversation.model = (localModels.first { $0.tools } ?? localModels.first)?.id ?? ""
@@ -236,13 +238,13 @@ import Foundation
     /// chooses when necessary. The agent moves to that space and starts.
     /// `projects` are the folders to choose from, most recently used first.
     @discardableResult
-    public func createLocating(_ message: String, provider: ChatProvider, model: String? = nil, effort: String = "high", projects: [String]) -> UUID? {
+    public func createLocating(_ message: String, provider: ChatProvider, model: String? = nil, effort: String = "high", projects: [String], remote: ChatRemoteEndpoint? = nil) -> UUID? {
         let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
         knownProjects = projects
         let folder = ProjectLocator.unplacedFolder
         try? FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
-        guard let id = create(projectPath: folder, provider: provider, model: model, effort: effort),
+        guard let id = create(projectPath: folder, provider: provider, model: model, effort: effort, remote: remote),
               let index = conversations.firstIndex(where: { $0.id == id }) else { return nil }
         conversations[index].messages.append(ChatMessage(role: "user", text: text))
         conversations[index].title = String(text.prefix(55)).replacingOccurrences(of: "\n", with: " ")
@@ -258,6 +260,11 @@ import Foundation
     /// The agent shows as working meanwhile, and stopping it cancels the search.
     private func place(_ id: UUID) {
         guard locateTasks[id] == nil, let conversation = conversations.first(where: { $0.id == id }) else { return }
+        // Remote agents resolve their folder on the other machine instead of this Mac.
+        if conversation.remote != nil {
+            placeRemote(id, conversation: conversation)
+            return
+        }
         let request = Self.request(of: conversation)
         let projects: [String]
         let knownPath: String?
@@ -332,6 +339,109 @@ import Foundation
         guard let task = locateTasks.removeValue(forKey: id) else { return }
         task.cancel()
         locating.remove(id)
+    }
+    /// Discovers a remote agent's folder on its own machine: the other Mac's projects,
+    /// then what the user named, then the model choosing among them. Anything typed while
+    /// discovering joins the choice, like the local flow.
+    private func placeRemote(_ id: UUID, conversation: ChatConversation) {
+        guard let endpoint = conversation.remote, endpoint.isValid else { return }
+        // Already resolved (e.g. set by hand): just move in and start.
+        if let resolved = endpoint.remotePath, resolved.hasPrefix("/") {
+            guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
+            conversations[index].projectPath = resolved
+            conversations[index].updatedAt = Date()
+            save(id)
+            statuses[id] = .queued
+            queue.append((id, Self.request(of: conversations[index])))
+            drainQueue()
+            return
+        }
+        let request = Self.request(of: conversation)
+        // Sibling agents on the same machine win ties, most recently used first.
+        var seen = Set<String>()
+        let openRemote = conversations.sorted { $0.updatedAt > $1.updatedAt }.compactMap { other -> String? in
+            guard other.id != id, other.remote?.destination == endpoint.destination,
+                  let path = other.remote?.remotePath, path.hasPrefix("/"), seen.insert(path).inserted else { return nil }
+            return path
+        }
+        let locate = locateProject, deadline = locateDeadline
+        locating.insert(id)
+        statuses[id] = .running
+        locateTasks[id] = Task { [weak self] in
+            var path: String?, failure: String?
+            do {
+                let projects = try await RemoteProjects.fetch(destination: endpoint.destination, sshPort: endpoint.sshPort)
+                guard !projects.isEmpty else {
+                    failure = "no encontré proyectos en \(endpoint.displayName)."
+                    throw CommandDeadlineExceeded()
+                }
+                // An explicit remote path typed by the user, verified over there.
+                if path == nil {
+                    let tokens = RemoteProjects.pathTokens(in: request)
+                    if let verified = try? await RemoteProjects.filterExisting(destination: endpoint.destination, sshPort: endpoint.sshPort, paths: tokens),
+                       let first = verified.first {
+                        path = ProjectLocator.existingPath(first, projects: openRemote + projects)
+                    }
+                }
+                // What the request names, by the same scoring as locally.
+                if path == nil {
+                    path = RemoteProjects.knownPath(in: request, projects: openRemote + projects, openProjects: openRemote)
+                }
+                // The model choosing among the remote folders; without a local CLI it falls back to scoring.
+                if path == nil {
+                    path = try await self?.remoteLocate(request: request, conversation: conversation, projects: openRemote + projects,
+                                                        locate: locate, deadline: deadline) ?? nil
+                }
+                // Never trust a guess blindly: the folder must exist over there.
+                if let candidate = path, !openRemote.contains(candidate), !projects.contains(candidate),
+                   try await RemoteProjects.filterExisting(destination: endpoint.destination, sshPort: endpoint.sshPort, paths: [candidate]).isEmpty {
+                    path = nil
+                }
+            } catch is CommandDeadlineExceeded {
+                if failure == nil { failure = "el modelo tardó más de \(deadline.components.seconds) s en responder." }
+            } catch { failure = error.localizedDescription }
+            guard let self, !Task.isCancelled, !self.stopped else { return }
+            self.locateTasks[id] = nil
+            self.locating.remove(id)
+            self.loadTranscript(id)
+            guard let index = self.conversations.firstIndex(where: { $0.id == id }) else { self.statuses[id] = nil; return }
+            if Self.request(of: self.conversations[index]) != request {
+                self.place(id)
+                return
+            }
+            guard let path else {
+                self.statuses[id] = .idle
+                let reason = failure.map { "No pude elegir la carpeta del proyecto: \($0)" } ?? "No sé en qué proyecto trabajar."
+                self.conversations[index].messages.append(ChatMessage(role: "jack", text: reason + " Dime su nombre o su ruta en \(endpoint.displayName) y empiezo."))
+                self.save(id)
+                return
+            }
+            self.conversations[index].remote?.remotePath = path
+            // The conversation lives where the agent works, even though that disk is remote.
+            self.conversations[index].projectPath = path
+            self.conversations[index].updatedAt = Date()
+            self.save(id)
+            self.statuses[id] = .queued
+            self.queue.append((id, Self.request(of: self.conversations[index])))
+            self.drainQueue()
+        }
+    }
+    /// The model picks a folder among remote candidates; without a usable local CLI,
+    /// the best string match wins instead of failing.
+    private func remoteLocate(request: String, conversation: ChatConversation, projects: [String],
+                              locate: @escaping @MainActor (String, ChatProvider, String, [String]) async throws -> String?,
+                              deadline: Duration) async throws -> String? {
+        do {
+            return try await withThrowingTaskGroup(of: String?.self) { group in
+                group.addTask { try await locate(request, conversation.provider, conversation.model, projects) }
+                group.addTask { try await Task.sleep(for: deadline); throw CommandDeadlineExceeded() }
+                defer { group.cancelAll() }
+                return try await group.next() ?? nil
+            }
+        } catch {
+            // Pure string matching needs no CLI at all.
+            return ProjectFinder.resolve(request, projects: projects).match?.path
+        }
     }
     private static func request(of conversation: ChatConversation) -> String {
         conversation.messages.filter { $0.role == "user" }.map(\.text).joined(separator: "\n\n")
@@ -784,6 +894,18 @@ import Foundation
     public func updateDirectories(id: UUID, directories: [String]) {
         guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
         conversations[index].extraDirectories = directories.isEmpty ? nil : directories
+        save(id)
+    }
+    /// Points a Claude Code agent at an SSH machine, or brings it back local with nil.
+    /// Takes effect from the agent's next message; the running session restarts then.
+    /// Only top-level Claude Code agents support it: sub-agents share their parent's machine.
+    /// Existing chats need a resolved folder; automatic discovery happens when creating the agent.
+    public func updateRemote(id: UUID, remote: ChatRemoteEndpoint?) {
+        guard runs[id] == nil, !queue.contains(where: { $0.0 == id }),
+              let index = conversations.firstIndex(where: { $0.id == id }),
+              conversations[index].provider == .claude, conversations[index].parentID == nil,
+              remote == nil || (remote!.isValid && remote!.isResolved) else { return }
+        conversations[index].remote = remote
         save(id)
     }
     public func updateVariant(id: UUID, variant: String?, supported: [String]) {

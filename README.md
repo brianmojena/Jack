@@ -4,7 +4,7 @@ Chat nativo y compacto para gestionar varios agentes de desarrollo en macOS. Int
 
 ## Versionado
 
-La versión actual es **0.3.21**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
+La versión actual es **0.3.25**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
 
 ## Construir
 
@@ -45,6 +45,10 @@ Claude Code funciona en Jack como en su terminal:
 - **Terminal ↔ Jack.** **Archivo → Retomar sesión de Claude Code…** (⇧⌘R) abre en Jack cualquier sesión empezada en la terminal, con su historial. En la barra lateral, **Continuar en la terminal** abre `claude --resume` en la terminal del agente, y **Actualizar desde Claude Code** relee la sesión al volver.
 
 Escribe `/` en el cuadro de mensaje para ver los comandos del agente: los integrados, como `/compact`, y sus skills o comandos personalizados. Las flechas eligen, Tab o Enter completan y Esc cierra la lista. Claude Code ejecuta sus propios comandos; en Codex, `/compact` y `/review` usan sus funciones nativas y las skills se invocan por nombre; en OpenCode se ejecutan sus comandos, y `/compact` resume la sesión. La lista se lee del proveedor la primera vez que escribes `/` en cada proyecto, sin gastar tokens.
+
+### Claude Code remoto por SSH
+
+Un agente de Claude Code puede correr en otra máquina (modo Normal): pulsa **Nuevo agente**, elige Claude y activa el botón servidor del compositor para indicar el destino (`ruben@192.168.1.193`) y el puerto si hace falta, con **Probar conexión** para comprobar el acceso y que `claude` exista allí. El destino se recuerda para la próxima vez. La carpeta no hace falta indicarla: Jack descubre los proyectos de la otra máquina (su índice si también usa Jack, si no un escaneo) y elige según lo que pidas, igual que en local; si la sabes, puedes fijarla y se usa tal cual. También puedes cambiar el destino después desde el botón servidor junto a **Carpetas** de ese chat. Requiere acceso por clave SSH sin contraseña (`ssh-copy-id destino`) y `claude` instalado en remoto; la primera conexión acepta la clave del host. Jack ejecuta `claude` por SSH con su entrada/salida redirigida, así que el protocolo, los permisos, el modo Plan y las preguntas funcionan igual, y abre un túnel inverso automático para que el agente remoto use las herramientas de delegación de Jack. La sesión remota se mantiene abierta entre mensajes y se reanuda igual que en local. Las carpetas extra locales (`--add-dir`) y `jack-progress` no aplican en remoto; el modo Light no cambia.
 
 La barra superior muestra cuánto ocupa la ventana de contexto tras la última petición; el coste estimado aparece al pasar el puntero.
 

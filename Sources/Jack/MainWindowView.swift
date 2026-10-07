@@ -211,7 +211,7 @@ struct MainWindowView: View {
                 centerColumn
             } trailing: {
                 if let conversation {
-                    WorkspacePane(sessions: workspace, conversationID: conversation.id, projectPath: conversation.projectPath,
+                    WorkspacePane(sessions: workspace, conversationID: conversation.id, projectPath: conversation.projectPath, remote: conversation.remote,
                                   onClose: { withoutAnimation { workspaceVisible = false }; focusedComposer = store.selectedID })
                         .equatable()
                 }
@@ -773,6 +773,11 @@ struct MainWindowView: View {
                     .labelStyle(.iconOnly).buttonStyle(.plain)
                     .font(.system(size: 12)).foregroundStyle(JackPalette.muted)
                     .frame(width: 24, height: 24)
+                if conversation.provider == .claude, conversation.parentID == nil {
+                    RemoteAgentButton(store: store, conversation: conversation)
+                        .buttonStyle(.plain)
+                        .frame(width: 24, height: 24)
+                }
                 Button {
                     // With a message written it is asked as is, like ⌥↩; otherwise the card asks for one.
                     if !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { askAside(in: conversation) }
@@ -1054,7 +1059,7 @@ struct MainWindowView: View {
         if store.selectedID != id { store.select(id) }
         withoutAnimation {
             let tab = workspace.open(.terminal, for: id)
-            workspace.terminal(tab.id, conversation: id, directory: conversation.projectPath).type("claude --resume \(session)\r")
+            workspace.terminal(tab.id, conversation: id, directory: conversation.projectPath, remote: conversation.remote).type("claude --resume \(session)\r")
             workspaceVisible = true
         }
     }
@@ -1081,7 +1086,8 @@ struct MainWindowView: View {
         store.errorMessage = nil
         if let id = store.createLocating(request.firstMessage, provider: request.provider,
                                         model: request.model.isEmpty ? nil : request.model, effort: request.effort,
-                                        projects: ProjectIndex.shared.ordered(recent: recentSpaces)) {
+                                        projects: ProjectIndex.shared.ordered(recent: recentSpaces),
+                                        remote: request.remote) {
             focusedComposer = id
         }
     }

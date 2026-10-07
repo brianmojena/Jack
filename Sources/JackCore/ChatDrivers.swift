@@ -674,6 +674,8 @@ private final class ClaudeChatDriver: ProcessChatDriver {
     private var replies: [String: CheckedContinuation<[String: Any]?, Never>] = [:]
     /// Messages handed over mid-turn that the agent has not read yet, by id.
     private var queued: [String: String] = [:]
+    /// Remote side of the SSH reverse tunnel, allocated once so the launch signature stays stable.
+    private var remoteTunnelPort: UInt16?
     /// Delegated agents close right after their turn: an orchestrator may start several, and memory is scarce.
     private var closesWhenIdle = false
     private var energySaving = false
@@ -699,6 +701,10 @@ private final class ClaudeChatDriver: ProcessChatDriver {
         guard sink == nil else { throw ChatDriverError.process("Claude Code ya está trabajando en esta conversación.") }
         idleClose?.cancel()
         closesWhenIdle = conversation.parentID != nil
+        // A fresh SSH session starts with the remote login keychain unlocked when a password is saved for it.
+        if let endpoint = conversation.remote, child == nil {
+            await Task.detached(priority: .userInitiated) { SSHKeySetup.unlockKeychain(endpoint: endpoint) }.value
+        }
         let process = try session(for: conversation, delegation: delegation)
         _ = setMode(conversation.mode ?? "manual")
         if !conversation.model.isEmpty, conversation.model != liveModel {
@@ -802,6 +808,7 @@ private final class ClaudeChatDriver: ProcessChatDriver {
 
     /// The running process when it was started with these settings, otherwise a new one that resumes the session.
     private func session(for conversation: ChatConversation, delegation: ChatDelegation?) throws -> StructuredChild {
+        if conversation.remote != nil { return try remoteSession(for: conversation, delegation: delegation) }
         guard let executable = ExecutableResolver.resolve("claude", override: UserDefaults.standard.string(forKey: "providerExecutablePath.claude")) else { throw ChatDriverError.executableMissing("claude") }
         let delegationArgs = (delegation.map(ChatRunConfiguration.claudeDelegation) ?? [])
             + (ChatRunConfiguration.agentInstructions(delegating: delegation?.delegates == true, images: delegation?.images == true, notebooks: delegation?.notebooks == true).map { ["--append-system-prompt", $0] } ?? [])
@@ -810,19 +817,44 @@ private final class ClaudeChatDriver: ProcessChatDriver {
         if let child, signature == launch || decoder.backgroundTaskCount > 0 { return child }
         closeSession()
         // The SDK's permission channel, which also enables AskUserQuestion and plan approval.
-        var args = ["--print", "--verbose", "--output-format", "stream-json", "--input-format", "stream-json", "--include-partial-messages", "--permission-prompt-tool", "stdio",
-                    // Echoes each message when the agent reads it, so a queued message moves into the chat at that moment.
-                    "--replay-user-messages", "--prompt-suggestions"]
-            + ChatRunConfiguration.claudeSettings(conversation)
-        if let saved = conversation.sessionID, !saved.isEmpty { args += ["--resume", saved] }
+        let args = ChatRunConfiguration.claudeRemoteArgs(conversation: conversation, delegation: delegation)
         // Claude Code turns prompt suggestions off when it is not interactive unless asked to; delegated agents have no one to suggest to.
         var environment: [String: String] = conversation.parentID == nil ? ["CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "true"] : [:]
-        args += delegationArgs
         // wait_for_agents may hold a call open for up to 15 minutes.
         if delegation != nil { environment["MCP_TOOL_TIMEOUT"] = "960000" }
         environment.merge(ProgressFiles.environment(for: conversation.id)) { _, new in new }
         let process = try begin(executable, arguments: args, directory: conversation.projectPath, environment: environment)
         launch = signature
+        liveMode = conversation.mode ?? "manual"
+        liveModel = conversation.model
+        decoder = ClaudeProtocol.Decoder()
+        reader = Task { [weak self] in
+            do { for try await line in process.lines { self?.handle(line) } } catch {}
+            await self?.ended(process)
+        }
+        return process
+    }
+
+    /// Starts (or reuses) the `ssh` process whose stdio carries the remote Claude Code session.
+    /// The tunnel port is allocated once per driver: reusing it keeps the launch signature
+    /// stable, so consecutive turns reuse the remote session instead of restarting it.
+    private func remoteSession(for conversation: ChatConversation, delegation: ChatDelegation?) throws -> StructuredChild {        guard let ssh = ExecutableResolver.resolve("ssh", override: UserDefaults.standard.string(forKey: "providerExecutablePath.ssh")) else {
+            throw ChatDriverError.executableMissing("ssh")
+        }
+        if delegation != nil, remoteTunnelPort == nil {
+            do { remoteTunnelPort = try availableLoopbackPort() } catch {
+                throw ChatDriverError.process("No se pudo reservar un puerto para el túnel SSH.")
+            }
+        }
+        if delegation == nil { remoteTunnelPort = nil }
+        guard let launch = ChatRunConfiguration.claudeRemoteLaunch(conversation: conversation, delegation: delegation, remotePort: remoteTunnelPort ?? 0) else {
+            throw ChatDriverError.process("La configuración remota es inválida o Jack no puede exponerle sus herramientas (se necesita una URL local).")
+        }
+        let signature = [ssh] + ChatRunConfiguration.claudeLaunchSignature(conversation) + launch.sshArguments
+        if let child, signature == self.launch || decoder.backgroundTaskCount > 0 { return child }
+        closeSession()
+        let process = try begin(ssh, arguments: launch.sshArguments, directory: launch.localDirectory)
+        self.launch = signature
         liveMode = conversation.mode ?? "manual"
         liveModel = conversation.model
         decoder = ClaudeProtocol.Decoder()
@@ -1416,23 +1448,73 @@ enum ChatRunConfiguration {
         // `--allowedTools` is variadic: it goes last, or before another flag.
         return ["--mcp-config", config, "--allowedTools", "mcp__jack"]
     }
+    /// Everything needed to start a Claude Code agent on another machine over SSH.
+    /// Pure (no I/O) so tests can verify the exact argv, quoting included.
+    struct ClaudeRemoteLaunch {
+        /// Local `ssh` argv (without the executable): options, tunnel, destination, remote command.
+        var sshArguments: [String]
+        /// Working directory for the local `ssh` process; the agent itself runs in `remotePath`.
+        var localDirectory: String
+        /// Delegation rewritten to the remote side of the tunnel, for `--mcp-config` and instructions.
+        var delegation: ChatDelegation?
+    }
+    @MainActor static func claudeRemoteLaunch(conversation: ChatConversation, delegation: ChatDelegation?, remotePort: UInt16) -> ClaudeRemoteLaunch? {
+        guard let endpoint = conversation.remote, endpoint.isValid, endpoint.isResolved else { return nil }
+        var remoteDelegation: ChatDelegation? = nil
+        var tunnel: (remotePort: UInt16, localPort: UInt16)? = nil
+        if let delegation {
+            guard let localPort = SSHTransport.loopbackPort(delegation.url),
+                  let url = SSHTransport.tunneledURL(delegation.url, remotePort: remotePort) else { return nil }
+            var rewritten = delegation
+            rewritten.url = url
+            remoteDelegation = rewritten
+            tunnel = (remotePort: remotePort, localPort: localPort)
+        }
+        var remoteEnv: [String: String] = [:]
+        if conversation.parentID == nil { remoteEnv["CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION"] = "true" }
+        if delegation != nil { remoteEnv["MCP_TOOL_TIMEOUT"] = "960000" }
+        let sshArguments = SSHTransport.arguments(
+            endpoint: endpoint, tunnel: tunnel, remoteEnv: remoteEnv,
+            remoteExecutable: "claude", remoteArgs: claudeRemoteArgs(conversation: conversation, delegation: remoteDelegation),
+            remoteDirectory: endpoint.remotePath)
+        var isDirectory: ObjCBool = false
+        let localDirectory = FileManager.default.fileExists(atPath: conversation.projectPath, isDirectory: &isDirectory) && isDirectory.boolValue
+            ? conversation.projectPath : NSTemporaryDirectory()
+        return ClaudeRemoteLaunch(sshArguments: sshArguments, localDirectory: localDirectory, delegation: remoteDelegation)
+    }
+    /// The `claude` argv itself, shared by local and remote launches.
+    /// Remote launches skip the progress helper (it is not installed remotely)
+    /// and local `--add-dir` folders (they do not exist on the other machine).
+    @MainActor static func claudeRemoteArgs(conversation: ChatConversation, delegation: ChatDelegation?) -> [String] {
+        var args = ["--print", "--verbose", "--output-format", "stream-json", "--input-format", "stream-json", "--include-partial-messages", "--permission-prompt-tool", "stdio",
+                    // Echoes each message when the agent reads it, so a queued message moves into the chat at that moment.
+                    "--replay-user-messages", "--prompt-suggestions"]
+            + claudeSettings(conversation)
+        if let saved = conversation.sessionID, !saved.isEmpty { args += ["--resume", saved] }
+        args += (delegation.map(claudeDelegation) ?? [])
+            + (agentInstructions(delegating: delegation?.delegates == true, images: delegation?.images == true, notebooks: delegation?.notebooks == true, includeProgress: conversation.remote == nil).map { ["--append-system-prompt", $0] } ?? [])
+        return args
+    }
     /// What Jack tells every agent: how to show progress, and the `jack` tools it gets.
-    static func agentInstructions(delegating: Bool, images: Bool = false, notebooks: Bool = false) -> String? {
-        let parts = [ProgressFiles.isAvailable ? ProgressFiles.helperInstructions : nil, delegating ? ChatDelegation.instructions : nil,
+    static func agentInstructions(delegating: Bool, images: Bool = false, notebooks: Bool = false, includeProgress: Bool = true) -> String? {
+        let parts = [(includeProgress && ProgressFiles.isAvailable) ? ProgressFiles.helperInstructions : nil, delegating ? ChatDelegation.instructions : nil,
                      images ? ChatDelegation.imageInstructions : nil, notebooks ? NotebookWorkspace.agentInstructions : nil].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: "\n\n")
     }
     static func claudeSettings(_ conversation: ChatConversation) -> [String] {
         let effort = ChatModelChoice.claudeEfforts(for: conversation.model).contains(conversation.effort) ? ["--effort", conversation.effort] : []
+        // Remote agents cannot use local folders: only their remote working directory applies.
         // `--add-dir` is variadic, so each one is followed by another flag.
-        let directories = (conversation.additionalDirectories + conversation.attachmentDirectories).flatMap { ["--add-dir", $0] }
+        let directories = conversation.remote == nil ? (conversation.additionalDirectories + conversation.attachmentDirectories).flatMap { ["--add-dir", $0] } : []
         return directories + ["--permission-mode", conversation.mode ?? "manual", "--model", nonempty(conversation.model)] + effort
     }
     /// The launch settings a running Claude Code process cannot change. Mode and model change live, and the
     /// folders of one message's attachments are left out so attaching a file does not restart the session.
+    /// A remote endpoint is part of the signature, so switching machines restarts the session.
     static func claudeLaunchSignature(_ conversation: ChatConversation) -> [String] {
         let effort = ChatModelChoice.claudeEfforts(for: conversation.model).contains(conversation.effort) ? conversation.effort : ""
-        return [conversation.projectPath, effort] + conversation.additionalDirectories
+        let remote = conversation.remote.map { ["ssh:" + $0.destination, $0.sshPort.map(String.init) ?? "", $0.remotePath ?? ""] } ?? []
+        return [conversation.projectPath, effort] + conversation.additionalDirectories + remote
     }
     /// Plain text, or text plus image blocks when the message carries attachments.
     static func claudeContent(_ conversation: ChatConversation, prompt: String) -> Any {

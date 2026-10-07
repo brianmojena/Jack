@@ -101,9 +101,9 @@ struct WorkspaceTab: Identifiable, Equatable {
         else { open(kind, for: conversation) }
     }
 
-    func terminal(_ tab: UUID, conversation: UUID, directory: String) -> TerminalSession {
+    func terminal(_ tab: UUID, conversation: UUID, directory: String, remote: ChatRemoteEndpoint? = nil) -> TerminalSession {
         if let session = terminals[tab] { return session }
-        let session = TerminalSession(directory: directory) { [weak self] url in self?.openLink(url, for: conversation) }
+        let session = TerminalSession(directory: directory, remote: remote) { [weak self] url in self?.openLink(url, for: conversation) }
         terminals[tab] = session
         return session
     }
@@ -162,10 +162,11 @@ struct WorkspacePane: View, Equatable {
     @ObservedObject var sessions: WorkspaceSessions
     let conversationID: UUID
     let projectPath: String
+    var remote: ChatRemoteEndpoint? = nil
     let onClose: () -> Void
 
     static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.conversationID == rhs.conversationID && lhs.projectPath == rhs.projectPath
+        lhs.conversationID == rhs.conversationID && lhs.projectPath == rhs.projectPath && lhs.remote == rhs.remote
     }
 
     var body: some View {
@@ -218,7 +219,7 @@ struct WorkspacePane: View, Equatable {
                 if let selected {
                     switch selected.kind {
                     case .terminal:
-                        TerminalPanel(session: sessions.terminal(selected.id, conversation: conversationID, directory: projectPath))
+                        TerminalPanel(session: sessions.terminal(selected.id, conversation: conversationID, directory: projectPath, remote: remote))
                     case .browser:
                         BrowserPanel(session: sessions.browser(selected.id)) { text, files, now in
                             sessions.sendToAgent?(conversationID, text, files, now)
@@ -288,11 +289,14 @@ private struct BrowserTitle: View {
     @Published private(set) var running = false
     @Published private(set) var directory: String
     let projectPath: String
+    /// Set for agents that run on another machine: the tab is an ssh session there.
+    let remote: ChatRemoteEndpoint?
     let container: TerminalContainer
     var view: JackTerminalView { container.terminal }
 
-    init(directory: String, openLink: @escaping (URL) -> Void) {
+    init(directory: String, remote: ChatRemoteEndpoint? = nil, openLink: @escaping (URL) -> Void) {
         self.directory = directory
+        self.remote = remote
         projectPath = directory
         container = TerminalContainer(terminal: JackTerminalView(frame: NSRect(x: 0, y: 0, width: 600, height: 400)))
         super.init()
@@ -308,6 +312,16 @@ private struct BrowserTitle: View {
         environment["COLORTERM"] = "truecolor"
         environment["TERM_PROGRAM"] = "Jack"
         if environment["LANG"] == nil { environment["LANG"] = "es_ES.UTF-8" }
+        if let remote, remote.isValid {
+            // The project folder only exists on the other machine, so the local shell starts in home.
+            let ssh = ExecutableResolver.resolve("ssh") ?? "/usr/bin/ssh"
+            view.startProcess(executable: ssh, args: SSHTransport.terminalArguments(endpoint: remote),
+                              environment: environment.map { "\($0)=\($1)" }, execName: "ssh",
+                              currentDirectory: NSHomeDirectory())
+            directory = projectPath
+            running = true
+            return
+        }
         // A leading dash makes it a login shell, so the user's PATH and aliases load as in Terminal.app.
         view.startProcess(executable: shell, args: [], environment: environment.map { "\($0)=\($1)" },
                           execName: "-" + URL(fileURLWithPath: shell).lastPathComponent, currentDirectory: projectPath)

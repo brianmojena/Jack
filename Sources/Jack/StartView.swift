@@ -15,6 +15,10 @@ struct StartView: View {
     @State private var message = ""
     @State private var customModel = ""
     @State private var showingCustomModel = false
+    @State private var remoteEnabled = false
+    @State private var remoteDestination = LastRemote.destination
+    @State private var remotePath = LastRemote.path
+    @State private var showingRemote = false
     @FocusState private var focused: Bool
 
     private var provider: ChatProvider { ChatProvider(rawValue: providerValue) ?? .codex }
@@ -103,6 +107,31 @@ struct StartView: View {
                     }
                     .buttonStyle(.plain).help("Retomar una sesión de Claude Code (⇧⌘R)")
                 }
+                if provider == .claude {
+                    Button { showingRemote.toggle() } label: {
+                        Image(systemName: remoteEnabled ? "server.rack.fill" : "server.rack")
+                            .frame(width: 24, height: 24)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(remoteEnabled ? JackPalette.accent : JackPalette.muted)
+                    .help(remoteEnabled ? "Remoto: \(remoteDestination)" : "Ejecutar en otra máquina por SSH")
+                    .accessibilityLabel("Agente remoto por SSH")
+                    .popover(isPresented: $showingRemote, arrowEdge: .top) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Agente remoto (SSH)").font(.headline)
+                            Toggle("Ejecutar en otra máquina", isOn: $remoteEnabled)
+                                .font(.system(size: 12))
+                            if remoteEnabled {
+                                RemoteEndpointForm(destination: $remoteDestination, remotePath: $remotePath)
+                            }
+                            Text("Vacía la carpeta para que Jack la detecte sola al leer tu mensaje. Necesita acceso por clave SSH y `claude` instalado en la otra máquina.")
+                                .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(14)
+                        .frame(width: 380)
+                    }
+                }
                 Button(action: start) {
                     Image(systemName: "arrow.up").font(.system(size: 11, weight: .bold))
                         .foregroundStyle(canSend ? .white : JackPalette.faint)
@@ -167,7 +196,15 @@ struct StartView: View {
 
     private func start() {
         guard canSend else { focused = true; return }
+        let remote = provider == .claude
+            ? remoteEndpoint(enabled: remoteEnabled, destination: remoteDestination, remotePath: remotePath)
+            : nil
+        if let remote {
+            LastRemote.destination = remote.destination
+            LastRemote.path = remote.remotePath ?? ""
+        }
         onStart(NewAgentRequest(provider: provider, model: selectedModel, effort: effort,
-                                firstMessage: message.trimmingCharacters(in: .whitespacesAndNewlines)))
+                                firstMessage: message.trimmingCharacters(in: .whitespacesAndNewlines),
+                                remote: remote))
     }
 }

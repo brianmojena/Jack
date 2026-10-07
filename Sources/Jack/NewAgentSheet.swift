@@ -7,6 +7,8 @@ struct NewAgentRequest {
     var model: String
     var effort: String
     var firstMessage: String
+    /// Runs the agent over SSH instead of locally. Only Claude Code supports it.
+    var remote: ChatRemoteEndpoint? = nil
 }
 
 /// Before the first message the composer logo chooses the agent. Once sent,

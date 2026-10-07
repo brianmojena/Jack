@@ -94,6 +94,8 @@ public struct ChatConversation: Identifiable, Codable, Equatable {
     public var extraDirectories: [String]? = nil
     /// Brought from Claude Code without its history, which is read from the session the first time it opens.
     public var pendingClaudeHistory: Bool? = nil
+    /// Runs this agent on another machine over SSH instead of locally. Only Claude Code supports it.
+    public var remote: ChatRemoteEndpoint? = nil
     public init(id: UUID = UUID(), title: String = "Nuevo agente", projectPath: String, provider: ChatProvider = .codex, model: String? = nil, effort: String = "high", sessionID: String? = nil, messages: [ChatMessage] = [], updatedAt: Date = Date()) {
         self.id = id; self.title = title; self.projectPath = projectPath; self.provider = provider; self.model = model ?? provider.defaultModel; self.effort = effort; self.sessionID = sessionID; self.messages = messages; self.updatedAt = updatedAt
     }
@@ -104,6 +106,32 @@ public extension ChatConversation {
         var seen: Set<String> = [projectPath]
         return (extraDirectories ?? []).filter { !$0.isEmpty && seen.insert($0).inserted }
     }
+}
+
+/// Where a Claude Code agent runs when it is not on this Mac: Jack opens it
+/// over SSH and forwards its stdio, so the stream-json protocol is unchanged.
+/// A reverse tunnel lets the remote agent reach Jack's delegation tools.
+/// Without `remotePath` Jack discovers the remote projects itself, like it
+/// does locally, from what the user asks about.
+public struct ChatRemoteEndpoint: Codable, Equatable {
+    /// SSH destination: `user@host`, an IP or a `~/.ssh/config` alias.
+    public var destination: String
+    /// SSH port; nil uses the default (22).
+    public var sshPort: Int?
+    /// Working directory on the remote machine, where `claude` runs. Nil until resolved.
+    public var remotePath: String?
+    public init(destination: String, sshPort: Int? = nil, remotePath: String? = nil) {
+        self.destination = destination; self.sshPort = sshPort; self.remotePath = remotePath
+    }
+    /// Ready to use: a destination. The folder may resolve later, automatically.
+    public var isValid: Bool {
+        !destination.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+    /// Whether the remote folder is already known (set by hand or discovered).
+    public var isResolved: Bool {
+        (remotePath ?? "").hasPrefix("/")
+    }
+    public var displayName: String { destination.trimmingCharacters(in: .whitespacesAndNewlines) }
 }
 public struct ChatRunMode: Identifiable, Equatable {
     public var id: String

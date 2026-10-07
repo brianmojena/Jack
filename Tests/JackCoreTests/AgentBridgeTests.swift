@@ -43,7 +43,7 @@ final class AgentBridgeTests: XCTestCase {
         XCTAssertEqual(notification.status, 202)
         let tools = try await post(delegation, ["jsonrpc": "2.0", "id": 2, "method": "tools/list"])
         let names = ((tools.json?["result"] as? [String: Any])?["tools"] as? [[String: Any]])?.compactMap { $0["name"] as? String }
-        XCTAssertEqual(Set(names ?? []), ["create_agent", "send_message", "wait_for_agents", "get_agent_result", "list_agents", "stop_agent"])
+        XCTAssertEqual(Set(names ?? []), ["create_agent", "send_message", "wait_for_agents", "get_agent_result", "list_agents", "stop_agent", "notebook_open", "notebook_run", "notebook_edit_cell", "notebook_kernel"])
 
         let created = try await callTool(delegation, "create_agent", ["provider": "codex", "task": "Write the tests", "title": "Tests"])
         XCTAssertTrue(created.contains("queued"), created)
@@ -57,7 +57,9 @@ final class AgentBridgeTests: XCTestCase {
         try await until { drivers.count == 2 }
         XCTAssertTrue(drivers[1].prompt.hasPrefix("Write the tests"), drivers[1].prompt)
         XCTAssertTrue(drivers[1].prompt.hasSuffix(ChatDelegation.subAgentGuidance), "Every delegated task carries Jack's shared-folder notes")
-        XCTAssertNil(drivers[1].delegation, "Sub-agents never get delegation tools")
+        let childDelegation = try XCTUnwrap(drivers[1].delegation, "Sub-agents share the notebook in Normal mode")
+        XCTAssertFalse(childDelegation.delegates, "Sub-agents never manage other agents")
+        XCTAssertTrue(childDelegation.notebooks, "Sub-agents share the notebook in Normal mode")
         drivers[1].callback?(.text(id: "reply", text: "All 12 tests pass.", replace: true))
         drivers[1].callback?(.completed)
         drivers[1].finish()
