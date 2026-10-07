@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "seed": 0,
+  "per_family": 150,
+  "valid_fraction": 0.05,
+  "teacher": null,
+  "splits": {
+    "train": {
+      "records": 815,
+      "tasks": 815,
+      "families": {
+        "run_report": 119,
+        "todo_search": 142,
+        "add_function": 141,
+        "fix_bug": 142,
+        "question": 99,
+        "create_file": 91,
+        "rename": 74,
+        "chat": 7
+      },
+      "languages": {
+        "en": 286,
+        "es": 529
+      },
+      "sources": {
+        "oracle": 815
+      },
+      "sha256": "67a2a8ba64056fec73440f761ff87f7e2fc77b4883c5338f55988abc581aeff6"
+    },
+    "valid": {
+      "records": 44,
+      "tasks": 44,
+      "families": {
+        "fix_bug": 8,
+        "add_function": 7,
+        "question": 5,
+        "todo_search": 8,
+        "create_file": 5,
+        "rename": 4,
+        "chat": 1,
+        "run_report": 6
+      },
+      "languages": {
+        "es": 34,
+        "en": 10
+      },
+      "sources": {
+        "oracle": 44
+      },
+      "sha256": "d24e40c51dcec46c0a09feba37b06fbb72ef621fb795095ee0660fa65dc7f61c"
+    }
+  }
+}

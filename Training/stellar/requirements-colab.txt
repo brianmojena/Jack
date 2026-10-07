@@ -1,0 +1,16 @@
+# Gemma 4 baseline from Unsloth's official E2B notebook (checked 2026-10-06).
+# Preserve the runtime's preinstalled CUDA torch using the notebook's constraints.
+unsloth
+unsloth_zoo
+transformers==5.5.0
+tokenizers>=0.22.0,<=0.23.0
+datasets==4.3.0
+huggingface_hub>=1.5.0,<2.0
+accelerate
+bitsandbytes
+peft
+trl
+sentencepiece
+protobuf
+timm
+torchcodec
