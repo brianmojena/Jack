@@ -6,9 +6,20 @@ public struct ClaudeSessionSummary: Identifiable, Equatable, Sendable {
     public let title: String
     public let projectPath: String
     public let updatedAt: Date
-    public init(id: String, title: String, projectPath: String, updatedAt: Date) {
-        self.id = id; self.title = title; self.projectPath = projectPath; self.updatedAt = updatedAt
+    /// The model alias, when the Claude app recorded it.
+    public var model: String? = nil
+    /// What started the session: "cli" in a terminal, "claude-desktop" in the Claude app, "sdk-…" for other programs (Jack among them).
+    public var entrypoint: String? = nil
+    public init(id: String, title: String, projectPath: String, updatedAt: Date, model: String? = nil, entrypoint: String? = nil) {
+        self.id = id; self.title = title; self.projectPath = projectPath; self.updatedAt = updatedAt; self.model = model; self.entrypoint = entrypoint
     }
+}
+
+/// What the Claude app keeps about one of its Claude Code sessions; the transcript itself is the CLI's.
+struct ClaudeDesktopSession: Equatable {
+    var title: String?
+    var model: String?
+    var hidden: Bool
 }
 
 /// Reads the sessions Claude Code keeps in `~/.claude/projects`, so a conversation started in a terminal
@@ -25,8 +36,61 @@ public enum ClaudeSessions {
         String(projectPath.map { $0.isASCII && ($0.isLetter || $0.isNumber) ? $0 : "-" })
     }
 
+    /// The Claude app's own list of Claude Code sessions, one JSON file each.
+    public static var desktopRoot: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Claude/claude-code-sessions", isDirectory: true)
+    }
+
     /// The most recent sessions, of every project or of one.
     public static func list(projectPath: String? = nil, limit: Int = 60, root: URL = root) -> [ClaudeSessionSummary] {
+        files(projectPath: projectPath, root: root).prefix(limit).compactMap { file in
+            summary(file.url, date: file.date, projectPath: projectPath)
+        }
+    }
+
+    /// Sessions worth bringing into Jack: started by the user in a terminal or the Claude app since `since`,
+    /// in folders that still exist, newest first. The Claude app's titles and models win, and the sessions it
+    /// archived or ran in its scratch folders are left out, as are those in `excluding` and other programs' sessions.
+    public static func importCandidates(since: Date, limit: Int, excluding: Set<String> = [], root: URL = root, desktopRoot: URL = desktopRoot) -> [ClaudeSessionSummary] {
+        let desktop = desktopSessions(root: desktopRoot)
+        var found: [ClaudeSessionSummary] = []
+        for file in files(projectPath: nil, root: root) {
+            guard found.count < limit, file.date >= since else { break }
+            let id = file.url.deletingPathExtension().lastPathComponent
+            let app = desktop[id]
+            guard !excluding.contains(id), app?.hidden != true,
+                  var session = summary(file.url, date: file.date, projectPath: nil),
+                  !(session.entrypoint ?? "").hasPrefix("sdk") else { continue }
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: session.projectPath, isDirectory: &isDirectory), isDirectory.boolValue else { continue }
+            if let title = app?.title { session = ClaudeSessionSummary(id: session.id, title: String(title.prefix(120)), projectPath: session.projectPath, updatedAt: session.updatedAt, entrypoint: session.entrypoint) }
+            session.model = app?.model
+            found.append(session)
+        }
+        return found
+    }
+
+    /// The Claude app's sessions by their CLI session id.
+    static func desktopSessions(root: URL) -> [String: ClaudeDesktopSession] {
+        var result: [String: ClaudeDesktopSession] = [:]
+        guard let walker = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil) else { return result }
+        for case let url as URL in walker where url.pathExtension == "json" {
+            guard let data = try? Data(contentsOf: url),
+                  let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let id = value["cliSessionId"] as? String else { continue }
+            let cwd = value["cwd"] as? String ?? ""
+            let title = (value["title"] as? String).flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+            result[id] = ClaudeDesktopSession(
+                title: title,
+                model: (value["model"] as? String).flatMap(alias(of:)),
+                hidden: value["isArchived"] as? Bool == true || cwd.contains("/Claude/scratch-workspaces/")
+            )
+        }
+        return result
+    }
+
+    /// Transcript files, newest first.
+    private static func files(projectPath: String?, root: URL) -> [(url: URL, date: Date)] {
         let manager = FileManager.default
         let folders: [URL]
         if let projectPath { folders = [root.appendingPathComponent(folderName(for: projectPath), isDirectory: true)] }
@@ -40,9 +104,12 @@ public enum ClaudeSessions {
                 files.append((url, values?.contentModificationDate ?? .distantPast))
             }
         }
-        return files.sorted { $0.date > $1.date }.prefix(limit).compactMap { file in
-            summary(file.url, date: file.date, projectPath: projectPath)
-        }
+        return files.sorted { $0.date > $1.date }
+    }
+
+    /// "opus" for "claude-opus-5-5", and so on.
+    static func alias(of model: String) -> String? {
+        ["fable", "opus", "sonnet", "haiku"].first { model.contains($0) }
     }
 
     /// Title and folder from the ends of the file: the title lines are appended as the session goes,
@@ -54,7 +121,7 @@ public enum ClaudeSessions {
         let size = (try? handle.seekToEnd()) ?? 0
         try? handle.seek(toOffset: size > 192 * 1024 ? size - 192 * 1024 : 0)
         let tail = (try? handle.readToEnd()) ?? Data()
-        var custom: String?, generated: String?, lastPrompt: String?, firstPrompt: String?, cwd = projectPath
+        var custom: String?, generated: String?, lastPrompt: String?, firstPrompt: String?, entrypoint: String?, cwd = projectPath
         for line in lines(tail) {
             switch line["type"] as? String {
             case "custom-title": custom = line["customTitle"] as? String ?? custom
@@ -67,13 +134,14 @@ public enum ClaudeSessions {
         let title = custom ?? generated
         for line in lines(head) {
             if cwd == nil, let value = line["cwd"] as? String { cwd = value }
+            if entrypoint == nil, let value = line["entrypoint"] as? String { entrypoint = value }
             if firstPrompt == nil, line["type"] as? String == "user", line["isMeta"] as? Bool != true,
                let text = (line["message"] as? [String: Any])?["content"] as? String, !text.hasPrefix("<") { firstPrompt = text }
-            if cwd != nil, firstPrompt != nil { break }
+            if cwd != nil, firstPrompt != nil, entrypoint != nil { break }
         }
         guard let cwd, let label = title ?? firstPrompt ?? lastPrompt else { return nil }
         let oneLine = label.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces)
-        return ClaudeSessionSummary(id: url.deletingPathExtension().lastPathComponent, title: String(oneLine.prefix(120)), projectPath: cwd, updatedAt: date)
+        return ClaudeSessionSummary(id: url.deletingPathExtension().lastPathComponent, title: String(oneLine.prefix(120)), projectPath: cwd, updatedAt: date, entrypoint: entrypoint)
     }
 
     /// The session's conversation as Jack shows it, and the model alias it last used.
@@ -109,7 +177,7 @@ public enum ClaudeSessions {
                     messages[index].status = block["is_error"] as? Bool == true ? "failed" : "completed"
                 }
             case "assistant":
-                if let name = message["model"] as? String, let alias = ["fable", "opus", "sonnet", "haiku"].first(where: { name.contains($0) }) { model = alias }
+                if let name = message["model"] as? String, let short = alias(of: name) { model = short }
                 for (offset, block) in (message["content"] as? [[String: Any]] ?? []).enumerated() {
                     let id = "\(uuid):\(offset)"
                     switch block["type"] as? String {

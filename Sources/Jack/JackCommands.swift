@@ -17,6 +17,9 @@ struct JackActions {
     var toggleExplorer: () -> Void
     var toggleSidebar: () -> Void
     var closeTab: () -> Void
+    var cyclePane: (Int) -> Void
+    var closePanes: () -> Void
+    var paneCount: Int
     var enterBatterySaver: () -> Void
     var hasSelection: Bool
     var agentCount: Int
@@ -85,6 +88,16 @@ struct JackCommands: Commands {
             Button("Marcar como leído / no leído") { actions?.toggleUnread() }
                 .keyboardShortcut("u", modifiers: [.command, .shift])
                 .disabled(actions?.hasSelection != true)
+            Divider()
+            Button("Panel anterior") { actions?.cyclePane(-1) }
+                .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
+                .disabled((actions?.paneCount ?? 0) == 0)
+            Button("Panel siguiente") { actions?.cyclePane(1) }
+                .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
+                .disabled((actions?.paneCount ?? 0) == 0)
+            Button("Cerrar paneles") { actions?.closePanes() }
+                .keyboardShortcut("w", modifiers: [.command, .option])
+                .disabled((actions?.paneCount ?? 0) == 0)
             Divider()
             Button("Mostrar u ocultar terminal") { actions?.toggleTerminal() }
                 .keyboardShortcut("`", modifiers: .control)

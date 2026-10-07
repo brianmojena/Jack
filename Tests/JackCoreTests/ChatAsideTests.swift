@@ -5,19 +5,19 @@ final class ChatAsideTests: XCTestCase {
     func testArgumentsForkTheSessionWithoutKeepingTheCopy() {
         var claude = ChatConversation(projectPath: "/tmp", provider: .claude, model: "sonnet", sessionID: "abc")
         claude.effort = "high"
-        let claudeArgs = ChatAsideService.arguments(claude, question: "¿qué?")
+        let claudeArgs = ChatAsideService.arguments(claude, prompt: ChatAsideService.prompt("¿qué?"))
         XCTAssertTrue(claudeArgs[0].hasSuffix("¿qué?"), "the prompt goes before the variadic --tools")
         XCTAssertEqual(Array(claudeArgs.suffix(2)), ["--tools", ""])
         XCTAssertTrue(claudeArgs.contains("--no-session-persistence"))
         XCTAssertTrue(claudeArgs.joined(separator: " ").contains("--resume abc --fork-session"))
 
         let codex = ChatConversation(projectPath: "/tmp", provider: .codex, model: "gpt-6-luna", sessionID: "t1")
-        let codexArgs = ChatAsideService.arguments(codex, question: "x")
+        let codexArgs = ChatAsideService.arguments(codex, prompt: ChatAsideService.prompt("x"))
         XCTAssertEqual(Array(codexArgs.suffix(4).prefix(3)), ["fork", "t1", "--ephemeral"])
         XCTAssertTrue(codexArgs.joined(separator: " ").contains("--sandbox read-only"))
 
         let fresh = ChatConversation(projectPath: "/tmp", provider: .opencode, model: "openai/gpt-6")
-        let openCodeArgs = ChatAsideService.arguments(fresh, question: "x")
+        let openCodeArgs = ChatAsideService.arguments(fresh, prompt: ChatAsideService.prompt("x"))
         XCTAssertFalse(openCodeArgs.contains("--fork"))
         XCTAssertTrue(openCodeArgs.joined(separator: " ").contains("--model openai/gpt-6"))
     }

@@ -20,7 +20,7 @@ struct NewAgentSheet: View {
     let onCreate: (NewAgentRequest) -> Void
     let onCancel: () -> Void
 
-    /// Empty means automatic: the folder comes from the project named in the first message.
+    /// Empty means automatic: the agent's model chooses the folder from the first message.
     @State private var projectPath: String
     @State private var provider: ChatProvider
     @State private var model: String
@@ -63,11 +63,7 @@ struct NewAgentSheet: View {
         choices.first { $0.id == model }?.efforts ?? ChatModelChoice.fallbackEfforts(provider: provider, model: model.trimmingCharacters(in: .whitespaces))
     }
     private var automatic: Bool { projectPath.isEmpty }
-    private var resolution: ProjectFinder.Resolution {
-        automatic ? ProjectFinder.resolve(firstMessage, projects: index.ordered(recent: spaces)) : .none
-    }
-    private var target: String? { automatic ? resolution.match?.path : projectPath }
-    private var canCreate: Bool { target != nil }
+    private var canCreate: Bool { !automatic || !firstMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -106,7 +102,7 @@ struct NewAgentSheet: View {
             label(automatic ? "Primer mensaje" : "Primer mensaje (opcional)")
             ZStack(alignment: .topLeading) {
                 if firstMessage.isEmpty {
-                    Text(automatic ? "Nombra el proyecto y la tarea: «en Jack arregla el login»…" : "Describe la tarea y el agente empezará en cuanto lo crees…")
+                    Text(automatic ? "Describe la tarea; el agente buscará el proyecto: «arregla el login de Jack»…" : "Describe la tarea y el agente empezará en cuanto lo crees…")
                         .font(.system(size: 12)).foregroundStyle(JackPalette.faint)
                         .padding(.horizontal, 5).padding(.vertical, 1)
                         .allowsHitTesting(false)
@@ -123,7 +119,7 @@ struct NewAgentSheet: View {
             .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(messageFocused ? JackPalette.accent.opacity(0.6) : JackPalette.hairline, lineWidth: 1))
 
             HStack {
-                Text(canCreate ? "⌘↩ para crear" : "Nombra el proyecto en el mensaje o elige una carpeta")
+                Text(canCreate ? "⌘↩ para crear" : "Escribe la tarea o elige una carpeta")
                     .font(.system(size: 11)).foregroundStyle(JackPalette.faint)
                 Spacer()
                 Button("Cancelar", action: onCancel).keyboardShortcut(.cancelAction)
@@ -209,35 +205,18 @@ struct NewAgentSheet: View {
         }
     }
 
-    /// The default: Jack reads the project from the first message, and asks when several folders fit.
+    /// The default: the agent's model reads the first message and chooses the folder.
     private var automaticRow: some View {
         Button { projectPath = ""; messageFocused = true } label: {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: resolution.match != nil ? "sparkles" : "wand.and.stars")
+            HStack(spacing: 10) {
+                Image(systemName: "wand.and.stars")
                     .foregroundStyle(automatic ? JackPalette.accent : JackPalette.muted)
                     .frame(width: 16)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Automático").font(.system(size: 12, weight: automatic ? .semibold : .regular))
-                    Text(automaticDetail)
-                        .font(.system(size: 10)).foregroundStyle(resolution.match != nil ? JackPalette.accent : JackPalette.muted)
+                    Text("El agente elige la carpeta del proyecto a partir del primer mensaje")
+                        .font(.system(size: 10)).foregroundStyle(JackPalette.muted)
                         .lineLimit(1).truncationMode(.middle)
-                    let choices = resolution.choices
-                    if !choices.isEmpty {
-                        HStack(spacing: 5) {
-                            ForEach(choices, id: \.path) { choice in
-                                Button { projectPath = choice.path } label: {
-                                    Text("\(URL(fileURLWithPath: choice.path).lastPathComponent) en \(URL(fileURLWithPath: choice.path).deletingLastPathComponent().lastPathComponent)")
-                                        .font(.system(size: 10.5, weight: .medium)).lineLimit(1)
-                                        .padding(.horizontal, 7).frame(height: 20)
-                                        .background(JackPalette.accent.opacity(0.1), in: RoundedRectangle(cornerRadius: 5))
-                                        .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(JackPalette.accent.opacity(0.35)))
-                                }
-                                .buttonStyle(.plain)
-                                .help((choice.path as NSString).abbreviatingWithTildeInPath)
-                            }
-                        }
-                        .padding(.top, 4)
-                    }
                 }
                 Spacer()
                 if automatic {
@@ -249,12 +228,6 @@ struct NewAgentSheet: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-    }
-
-    private var automaticDetail: String {
-        if let match = resolution.match { return "Detectado: \((match.path as NSString).abbreviatingWithTildeInPath)" }
-        if !resolution.choices.isEmpty { return "Varias carpetas encajan; elige una:" }
-        return "Jack elige la carpeta según el proyecto que nombres en el mensaje"
     }
 
     private func spaceRow(_ path: String) -> some View {
@@ -341,10 +314,10 @@ struct NewAgentSheet: View {
     }
 
     private func create() {
-        guard let target else { return }
+        guard canCreate else { return }
         UserDefaults.standard.set(provider.rawValue, forKey: "lastNewAgentProvider")
         onCreate(NewAgentRequest(
-            projectPath: target,
+            projectPath: projectPath,
             provider: provider,
             model: model.trimmingCharacters(in: .whitespaces),
             effort: effort,

@@ -68,15 +68,17 @@ enum ChatAsideService {
     }
 
     /// The answer so far is passed to `partial` while it streams; returns the whole answer.
+    /// `instructions` replaces the side-question wrapper, for other one-off questions such as choosing a project.
     @MainActor
-    static func ask(_ question: String, about conversation: ChatConversation, partial: @escaping @MainActor (String) -> Void) async throws -> String {
+    static func ask(_ question: String, about conversation: ChatConversation, instructions: String? = nil, partial: @escaping @MainActor (String) -> Void) async throws -> String {
         let provider = conversation.provider
-        if provider == .stellar { return try await StellarAside.ask(question, prompt: prompt(question), about: conversation, partial: partial) }
+        let prompt = instructions ?? prompt(question)
+        if provider == .stellar { return try await StellarAside.ask(question, prompt: prompt, about: conversation, partial: partial) }
         // Each provider's executable is named after it.
         guard let executable = ExecutableResolver.resolve(provider.rawValue, override: UserDefaults.standard.string(forKey: "providerExecutablePath.\(provider.rawValue)")) else {
             throw AsideError.failure("No se encontró \(provider.rawValue). Instálalo o indica su ruta en Ajustes.")
         }
-        let child = try StructuredChild(executable: executable, arguments: arguments(conversation, question: question), directory: conversation.projectPath)
+        let child = try StructuredChild(executable: executable, arguments: arguments(conversation, prompt: prompt), directory: conversation.projectPath)
         child.closeInput()
         let timer = Task { try? await Task.sleep(for: timeout); if !Task.isCancelled { child.terminate() } }
         defer { timer.cancel() }
@@ -103,14 +105,14 @@ enum ChatAsideService {
         return answer
     }
 
-    static func arguments(_ conversation: ChatConversation, question: String) -> [String] {
-        let prompt = prompt(question)
+    static func arguments(_ conversation: ChatConversation, prompt: String) -> [String] {
         let session = conversation.sessionID.flatMap { $0.isEmpty ? nil : $0 }
         let model = conversation.model.trimmingCharacters(in: .whitespacesAndNewlines)
         switch conversation.provider {
         case .claude:
             // The prompt goes first: `--tools` takes a list and would swallow it.
-            var args = [prompt, "--print", "--verbose", "--output-format", "stream-json", "--include-partial-messages", "--no-session-persistence"]
+            // Without tools its MCP servers are of no use, and starting them takes seconds.
+            var args = [prompt, "--print", "--verbose", "--output-format", "stream-json", "--include-partial-messages", "--no-session-persistence", "--strict-mcp-config"]
             if let session { args += ["--resume", session, "--fork-session"] }
             if !model.isEmpty { args += ["--model", model] }
             if ChatModelChoice.claudeEfforts(for: model).contains("low") { args += ["--effort", "low"] }

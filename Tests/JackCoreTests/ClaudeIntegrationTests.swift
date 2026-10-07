@@ -357,4 +357,80 @@ final class ClaudeSessionsTests: XCTestCase {
         XCTAssertEqual(sessions.first?.projectPath, "/tmp/proyecto")
         XCTAssertEqual(ClaudeSessions.load(try XCTUnwrap(sessions.first), root: root).messages.count, 5)
     }
+
+    func testImportCandidatesSkipProgramSessionsAndUseTheClaudeAppMetadata() throws {
+        let manager = FileManager.default
+        let base = manager.temporaryDirectory.appendingPathComponent("jack-import-" + UUID().uuidString)
+        defer { try? manager.removeItem(at: base) }
+        let project = base.appendingPathComponent("proyecto").path
+        let root = base.appendingPathComponent("projects"), desktop = base.appendingPathComponent("desktop/a/b")
+        let folder = root.appendingPathComponent(ClaudeSessions.folderName(for: project))
+        try manager.createDirectory(at: folder, withIntermediateDirectories: true)
+        try manager.createDirectory(at: desktop, withIntermediateDirectories: true)
+        try manager.createDirectory(atPath: project, withIntermediateDirectories: true)
+        func session(_ id: String, entrypoint: String, prompt: String, cwd: String = project) throws {
+            let line: [String: Any] = ["type": "user", "uuid": id, "cwd": cwd, "entrypoint": entrypoint, "message": ["role": "user", "content": prompt]]
+            try JSONSerialization.data(withJSONObject: line).write(to: folder.appendingPathComponent(id + ".jsonl"))
+        }
+        try session("terminal", entrypoint: "cli", prompt: "desde la terminal")
+        try session("app", entrypoint: "claude-desktop", prompt: "desde la app")
+        try session("archivada", entrypoint: "claude-desktop", prompt: "vieja")
+        try session("jack", entrypoint: "sdk-cli", prompt: "de un programa")
+        try session("borrada", entrypoint: "cli", prompt: "carpeta que ya no existe", cwd: base.appendingPathComponent("no-existe").path)
+        try session("ya", entrypoint: "cli", prompt: "ya en Jack")
+        let metadata: [[String: Any]] = [
+            ["cliSessionId": "app", "title": "Título de la app", "model": "claude-sonnet-5-5", "cwd": project],
+            ["cliSessionId": "archivada", "isArchived": true, "cwd": project],
+        ]
+        for (offset, value) in metadata.enumerated() {
+            try JSONSerialization.data(withJSONObject: value).write(to: desktop.appendingPathComponent("local_\(offset).json"))
+        }
+
+        let found = ClaudeSessions.importCandidates(since: .distantPast, limit: 10, excluding: ["ya"], root: root, desktopRoot: base.appendingPathComponent("desktop"))
+        XCTAssertEqual(Set(found.map(\.id)), ["terminal", "app"])
+        let app = try XCTUnwrap(found.first { $0.id == "app" })
+        XCTAssertEqual(app.title, "Título de la app")
+        XCTAssertEqual(app.model, "sonnet")
+        XCTAssertEqual(found.first { $0.id == "terminal" }?.title, "desde la terminal")
+        XCTAssertEqual(ClaudeSessions.importCandidates(since: .distantPast, limit: 1, root: root, desktopRoot: base).count, 1)
+        XCTAssertTrue(ClaudeSessions.importCandidates(since: Date().addingTimeInterval(3600), limit: 10, root: root, desktopRoot: base).isEmpty)
+    }
+
+    @MainActor func testBulkImportReadsEachHistoryWhenItFirstOpens() async throws {
+        let manager = FileManager.default
+        let base = manager.temporaryDirectory.appendingPathComponent("jack-bulk-" + UUID().uuidString)
+        defer { try? manager.removeItem(at: base) }
+        try manager.createDirectory(at: base, withIntermediateDirectories: true)
+        let archive = ChatArchive(directory: base.appendingPathComponent("Chats"))
+        let store = ChatStore(archive: archive, preferences: nil)
+        final class Reads: @unchecked Sendable { var count = 0 }
+        let reads = Reads()
+        store.readClaudeSession = { _ in reads.count += 1; return ([ChatMessage(role: "user", text: "hola"), ChatMessage(role: "assistant", text: "Listo.")], "opus") }
+        let date = Date(timeIntervalSince1970: 1_000_000)
+        let sessions = [
+            ClaudeSessionSummary(id: "s1", title: "Primera", projectPath: base.path, updatedAt: date, model: "sonnet"),
+            ClaudeSessionSummary(id: "s1", title: "Repetida", projectPath: base.path, updatedAt: date),
+            ClaudeSessionSummary(id: "s2", title: "Sin carpeta", projectPath: base.appendingPathComponent("no").path, updatedAt: date),
+        ]
+        XCTAssertEqual(store.importClaudeSessions(sessions), 1)
+        XCTAssertEqual(store.importClaudeSessions(sessions), 0)
+        let conversation = try XCTUnwrap(store.conversations.first)
+        XCTAssertEqual(conversation.sessionID, "s1")
+        XCTAssertEqual(conversation.model, "sonnet")
+        XCTAssertEqual(conversation.updatedAt, date)
+        XCTAssertNil(store.selectedID)
+        XCTAssertEqual(reads.count, 0)
+
+        store.select(conversation.id)
+        for _ in 0..<100 where store.conversations.first?.pendingClaudeHistory == true { try await Task.sleep(for: .milliseconds(10)) }
+        let opened = try XCTUnwrap(store.conversations.first)
+        XCTAssertEqual(opened.messages.map(\.text), ["hola", "Listo."])
+        XCTAssertEqual(opened.preview, "Listo.")
+        XCTAssertNil(opened.pendingClaudeHistory)
+        XCTAssertEqual(reads.count, 1)
+        store.shutdown()
+        let restored = ChatStore(archive: archive, preferences: nil)
+        restored.select(conversation.id)
+        XCTAssertEqual(restored.conversations.first?.messages.count, 2)
+    }
 }

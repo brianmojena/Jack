@@ -10,6 +10,8 @@
 		02B83CB51FECD80B94438A2F /* ChatArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = 094C42C6DC4B76FE4E66E40D /* ChatArchive.swift */; };
 		051E30A12B62E96A652522D3 /* FileExplorer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 138D59F70F9CA07105FD1933 /* FileExplorer.swift */; };
 		0BD576E2B4A206561BD3BED4 /* MainWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7BD885E59F4C6849E846404 /* MainWindowView.swift */; };
+		0D341C6641105DD295680C11 /* ChatTranscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41D9B14CA52330C9B3508766 /* ChatTranscript.swift */; };
+		125DC2F3E2AC2F34CBF5DA1A /* PaneLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = D509AEAE925B54594B2E191B /* PaneLayout.swift */; };
 		13E5587D2DFD397AFB57C9B5 /* ProgressTasks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BD8FE80738952666BEDFBA7 /* ProgressTasks.swift */; };
 		1426FBDE33222743A7485D0A /* JackCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A669F4C23030DFB614FB88C4 /* JackCore.framework */; };
 		1498D1DF8A8083084BF82604 /* JackDesign.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12A56C2DEDA3D8023FD61366 /* JackDesign.swift */; };
@@ -17,6 +19,7 @@
 		1758CFAF8C920737DFED7D85 /* JackCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A669F4C23030DFB614FB88C4 /* JackCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		185690F8D6DC3A3439597B70 /* JackCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A669F4C23030DFB614FB88C4 /* JackCore.framework */; };
 		19F535BFB4481EB3F8D01D87 /* StatusBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A093DD8DC6081C7E5DB0FA3D /* StatusBar.swift */; };
+		1E413BE4FA305A05CFCDA372 /* BrowserPick.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99043DC6E87DB144C2ECE631 /* BrowserPick.swift */; };
 		1E4B9916484367A33AC3D959 /* ChatUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D0A660EF197200211C217B4 /* ChatUsage.swift */; };
 		214E82491A5D4351F45187E4 /* SimulatorDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87F75EF25C24256C43529DFF /* SimulatorDisplay.swift */; };
 		26F33593401C4D6EF10CC974 /* AgentBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 112E9D6E62140F40A3F29A21 /* AgentBridge.swift */; };
@@ -27,6 +30,7 @@
 		34BC32CE33FE4D40341CCE4D /* AgentFoldersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67147764C7E299C6400683A6 /* AgentFoldersView.swift */; };
 		399CD8D588217F962CE06C5D /* AgentTabs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3621003C5F85DF2D65EFC584 /* AgentTabs.swift */; };
 		4634192947D42C964EB9182B /* jack-progress in Embed Dependencies */ = {isa = PBXBuildFile; fileRef = DE478C8255BAFA828A7913CE /* jack-progress */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		47D12EA07E650A82BF186198 /* AgentPanes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96265CFED9209661366D40C0 /* AgentPanes.swift */; };
 		4D90663164D5102D213F6D5F /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 1385178F099D3E470B6B3D6E /* SwiftTerm */; };
 		4EE75C7A08BEA1C03B542683 /* ProgressViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F6561788FB990BD803A0FB9 /* ProgressViews.swift */; };
 		4EEE59F330E778DC3B2E53D1 /* ProgressMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF1118CA07727753620BBFEB /* ProgressMonitor.swift */; };
@@ -38,6 +42,7 @@
 		6A89D2DA42A687D07F5F2C3F /* SimulatorPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A3D7246F7BBDA7A8018807 /* SimulatorPanel.swift */; };
 		6EB861C0B842D3CECBD7F800 /* ExecutableResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A45A93DAF44DBBC83A60C50 /* ExecutableResolver.swift */; };
 		7441A1CC448183A8E8566D6D /* WindowChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49EB006FB5D21FFC9B93D8CF /* WindowChrome.swift */; };
+		7C20E12504FE7813682A0B19 /* ProjectLocator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6143A83A4EEEBF4CC0FE7C86 /* ProjectLocator.swift */; };
 		7CF0D92236427584C6ED9239 /* PaneSplit.swift in Sources */ = {isa = PBXBuildFile; fileRef = BECA119E22381166808B5690 /* PaneSplit.swift */; };
 		7E295FDBE4DB448AD14EB38C /* BrowserAddress.swift in Sources */ = {isa = PBXBuildFile; fileRef = D270EF82D7E479169076203B /* BrowserAddress.swift */; };
 		827E3C32A16440805AD8B9D8 /* JackSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A513FA72943E495D585C29AB /* JackSidebar.swift */; };
@@ -74,6 +79,7 @@
 		F4C4F1A3CBF9BF0DD8CEB3FB /* ContextPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AD6A284F00CF9276696D1F8 /* ContextPanelView.swift */; };
 		F68F4CEAD8E711BE50639E5C /* StellarCode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C9731344B7463E74671F52C /* StellarCode.swift */; };
 		F75DB029A29F7EC9E15CFBA1 /* MarkdownTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5A12922F7A4E1E7A3623821 /* MarkdownTableView.swift */; };
+		FDA0C86DE21F32B305B5F8F8 /* BrowserPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5019EA3818C709E8D20043A4 /* BrowserPicker.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -143,15 +149,18 @@
 		3789D85F443A38492640A492 /* ClaudeSessionPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeSessionPicker.swift; sourceTree = "<group>"; };
 		3A74557C47C15953992E8937 /* JackLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JackLog.swift; sourceTree = "<group>"; };
 		3DCC822661DED49C89F2189E /* WaitingMessagesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaitingMessagesView.swift; sourceTree = "<group>"; };
+		41D9B14CA52330C9B3508766 /* ChatTranscript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscript.swift; sourceTree = "<group>"; };
 		48DDA04AE7E47B63803F18BB /* SessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStore.swift; sourceTree = "<group>"; };
 		49EB006FB5D21FFC9B93D8CF /* WindowChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowChrome.swift; sourceTree = "<group>"; };
 		4B2043D2FAB41EAAEF81CEBB /* MarkdownBlock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownBlock.swift; sourceTree = "<group>"; };
+		5019EA3818C709E8D20043A4 /* BrowserPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserPicker.swift; sourceTree = "<group>"; };
 		504E39FB7DA22A1B9933C4A5 /* ChatMessageRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessageRow.swift; sourceTree = "<group>"; };
 		50C1361476010EC1B422C026 /* StartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartView.swift; sourceTree = "<group>"; };
 		55789284D46B10B50C316C86 /* ChatStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatStore.swift; sourceTree = "<group>"; };
 		56C4F86A9A39B8CF9807B05C /* ChatAttachments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatAttachments.swift; sourceTree = "<group>"; };
 		5BD8FE80738952666BEDFBA7 /* ProgressTasks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressTasks.swift; sourceTree = "<group>"; };
 		6085927C746749BAD3504F03 /* ServerScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerScanner.swift; sourceTree = "<group>"; };
+		6143A83A4EEEBF4CC0FE7C86 /* ProjectLocator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectLocator.swift; sourceTree = "<group>"; };
 		6164E34644769C64B3E867B1 /* WorkspacePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspacePanel.swift; sourceTree = "<group>"; };
 		67147764C7E299C6400683A6 /* AgentFoldersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentFoldersView.swift; sourceTree = "<group>"; };
 		6AA8C81C6A84E8DDF53B0226 /* AsideView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AsideView.swift; sourceTree = "<group>"; };
@@ -162,6 +171,8 @@
 		8A45A93DAF44DBBC83A60C50 /* ExecutableResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExecutableResolver.swift; sourceTree = "<group>"; };
 		8ED82B9B70891B0200DA37ED /* ProjectIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectIndex.swift; sourceTree = "<group>"; };
 		8F6561788FB990BD803A0FB9 /* ProgressViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressViews.swift; sourceTree = "<group>"; };
+		96265CFED9209661366D40C0 /* AgentPanes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPanes.swift; sourceTree = "<group>"; };
+		99043DC6E87DB144C2ECE631 /* BrowserPick.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserPick.swift; sourceTree = "<group>"; };
 		9BF3FCA24BA069D694B0B6F5 /* MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownText.swift; sourceTree = "<group>"; };
 		9CC159ECABCA798A6D404BD8 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		9CE721E7266C74484EE01DBD /* ChatDrivers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatDrivers.swift; sourceTree = "<group>"; };
@@ -181,6 +192,7 @@
 		CA9AEFCAF5C3EB12827473A9 /* ClaudeSessions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeSessions.swift; sourceTree = "<group>"; };
 		CC084525C4D6CE0EBEF1CF88 /* JackApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JackApp.swift; sourceTree = "<group>"; };
 		D270EF82D7E479169076203B /* BrowserAddress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserAddress.swift; sourceTree = "<group>"; };
+		D509AEAE925B54594B2E191B /* PaneLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaneLayout.swift; sourceTree = "<group>"; };
 		D8E5B74C47ED76F7F4E3175D /* ChatModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModels.swift; sourceTree = "<group>"; };
 		DE478C8255BAFA828A7913CE /* jack-progress */ = {isa = PBXFileReference; includeInIndex = 0; path = "jack-progress"; sourceTree = BUILT_PRODUCTS_DIR; };
 		E1DA779938E07CE10645928A /* ChatCommandViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatCommandViews.swift; sourceTree = "<group>"; };
@@ -229,6 +241,7 @@
 			children = (
 				112E9D6E62140F40A3F29A21 /* AgentBridge.swift */,
 				D270EF82D7E479169076203B /* BrowserAddress.swift */,
+				99043DC6E87DB144C2ECE631 /* BrowserPick.swift */,
 				094C42C6DC4B76FE4E66E40D /* ChatArchive.swift */,
 				1FCA7EE32BDFA05868D21D74 /* ChatAside.swift */,
 				56C4F86A9A39B8CF9807B05C /* ChatAttachments.swift */,
@@ -244,9 +257,11 @@
 				3A74557C47C15953992E8937 /* JackLog.swift */,
 				4B2043D2FAB41EAAEF81CEBB /* MarkdownBlock.swift */,
 				9CC159ECABCA798A6D404BD8 /* Models.swift */,
+				D509AEAE925B54594B2E191B /* PaneLayout.swift */,
 				AF1118CA07727753620BBFEB /* ProgressMonitor.swift */,
 				5BD8FE80738952666BEDFBA7 /* ProgressTasks.swift */,
 				83D024EB758956F78F8FDB4B /* ProjectFinder.swift */,
+				6143A83A4EEEBF4CC0FE7C86 /* ProjectLocator.swift */,
 				6085927C746749BAD3504F03 /* ServerScanner.swift */,
 				48DDA04AE7E47B63803F18BB /* SessionStore.swift */,
 				0D507CBFB46C0D8CC4191A10 /* Simulators.swift */,
@@ -296,14 +311,17 @@
 			children = (
 				EC1BBE9D45CBEC403EA22C82 /* AgentActivityView.swift */,
 				67147764C7E299C6400683A6 /* AgentFoldersView.swift */,
+				96265CFED9209661366D40C0 /* AgentPanes.swift */,
 				3621003C5F85DF2D65EFC584 /* AgentTabs.swift */,
 				0E0312F9EF3FDF19D86B6340 /* ApprovalViews.swift */,
 				6AA8C81C6A84E8DDF53B0226 /* AsideView.swift */,
 				A8AC5CBAB71E44192E8AF824 /* AttachmentViews.swift */,
 				EE20CBCE09336DFA3CA28709 /* BatterySaver.swift */,
+				5019EA3818C709E8D20043A4 /* BrowserPicker.swift */,
 				E1DA779938E07CE10645928A /* ChatCommandViews.swift */,
 				504E39FB7DA22A1B9933C4A5 /* ChatMessageRow.swift */,
 				C3D8A6CBC10C08DC5BE8F996 /* ChatModelPicker.swift */,
+				41D9B14CA52330C9B3508766 /* ChatTranscript.swift */,
 				3789D85F443A38492640A492 /* ClaudeSessionPicker.swift */,
 				0AD6A284F00CF9276696D1F8 /* ContextPanelView.swift */,
 				138D59F70F9CA07105FD1933 /* FileExplorer.swift */,
@@ -466,14 +484,17 @@
 			files = (
 				B9766774E9F9FDA9D637016F /* AgentActivityView.swift in Sources */,
 				34BC32CE33FE4D40341CCE4D /* AgentFoldersView.swift in Sources */,
+				47D12EA07E650A82BF186198 /* AgentPanes.swift in Sources */,
 				399CD8D588217F962CE06C5D /* AgentTabs.swift in Sources */,
 				53306EA90065579DD4362D48 /* ApprovalViews.swift in Sources */,
 				166A26F7D4105C984E303849 /* AsideView.swift in Sources */,
 				28AC8F651C192396167D8317 /* AttachmentViews.swift in Sources */,
 				5D953693E66E01A72D9DB935 /* BatterySaver.swift in Sources */,
+				FDA0C86DE21F32B305B5F8F8 /* BrowserPicker.swift in Sources */,
 				D9BC01980D4186E943774370 /* ChatCommandViews.swift in Sources */,
 				8D901B967A33198662F4A94B /* ChatMessageRow.swift in Sources */,
 				BF38477F58288B2D1279DF30 /* ChatModelPicker.swift in Sources */,
+				0D341C6641105DD295680C11 /* ChatTranscript.swift in Sources */,
 				8CFA9AFD04527815E8EC6FC0 /* ClaudeSessionPicker.swift in Sources */,
 				F4C4F1A3CBF9BF0DD8CEB3FB /* ContextPanelView.swift in Sources */,
 				051E30A12B62E96A652522D3 /* FileExplorer.swift in Sources */,
@@ -508,6 +529,7 @@
 			files = (
 				26F33593401C4D6EF10CC974 /* AgentBridge.swift in Sources */,
 				7E295FDBE4DB448AD14EB38C /* BrowserAddress.swift in Sources */,
+				1E413BE4FA305A05CFCDA372 /* BrowserPick.swift in Sources */,
 				02B83CB51FECD80B94438A2F /* ChatArchive.swift in Sources */,
 				B248BA64DE2A149805CE2C3B /* ChatAside.swift in Sources */,
 				F08A921CC43E600748CC33B8 /* ChatAttachments.swift in Sources */,
@@ -523,9 +545,11 @@
 				CE4A748AA81B0389D7907972 /* JackLog.swift in Sources */,
 				5E5C961DBFFE5529E2DFCF03 /* MarkdownBlock.swift in Sources */,
 				88169CA35E507941B634D8BC /* Models.swift in Sources */,
+				125DC2F3E2AC2F34CBF5DA1A /* PaneLayout.swift in Sources */,
 				4EEE59F330E778DC3B2E53D1 /* ProgressMonitor.swift in Sources */,
 				13E5587D2DFD397AFB57C9B5 /* ProgressTasks.swift in Sources */,
 				D0940594786ADCB9DF4AD81B /* ProjectFinder.swift in Sources */,
+				7C20E12504FE7813682A0B19 /* ProjectLocator.swift in Sources */,
 				D77C400731E1A4E8AB577ABD /* ServerScanner.swift in Sources */,
 				C119C546D022B81ABA72AAF1 /* SessionStore.swift in Sources */,
 				C0A2D15690CE9014A9C2E443 /* Simulators.swift in Sources */,

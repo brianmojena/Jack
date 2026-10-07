@@ -24,6 +24,82 @@ final class ChatStoreTests: XCTestCase {
         store.setConcurrency(2)
         return (store, archive, folder, { drivers })
     }
+    @MainActor func testAutomaticAgentMovesToTheFolderItsModelChooses() async throws {
+        let (store, _, folder, drivers) = fixture()
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        let project = NSTemporaryDirectory()
+        var requests: [String] = []
+        store.locateProject = { request, _, _, _ in requests.append(request); return request.contains("Jack") ? project : nil }
+        let id = try XCTUnwrap(store.createLocating("arregla el login", provider: .codex, projects: [project]))
+        XCTAssertTrue(store.isUnplaced(id))
+        await settle()
+        XCTAssertTrue(store.isUnplaced(id), "an unknown project waits for the user")
+        XCTAssertEqual(store.statuses[id], .idle)
+        XCTAssertEqual(store.selectedConversation?.messages.last?.role, "jack")
+        XCTAssertTrue(drivers().isEmpty)
+
+        store.send("es en Jack", to: id)
+        await settle()
+        XCTAssertEqual(requests.last, "arregla el login\n\nes en Jack")
+        XCTAssertEqual(store.selectedConversation?.projectPath, project)
+        XCTAssertFalse(store.isUnplaced(id))
+        XCTAssertEqual(drivers().count, 1, "the agent starts once placed")
+    }
+    @MainActor func testStoppingWhileChoosingTheFolderCancelsTheSearch() async throws {
+        let (store, _, folder, drivers) = fixture()
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        final class Flag: @unchecked Sendable { var cancelled = false }
+        let flag = Flag()
+        store.locateProject = { _, _, _, _ in
+            do { try await Task.sleep(for: .seconds(30)) } catch { flag.cancelled = true; throw error }
+            return NSTemporaryDirectory()
+        }
+        let id = try XCTUnwrap(store.createLocating("arregla el login", provider: .codex, projects: []))
+        XCTAssertEqual(store.statuses[id], .running, "choosing the folder shows as work, not as a queue")
+        XCTAssertTrue(store.locating.contains(id))
+        store.stop(id)
+        await settle()
+        XCTAssertTrue(flag.cancelled)
+        XCTAssertFalse(store.locating.contains(id))
+        XCTAssertEqual(store.statuses[id], .idle)
+        XCTAssertTrue(store.isUnplaced(id))
+        XCTAssertTrue(drivers().isEmpty, "a stopped agent does not start once the search ends")
+    }
+    @MainActor func testSlowFolderChoiceGivesUpAndAsksTheUser() async throws {
+        let (store, _, folder, drivers) = fixture()
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        store.locateDeadline = .milliseconds(50)
+        store.locateProject = { _, _, _, _ in try await Task.sleep(for: .seconds(30)); return NSTemporaryDirectory() }
+        let id = try XCTUnwrap(store.createLocating("arregla el login", provider: .codex, projects: []))
+        for _ in 0..<100 where store.locating.contains(id) { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(store.statuses[id], .idle)
+        XCTAssertEqual(store.selectedConversation?.messages.last?.role, "jack")
+        XCTAssertTrue(drivers().isEmpty)
+    }
+    @MainActor func testAgentsInPanesKeepTheirTranscriptWithoutBeingSelected() throws {
+        let (store, archive, folder, _) = fixture()
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        let session = { (id: String) in ClaudeSessionSummary(id: id, title: id, projectPath: NSTemporaryDirectory(), updatedAt: Date()) }
+        let side = try XCTUnwrap(store.importClaudeSession(session("lado"), messages: [ChatMessage(role: "user", text: "hola")]))
+        let main = try XCTUnwrap(store.importClaudeSession(session("principal"), messages: [ChatMessage(role: "user", text: "otro")]))
+        XCTAssertEqual(store.selectedID, main)
+        XCTAssertEqual(store.conversations.first { $0.id == side }?.messages.count, 0, "an agent out of view is evicted")
+        store.showInPanes([side])
+        XCTAssertEqual(store.conversations.first { $0.id == side }?.messages.map(\.text), ["hola"])
+        store.select(main)
+        XCTAssertEqual(store.conversations.first { $0.id == side }?.messages.count, 1, "a pane keeps it loaded")
+        XCTAssertEqual(store.selectedID, main)
+        store.showInPanes([])
+        XCTAssertEqual(store.conversations.first { $0.id == side }?.messages.count, 0)
+        archive.flush()
+    }
+    func testLocatorReadsTheFolderFromTheAnswer() {
+        let project = NSTemporaryDirectory().hasSuffix("/") ? String(NSTemporaryDirectory().dropLast()) : NSTemporaryDirectory()
+        XCTAssertEqual(ProjectLocator.path(in: "`\(project)`", projects: [project]), project)
+        XCTAssertEqual(ProjectLocator.path(in: "La carpeta es:\n\(project)/", projects: [project]), project)
+        XCTAssertNil(ProjectLocator.path(in: "NINGUNA", projects: [project]))
+        XCTAssertNil(ProjectLocator.path(in: "/no/existe/aqui", projects: [project]))
+    }
     @MainActor func testClaudeEffortFollowsTheSelectedModel() throws {
         let (store, _, folder, _) = fixture()
         defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }

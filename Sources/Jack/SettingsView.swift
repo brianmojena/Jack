@@ -28,6 +28,7 @@ private struct GeneralSettings: View {
     @AppStorage(SimulatorSession.lightModeKey) private var simulatorLightMode = true
     @AppStorage(SimulatorSession.idleMinutesKey) private var simulatorIdleMinutes = 10
     @AppStorage(SimulatorSession.shutdownOnQuitKey) private var simulatorShutdownOnQuit = true
+    @State private var importingClaude = false
 
     var body: some View {
         Form {
@@ -91,6 +92,16 @@ private struct GeneralSettings: View {
                 Text("Basic es la interfaz densa de siempre. Ice usa la estructura nativa de macOS con Liquid Glass: barra lateral flotante, barra de herramientas del sistema y el editor flotando sobre la conversación.")
                     .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
             }
+            Section {
+                LabeledContent("Chats de la terminal y de la app de Claude") {
+                    Button("Importar…") { importingClaude = true }
+                }
+            } header: {
+                Text("Claude Code")
+            } footer: {
+                Text("Trae tus chats recientes de Claude Code para seguirlos en Jack. Los que ya están en Jack no se duplican.")
+                    .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
+            }
             Section("Barra lateral") {
                 LabeledContent("Spaces plegados") {
                     HStack {
@@ -103,6 +114,16 @@ private struct GeneralSettings: View {
         }
         .formStyle(.grouped)
         .frame(height: 520)
+        .sheet(isPresented: $importingClaude) { claudeImportSheet }
+    }
+}
+
+private extension GeneralSettings {
+    var claudeImportSheet: some View {
+        ClaudeImportSheet(imported: Set(store.conversations.compactMap { $0.provider == .claude ? $0.sessionID : nil })) { sessions in
+            store.importClaudeSessions(sessions)
+            importingClaude = false
+        } onCancel: { importingClaude = false }
     }
 }
 

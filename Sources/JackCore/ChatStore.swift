@@ -43,6 +43,8 @@ import Foundation
     private let preferences: UserDefaults?
     private let makeDriver: (ChatProvider) -> any ChatDriver
     private var loaded = Set<UUID>()
+    /// Agents shown in panes beside the selected one: their transcripts stay loaded.
+    private var paned = Set<UUID>()
     private var queue: [(UUID, String)] = []
     private var runs: [UUID: Task<Void, Never>] = [:]
     private var drivers: [UUID: any ChatDriver] = [:]
@@ -62,6 +64,20 @@ import Foundation
     public lazy var servers = ServerMonitor(projects: { [weak self] in Set(self?.conversations.map(\.projectPath) ?? []) })
     /// Images agents asked for with `generate_image`, waiting for the user in Image Playground or just created.
     @Published public private(set) var imageRequests: [ChatImageRequest] = []
+    /// Imported Claude Code sessions whose history is being read.
+    @Published public private(set) var readingClaudeHistory = Set<UUID>()
+    /// Reads a Claude Code session's history; replaced in tests.
+    public var readClaudeSession: @Sendable (ClaudeSessionSummary) -> (messages: [ChatMessage], model: String?) = { ClaudeSessions.load($0) }
+    /// Agents whose model is still choosing their project folder.
+    @Published public private(set) var locating = Set<UUID>()
+    /// Chooses the folder for a request: (request, provider, model, projects). Replaced in tests.
+    public var locateProject: @MainActor (String, ChatProvider, String, [String]) async throws -> String? = ProjectLocator.locate
+    /// Searches for agents' folders, so stopping an agent can cancel its own.
+    private var locateTasks: [UUID: Task<Void, Never>] = [:]
+    /// Choosing a folder is a short question; past this the agent asks the user instead.
+    public var locateDeadline: Duration = .seconds(60)
+    /// Folders the model chooses from, most recently used first.
+    private var knownProjects: [String] = []
     /// Image Playground works on this Mac; set by the app, which can ask the framework.
     public var imageGenerationSupported = false
     /// Agents get `generate_image` when Image Playground works and the user has not turned it off.
@@ -154,6 +170,80 @@ import Foundation
         if select { evictInactiveTranscripts() }
         return conversation.id
     }
+    /// Creates an agent for `message` without a folder: its model chooses the project, then the agent
+    /// moves to that space and starts. `projects` are the folders to choose from, most recently used first.
+    @discardableResult
+    public func createLocating(_ message: String, provider: ChatProvider, model: String? = nil, effort: String = "high", projects: [String]) -> UUID? {
+        let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        knownProjects = projects
+        let folder = ProjectLocator.unplacedFolder
+        try? FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+        guard let id = create(projectPath: folder, provider: provider, model: model, effort: effort),
+              let index = conversations.firstIndex(where: { $0.id == id }) else { return nil }
+        conversations[index].messages.append(ChatMessage(role: "user", text: text))
+        conversations[index].title = String(text.prefix(55)).replacingOccurrences(of: "\n", with: " ")
+        save(id)
+        place(id)
+        return id
+    }
+    /// Whether the agent still waits for its project folder.
+    public func isUnplaced(_ id: UUID) -> Bool {
+        conversations.first { $0.id == id }.map { $0.projectPath == ProjectLocator.unplacedFolder && ($0.sessionID ?? "").isEmpty } ?? false
+    }
+    /// Asks the model which folder everything the user wrote is about, then moves the agent there and starts it.
+    /// The agent shows as working meanwhile, and stopping it cancels the search.
+    private func place(_ id: UUID) {
+        guard locateTasks[id] == nil, let conversation = conversations.first(where: { $0.id == id }) else { return }
+        let request = Self.request(of: conversation)
+        let projects = knownProjects.isEmpty ? Array(Set(conversations.map(\.projectPath))) : knownProjects
+        let locate = locateProject, deadline = locateDeadline
+        locating.insert(id)
+        statuses[id] = .running
+        locateTasks[id] = Task { [weak self] in
+            var path: String?, failure: String?
+            do {
+                // Racing a timer: cancelling either way also ends the model's process.
+                path = try await withThrowingTaskGroup(of: String?.self) { group in
+                    group.addTask { try await locate(request, conversation.provider, conversation.model, projects) }
+                    group.addTask { try await Task.sleep(for: deadline); throw CommandDeadlineExceeded() }
+                    defer { group.cancelAll() }
+                    return try await group.next() ?? nil
+                }
+            } catch is CommandDeadlineExceeded {
+                failure = "el modelo tardó más de \(deadline.components.seconds) s en responder."
+            } catch { failure = error.localizedDescription }
+            guard let self, !Task.isCancelled, !self.stopped else { return }
+            self.locateTasks[id] = nil
+            self.locating.remove(id)
+            self.loadTranscript(id)
+            guard let index = self.conversations.firstIndex(where: { $0.id == id }) else { self.statuses[id] = nil; return }
+            guard let path else {
+                self.statuses[id] = .idle
+                let reason = failure.map { "No pude elegir la carpeta del proyecto: \($0)" } ?? "No sé en qué proyecto trabajar."
+                self.conversations[index].messages.append(ChatMessage(role: "jack", text: reason + " Dime su nombre o su ruta (por ejemplo ~/Proyectos/Jack) y empiezo."))
+                self.save(id)
+                return
+            }
+            self.conversations[index].projectPath = path
+            self.conversations[index].updatedAt = Date()
+            self.preferences?.set(path, forKey: "lastProjectPath")
+            self.save(id)
+            // Messages written while the model chose the folder go too.
+            self.statuses[id] = .queued
+            self.queue.append((id, Self.request(of: self.conversations[index])))
+            self.drainQueue()
+        }
+    }
+    /// Ends the search for the agent's folder; its messages stay for the next attempt.
+    private func cancelLocating(_ id: UUID) {
+        guard let task = locateTasks.removeValue(forKey: id) else { return }
+        task.cancel()
+        locating.remove(id)
+    }
+    private static func request(of conversation: ChatConversation) -> String {
+        conversation.messages.filter { $0.role == "user" }.map(\.text).joined(separator: "\n\n")
+    }
     /// Continues a session started in Claude Code's terminal: its history becomes the transcript and
     /// the next message resumes it. A session already in Jack is selected instead of copied.
     @discardableResult
@@ -171,12 +261,63 @@ import Foundation
         save(id)
         return id
     }
+    /// Adds Claude Code sessions in bulk without reading their history, which each one reads when it first opens.
+    /// Sessions already in Jack and folders that no longer exist are skipped. Returns how many were added.
+    @discardableResult
+    public func importClaudeSessions(_ sessions: [ClaudeSessionSummary]) -> Int {
+        var known = Set(conversations.compactMap { $0.provider == .claude ? $0.sessionID : nil })
+        var added = 0
+        for session in sessions where known.insert(session.id).inserted {
+            var isDirectory: ObjCBool = false
+            guard session.projectPath.hasPrefix("/"), FileManager.default.fileExists(atPath: session.projectPath, isDirectory: &isDirectory), isDirectory.boolValue else { continue }
+            var conversation = ChatConversation(title: String(session.title.prefix(120)), projectPath: session.projectPath, provider: .claude, model: session.model, sessionID: session.id, updatedAt: session.updatedAt)
+            conversation.effort = Self.clamp(conversation.effort, to: supportedEfforts(provider: .claude, model: conversation.model))
+            conversation.pendingClaudeHistory = true
+            conversations.append(conversation)
+            added += 1
+        }
+        if added > 0 {
+            archive.save(index: conversations) { [weak self] error in
+                if let error { Task { @MainActor in self?.errorMessage = "No se pudo guardar el historial: \(error.localizedDescription)" } }
+            }
+        }
+        return added
+    }
+    /// Reads the history of a session imported in bulk, once, off the main thread.
+    private func readPendingClaudeHistory(_ id: UUID) {
+        guard let conversation = conversations.first(where: { $0.id == id }), conversation.pendingClaudeHistory == true,
+              let session = conversation.sessionID, readingClaudeHistory.insert(id).inserted else { return }
+        let summary = ClaudeSessionSummary(id: session, title: conversation.title, projectPath: conversation.projectPath, updatedAt: conversation.updatedAt)
+        let read = readClaudeSession
+        Task {
+            let history = await Task.detached(priority: .userInitiated) { read(summary) }.value
+            readingClaudeHistory.remove(id)
+            guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
+            if !loaded.contains(id) {
+                conversations[index].messages = (try? archive.load(id))?.messages ?? []
+                loaded.insert(id)
+            }
+            // Messages sent while it was being read come after the history.
+            let sentSince = conversations[index].messages
+            conversations[index].messages = history.messages.isEmpty
+                ? [ChatMessage(role: "jack", text: "No se encontró el historial de esta sesión en Claude Code. El próximo mensaje la retoma igualmente.")] + sentSince
+                : history.messages + sentSince
+            if sentSince.isEmpty, let model = history.model { conversations[index].model = model }
+            conversations[index].pendingClaudeHistory = nil
+            if conversations[index].preview == nil, let last = history.messages.last(where: { $0.role == "assistant" && !$0.text.isEmpty }) {
+                conversations[index].preview = Self.preview(of: last.text)
+            }
+            save(id)
+            if selectedID != id, !paned.contains(id) { evictInactiveTranscripts() }
+        }
+    }
     /// Replaces the transcript with the session as Claude Code saved it, e.g. after it continued in a terminal.
     public func replaceTranscript(_ id: UUID, messages: [ChatMessage]) {
         guard runs[id] == nil, let index = conversations.firstIndex(where: { $0.id == id }) else { return }
         liveDrivers.removeValue(forKey: id)?.close()
         loaded.insert(id)
         conversations[index].messages = messages
+        conversations[index].pendingClaudeHistory = nil
         if let last = messages.last(where: { $0.role == "assistant" && !$0.text.isEmpty }) { conversations[index].preview = Self.preview(of: last.text) }
         conversations[index].updatedAt = Date()
         save(id)
@@ -195,6 +336,7 @@ import Foundation
             do { if let transcript = try archive.load(id) { conversations[index].messages = transcript.messages }; loaded.insert(id); settleBackground(id) }
             catch { errorMessage = "No se pudo leer esta conversación: \(error.localizedDescription)"; return }
         }
+        readPendingClaudeHistory(id)
         selectedID = id
         var changed = false
         if conversations[index].hasUnread == true { conversations[index].hasUnread = nil; changed = true }
@@ -292,6 +434,15 @@ import Foundation
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !attachments.isEmpty, conversations.contains(where: { $0.id == id }), !stopped else { return }
         clearSuggestion(id)
+        if isUnplaced(id), JackCommandCatalog.parse(text) == nil {
+            // Without a folder yet, the message helps the model choose it.
+            loadTranscript(id)
+            guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
+            conversations[index].messages.append(ChatMessage(role: "user", text: text, attachments: attachments.isEmpty ? nil : attachments))
+            save(id)
+            place(id)
+            return
+        }
         if isBusy(id), JackCommandCatalog.parse(text) == nil {
             wait(text.hasPrefix("!!") ? String(text.dropFirst()) : text, attachments: attachments, to: id)
             if interrupting { sendWaitingNow(id) }
@@ -414,6 +565,7 @@ import Foundation
         if let transcript = try? archive.load(id) { conversations[index].messages = transcript.messages }
         loaded.insert(id)
         settleBackground(id)
+        readPendingClaudeHistory(id)
     }
     /// Background work cannot still be running once its agent's process is gone, e.g. after relaunching Jack.
     private func settleBackground(_ id: UUID) {
@@ -434,6 +586,7 @@ import Foundation
             }
         }
         queue.removeAll { $0.0 == id }
+        cancelLocating(id)
         // As Esc does in Claude Code, stopping returns the waiting messages to the composer.
         if let messages = waiting.removeValue(forKey: id), !messages.isEmpty {
             var attachments: [String] = []
@@ -513,6 +666,7 @@ import Foundation
 
     public func remove(_ id: UUID) {
         guard runs[id] == nil, !queue.contains(where: { $0.0 == id }) else { return }
+        cancelLocating(id)
         liveDrivers.removeValue(forKey: id)?.close()
         conversations.removeAll { $0.id == id }; loaded.remove(id); statuses.removeValue(forKey: id); approvals.removeValue(forKey: id)
         waiting.removeValue(forKey: id); recalled.removeValue(forKey: id)
@@ -599,6 +753,7 @@ import Foundation
     }
     public func shutdown() {
         stopped = true; queue.removeAll(); flushTask?.cancel(); flushTask = nil
+        for id in Array(locateTasks.keys) { cancelLocating(id) }
         asides.cancelAll()
         StellarRuntime.shutdown()
         for id in Array(pending.keys) { flush(id) }
@@ -818,8 +973,14 @@ import Foundation
             if let error { Task { @MainActor in self?.errorMessage = "No se pudo guardar el historial: \(error.localizedDescription)" } }
         }
     }
+    /// Keeps these agents' transcripts loaded while they are shown in panes, without selecting them.
+    public func showInPanes(_ ids: [UUID]) {
+        paned = Set(ids)
+        for id in ids { loadTranscript(id) }
+        evictInactiveTranscripts()
+    }
     private func evictInactiveTranscripts() {
-        let protected = Set(runs.keys).union(queue.map(\.0)).union(selectedID.map { [$0] } ?? [])
+        let protected = Set(runs.keys).union(queue.map(\.0)).union(selectedID.map { [$0] } ?? []).union(paned)
         for id in loaded.subtracting(protected) {
             save(id)
             if let index = conversations.firstIndex(where: { $0.id == id }) { conversations[index].messages = [] }

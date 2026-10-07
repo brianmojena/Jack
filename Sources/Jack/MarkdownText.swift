@@ -35,7 +35,11 @@ struct MarkdownText: View {
                             .font(.system(size: fontSize, weight: ordered ? .medium : .bold, design: design).monospacedDigit())
                             .foregroundStyle(JackPalette.muted)
                             .frame(minWidth: ordered ? 18 : 10, alignment: .trailing)
+                        // Beside the bullet the text is offered a single line's height, so it was cut with
+                        // "…" in narrow windows instead of wrapping: it takes the height it needs.
                         inline(item.text).font(.system(size: fontSize, design: design)).lineSpacing(2.5)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .padding(.leading, CGFloat(item.indent) * 16)
                 }

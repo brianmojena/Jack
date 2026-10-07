@@ -7,9 +7,12 @@ struct AgentActivityView: View {
     let status: ChatStatus
     let tokens: ChatTokenUsage?
     let projectPath: String
+    /// The agent's model is choosing the project folder before starting.
+    var locating = false
     private var activity: ChatMessage? { conversation.messages.last.flatMap { $0.role == "user" ? nil : $0 } }
 
     private var title: String {
+        if locating { return "Buscando la carpeta del proyecto" }
         if status == .queued { return "En cola, esperando un espacio libre" }
         if status == .waiting { return "Esperando tu respuesta" }
         guard let activity else { return "Preparando respuesta" }

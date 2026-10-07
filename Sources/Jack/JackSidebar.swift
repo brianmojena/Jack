@@ -74,6 +74,8 @@ struct JackSidebar: View {
     /// Claude Code conversations: continue the session in a terminal, or reread it after using one.
     let onContinueInTerminal: (UUID) -> Void
     let onReloadFromClaude: (UUID) -> Void
+    /// Opens the agent in a pane beside the selected one; rows can also be dragged to the chat.
+    let onOpenInPane: (UUID) -> Void
     let onHide: () -> Void
     /// Bumped by ⌘F to focus the search field.
     let searchRequest: Int
@@ -181,6 +183,7 @@ struct JackSidebar: View {
         SidebarRow(row: row, showProject: showProject, selected: row.id == selectedID, age: compactAge(row.updatedAt, now: now), native: true)
             .equatable()
             .tag(row.id)
+            .onDrag { AgentDrag.provider(row.id) }
             .contextMenu { rowMenu(row) }
     }
 
@@ -292,10 +295,15 @@ struct JackSidebar: View {
                 .equatable()
         }
         .buttonStyle(.plain)
+        .onDrag { AgentDrag.provider(row.id) }
         .contextMenu { rowMenu(row) }
     }
 
     @ViewBuilder private func rowMenu(_ row: SidebarRowModel) -> some View {
+        if row.id != selectedID {
+            Button("Abrir al lado", systemImage: "rectangle.split.2x1") { onOpenInPane(row.id) }
+            Divider()
+        }
         Button(row.unread ? "Marcar como leído" : "Marcar como no leído", systemImage: row.unread ? "envelope.open" : "envelope.badge") {
             onSetUnread(row.id, !row.unread)
         }

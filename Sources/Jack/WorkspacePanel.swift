@@ -48,6 +48,8 @@ struct WorkspaceTab: Identifiable, Equatable {
     private var simulatorSession: SimulatorSession?
     /// Adds files, such as a simulator screenshot, to an agent's next message.
     var attach: ((UUID, [String]) -> Void)?
+    /// A message about elements picked in the browser: sent to the agent now, or left in its composer.
+    var sendFromBrowser: ((_ conversation: UUID, _ text: String, _ files: [String], _ now: Bool) -> Void)?
 
     var terminalCount: Int { tabs.values.reduce(0) { $0 + $1.filter { $0.kind == .terminal }.count } }
 
@@ -206,7 +208,9 @@ struct WorkspacePane: View, Equatable {
                     case .terminal:
                         TerminalPanel(session: sessions.terminal(selected.id, conversation: conversationID, directory: projectPath))
                     case .browser:
-                        BrowserPanel(session: sessions.browser(selected.id))
+                        BrowserPanel(session: sessions.browser(selected.id)) { text, files, now in
+                            sessions.sendFromBrowser?(conversationID, text, files, now)
+                        }
                     case .simulator:
                         SimulatorPanel(session: sessions.simulator) { paths in sessions.attach?(conversationID, paths) }
                     }
@@ -485,18 +489,27 @@ struct TerminalPanel: View {
     @Published private(set) var hasPage = false
     @Published private(set) var secure = false
     @Published private(set) var title = ""
+    /// The user is choosing elements on the page to tell the agent about.
+    @Published private(set) var picking = false
+    /// Elements picked on the current page, in order.
+    @Published private(set) var picks: [BrowserPick] = []
     let webView: WKWebView
     private var observations: [NSKeyValueObservation] = []
+    private let receiver = BrowserPickReceiver()
 
     override init() {
         let configuration = WKWebViewConfiguration()
         configuration.preferences.setValue(true, forKey: "developerExtrasEnabled")
+        configuration.userContentController.addUserScript(
+            WKUserScript(source: BrowserPicker.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        configuration.userContentController.add(receiver, name: BrowserPicker.handler)
         webView = WKWebView(frame: .zero, configuration: configuration)
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsMagnification = true
         webView.isInspectable = true
         webView.underPageBackgroundColor = JackPalette.canvasColor
         super.init()
+        receiver.session = self
         webView.navigationDelegate = self
         webView.uiDelegate = self
         // KVO fires on the main thread; each value is published only when it changes.
@@ -538,6 +551,65 @@ struct TerminalPanel: View {
     }
 
     func reloadOrStop() { if loading { webView.stopLoading() } else { webView.reload() } }
+
+    // MARK: Picking elements
+
+    func setPicking(_ on: Bool) {
+        guard hasPage, on != picking else { return }
+        picking = on
+        webView.evaluateJavaScript(on ? "window.__jackPicker && window.__jackPicker.start()" : "window.__jackPicker && window.__jackPicker.stop()")
+        if on { webView.window?.makeFirstResponder(webView) }
+    }
+
+    func removePick(_ id: UUID) {
+        guard let index = picks.firstIndex(where: { $0.id == id }) else { return }
+        picks.remove(at: index)
+        webView.evaluateJavaScript("window.__jackPicker && window.__jackPicker.remove(\(index))")
+    }
+
+    func clearPicks() {
+        picks = []
+        webView.evaluateJavaScript("window.__jackPicker && window.__jackPicker.clear()")
+    }
+
+    /// A pick or an Esc from the page.
+    func received(_ body: [String: Any]) {
+        if body["cancel"] as? Bool == true { picking = false; return }
+        guard let pick = BrowserPick(message: body) else { return }
+        let additive = body["additive"] as? Bool == true
+        if additive { picks.append(pick) } else { picks = [pick] }
+        if !additive { picking = false }
+        // At most a handful: past that the message drowns what the user wrote.
+        if picks.count > 6 { picks.removeFirst(picks.count - 6) }
+    }
+
+    /// Pictures of the picked elements, as files to attach, taken without the page's marks.
+    func snapshotPicks() async -> [BrowserPick] {
+        var result = picks
+        _ = try? await webView.evaluateJavaScript("window.__jackPicker && window.__jackPicker.hideMarks(true)")
+        let bounds = webView.bounds
+        let zoom = webView.pageZoom * webView.magnification
+        for index in result.indices {
+            let r = result[index].rect
+            let rect = CGRect(x: r.minX * zoom - 6, y: r.minY * zoom - 6, width: r.width * zoom + 12, height: r.height * zoom + 12)
+                .intersection(bounds)
+            guard !rect.isNull, rect.width >= 4, rect.height >= 4 else { continue }
+            let configuration = WKSnapshotConfiguration()
+            configuration.rect = rect
+            guard let image = try? await webView.takeSnapshot(configuration: configuration),
+                  let tiff = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff),
+                  let png = bitmap.representation(using: .png, properties: [:]) else { continue }
+            result[index].snapshot = try? ChatAttachments.store(png, fileExtension: "png")
+        }
+        _ = try? await webView.evaluateJavaScript("window.__jackPicker && window.__jackPicker.hideMarks(false)")
+        return result
+    }
+
+    /// A new page has none of the old picks; picking goes on in it.
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if !picks.isEmpty { picks = [] }
+        if picking { webView.evaluateJavaScript("window.__jackPicker && window.__jackPicker.start()") }
+    }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { fail(error) }
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { fail(error) }
@@ -581,6 +653,8 @@ private struct WebHost: NSViewRepresentable {
 
 struct BrowserPanel: View {
     @ObservedObject var session: BrowserSession
+    /// Sends a message about the picked elements to the agent, or leaves it in the agent's composer.
+    let onSend: (_ text: String, _ files: [String], _ now: Bool) -> Void
     @FocusState private var addressFocused: Bool
     private static let ports = [3000, 5173, 8080, 8000, 4321]
 
@@ -604,6 +678,17 @@ struct BrowserPanel: View {
                 .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .strokeBorder(addressFocused ? JackPalette.accent.opacity(0.6) : .clear, lineWidth: 1))
                 .padding(.horizontal, 4)
+                Button { session.setPicking(!session.picking) } label: {
+                    Image(systemName: "cursorarrow.rays").font(.system(size: 11.5, weight: .medium))
+                        .frame(width: 24, height: 24)
+                        .background(session.picking ? JackPalette.accent.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(session.picking ? JackPalette.accent : session.hasPage ? JackPalette.secondaryText : JackPalette.faint)
+                .disabled(!session.hasPage)
+                .keyboardShortcut("c", modifiers: [.command, .shift])
+                .help("Seleccionar elementos para hablarle al agente de ellos (⇧⌘C)")
                 toolButton("safari", help: "Abrir en el navegador del sistema", enabled: session.hasPage) {
                     if let url = session.webView.url { NSWorkspace.shared.open(url) }
                 }
@@ -629,6 +714,20 @@ struct BrowserPanel: View {
                     .background(JackPalette.canvas, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(JackPalette.hairline))
                 }
+            }
+            .overlay(alignment: .top) {
+                if session.picking {
+                    Text("Haz clic en un elemento · ⇧ clic para elegir varios · Esc para salir")
+                        .font(.system(size: 11, weight: .medium))
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(JackPalette.accent, in: Capsule())
+                        .foregroundStyle(.white)
+                        .padding(.top, 8)
+                        .allowsHitTesting(false)
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if !session.picks.isEmpty { BrowserPickComposer(session: session, onSend: onSend) }
             }
         }
         .onAppear { if !session.hasPage { addressFocused = true } }
@@ -670,3 +769,85 @@ struct BrowserPanel: View {
         .padding(16)
     }
 }
+
+/// What the user writes about the elements picked in the browser, over the bottom of the page.
+private struct BrowserPickComposer: View {
+    @ObservedObject var session: BrowserSession
+    let onSend: (_ text: String, _ files: [String], _ now: Bool) -> Void
+    @State private var draft = ""
+    @State private var sending = false
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ScrollView(.horizontal) {
+                HStack(spacing: 5) {
+                    ForEach(Array(session.picks.enumerated()), id: \.element.id) { index, pick in
+                        HStack(spacing: 4) {
+                            Text("\(index + 1)").font(.system(size: 9.5, weight: .bold))
+                                .frame(width: 15, height: 15).background(JackPalette.accent, in: Circle()).foregroundStyle(.white)
+                            Text(pick.label).font(.system(size: 11, weight: .medium, design: .monospaced)).lineLimit(1)
+                            Button { session.removePick(pick.id) } label: {
+                                Image(systemName: "xmark").font(.system(size: 8, weight: .bold))
+                            }
+                            .buttonStyle(.plain).foregroundStyle(JackPalette.muted)
+                            .help("Quitar")
+                        }
+                        .padding(.leading, 4).padding(.trailing, 7).padding(.vertical, 3)
+                        .background(JackPalette.panelStrong, in: Capsule())
+                        .help([pick.source, pick.selector].compactMap { $0 }.joined(separator: "\n"))
+                    }
+                    Button { session.setPicking(true) } label: {
+                        Label("Añadir", systemImage: "plus").font(.system(size: 11, weight: .medium))
+                    }
+                    .buttonStyle(.plain).foregroundStyle(JackPalette.accent)
+                    .help("Elegir otro elemento")
+                }
+            }
+            .scrollIndicators(.never)
+            HStack(alignment: .bottom, spacing: 6) {
+                TextField(session.picks.count == 1 ? "¿Qué quieres cambiar de este elemento?" : "¿Qué quieres cambiar de estos elementos?",
+                          text: $draft, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12.5))
+                    .lineLimit(1...6)
+                    .focused($focused)
+                    .onSubmit { send(now: true) }
+                Button("Al chat") { send(now: false) }
+                    .buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(JackPalette.muted)
+                    .help("Llevarlo al mensaje del agente para seguir escribiendo")
+                Button { send(now: true) } label: {
+                    Image(systemName: "arrow.up").font(.system(size: 10, weight: .bold))
+                        .frame(width: 22, height: 22)
+                        .background(canSend ? JackPalette.accent : JackPalette.panelStrong, in: Circle())
+                        .foregroundStyle(canSend ? Color.white : JackPalette.muted)
+                }
+                .buttonStyle(.plain).disabled(!canSend)
+                .help("Enviar al agente")
+            }
+        }
+        .padding(10)
+        .background(JackPalette.canvas, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(JackPalette.hairline))
+        .shadow(color: .black.opacity(0.18), radius: 10, y: 3)
+        .padding(10)
+        .onAppear { focused = true }
+        .onExitCommand { session.clearPicks() }
+    }
+
+    private var canSend: Bool { !sending && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    private func send(now: Bool) {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !sending, !now || !text.isEmpty else { return }
+        sending = true
+        Task {
+            let picks = await session.snapshotPicks()
+            onSend(BrowserPick.message(text, picks: picks), picks.compactMap(\.snapshot), now)
+            draft = ""
+            sending = false
+            session.clearPicks()
+        }
+    }
+}
+

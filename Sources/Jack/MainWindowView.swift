@@ -15,28 +15,32 @@ struct MainWindowView: View {
     /// The conversation whose side-question card is waiting for a question typed in it.
     @State private var composingAside: UUID?
     @State private var attachments: [UUID: [String]] = [:]
-    @State private var dropTargeted = false
+    /// Where the main chat and the agents opened beside it sit: columns of chats stacked one above another.
+    @AppStorage("agentPaneLayout") private var paneLayoutValue = ""
+    /// How many columns fit at the window's width.
+    @State private var columnRoom = 4
+    /// The chat shaded under a drag. Held, not observed: only the shades redraw while dragging.
+    @State private var paneDrops = PaneDropState()
     @State private var workspaceVisible = false
     @AppStorage("explorerVisible") private var explorerVisible = false
     @AppStorage("sidebarVisible") private var sidebarVisible = true
     @AppStorage("openTabs") private var openTabsValue = ""
     @AppStorage("transcriptMonospaced") private var monospaced = true
     @AppStorage(InterfaceStyle.key) private var interfaceStyle = InterfaceStyle.basic
-    @State private var visibleMessageCounts: [UUID: Int] = [:]
-    /// The chat follows the agent until the user scrolls up, and again once they return to the end.
-    @State private var following = true
-    /// The user is dragging, flicking or wheeling the transcript; only they can stop the chat from following.
-    @State private var userScrolling = false
     @State private var showingNewConversation = false
     @State private var pendingProvider: ChatProvider?
     @State private var pendingSpace: String?
     @State private var searchRequest = 0
-    @FocusState private var composerFocused: Bool
+    /// The composer being typed in: the main chat's or a pane's.
+    @FocusState private var focusedComposer: UUID?
     @AppStorage("collapsedSpaces") private var collapsedSpacesValue = ""
     @State private var renamingConversation: ChatConversation?
     @State private var renameText = ""
     @State private var deletingConversation: ChatConversation?
     @State private var showingSessionPicker = false
+    @AppStorage(ClaudeImportSheet.offeredKey) private var claudeImportOffered = false
+    /// Claude Code chats found on first launch, offered once.
+    @State private var firstImport: [ClaudeSessionSummary]?
     @State private var commandSelection = 0
     /// Draft for which the user closed the command list with Esc.
     @State private var dismissedCommandDraft: String?
@@ -44,6 +48,7 @@ struct MainWindowView: View {
     @State private var playgroundRequest: ChatImageRequest?
 
     private var selectedConversation: ChatConversation? { store.selectedConversation }
+    private var importedClaudeSessions: Set<String> { Set(store.conversations.compactMap { $0.provider == .claude ? $0.sessionID : nil }) }
     private var ice: Bool { interfaceStyle == .ice }
 
     var body: some View {
@@ -52,22 +57,39 @@ struct MainWindowView: View {
         }
         .environment(\.interfaceStyle, interfaceStyle)
         .frame(minWidth: 900, minHeight: 600)
-        .onChange(of: store.conversations.map(\.id)) { _, ids in
+        .onChange(of: store.conversations.map(\.id)) { previous, ids in
             workspace.prune(keeping: Set(ids))
             let open = openTabIDs.filter(Set(ids).contains)
             if open != openTabIDs { openTabsValue = OpenTabs.encode(open) }
+            // A sub-agent of an agent on screen opens under it by itself.
+            var layout = PaneLayout(encoded: paneLayoutValue).keeping(Set(ids))
+            let before = Set(previous)
+            for conversation in store.conversations where !before.contains(conversation.id) {
+                guard let parent = conversation.parentID else { continue }
+                if parent == store.selectedID {
+                    layout = layout.opening(conversation.id, under: .main)
+                } else if layout.contains(parent) {
+                    layout = layout.opening(conversation.id, under: .agent(parent))
+                }
+            }
+            setLayout(layout)
         }
         .onChange(of: store.selectedID, initial: true) { previous, id in
             guard let id else { return }
             let open = OpenTabs.opening(id, in: openTabIDs, after: previous)
             if open != openTabIDs { openTabsValue = OpenTabs.encode(open) }
+            // The agent now in the main chat leaves its pane.
+            let layout = PaneLayout(encoded: paneLayoutValue)
+            if layout.contains(id) { setLayout(layout.removing(id)) }
         }
+        .onChange(of: paneLayoutValue, initial: true) { _, _ in store.showInPanes(paneLayout.agents) }
         .onChange(of: store.imageRequests.filter(\.isPending).count) { before, now in
             // An agent is waiting for an image while the user is elsewhere: bounce the Dock icon once.
             if now > before, !NSApp.isActive { NSApp.requestUserAttention(.informationalRequest) }
         }
         .onAppear {
             workspace.attach = { id, paths in attach(paths, to: id) }
+            workspace.sendFromBrowser = { id, text, files, now in sendFromBrowser(text, files: files, to: id, now: now) }
             if drafts.isEmpty { drafts = memory.drafts }
             if attachments.isEmpty { attachments = memory.attachments }
         }
@@ -77,6 +99,11 @@ struct MainWindowView: View {
         }
         // Stellar Code's local models, so its cards and pickers know what is available.
         .task { await store.refreshLocalModels() }
+        .task {
+            guard !claudeImportOffered else { return }
+            let found = await ClaudeImportSheet.find(.quarter, excluding: importedClaudeSessions)
+            if found.isEmpty { claudeImportOffered = true } else { firstImport = found }
+        }
         .onChange(of: showingNewConversation) { _, showing in if showing { Task { await store.refreshLocalModels() } } }
         .focusedSceneValue(\.jackActions, actions)
         .sheet(isPresented: $showingNewConversation) {
@@ -93,8 +120,14 @@ struct MainWindowView: View {
                 showingNewConversation = false
             }
         }
+        .sheet(isPresented: Binding(get: { firstImport != nil }, set: { if !$0 { firstImport = nil; claudeImportOffered = true } })) {
+            ClaudeImportSheet(initial: firstImport, imported: importedClaudeSessions) { sessions in
+                store.importClaudeSessions(sessions)
+                firstImport = nil; claudeImportOffered = true
+            } onCancel: { firstImport = nil; claudeImportOffered = true }
+        }
         .sheet(isPresented: $showingSessionPicker) {
-            ClaudeSessionPicker(imported: Set(store.conversations.compactMap { $0.provider == .claude ? $0.sessionID : nil })) { session in
+            ClaudeSessionPicker(imported: importedClaudeSessions) { session in
                 showingSessionPicker = false
                 resumeClaudeSession(session)
             } onCancel: { showingSessionPicker = false }
@@ -179,6 +212,7 @@ struct MainWindowView: View {
             onSetUnread: store.setUnread,
             onContinueInTerminal: continueInTerminal,
             onReloadFromClaude: reloadFromClaude,
+            onOpenInPane: openInPane,
             onHide: toggleSidebar,
             searchRequest: searchRequest
         )
@@ -195,7 +229,7 @@ struct MainWindowView: View {
             } trailing: {
                 if let conversation {
                     WorkspacePane(sessions: workspace, conversationID: conversation.id, projectPath: conversation.projectPath,
-                                  onClose: { withoutAnimation { workspaceVisible = false }; composerFocused = true })
+                                  onClose: { withoutAnimation { workspaceVisible = false }; focusedComposer = store.selectedID })
                         .equatable()
                 }
             }
@@ -227,7 +261,7 @@ struct MainWindowView: View {
 
     @ViewBuilder private var centerColumn: some View {
         if interfaceStyle == .ice {
-            conversationPanel
+            chatWithPanes
                 .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
         } else {
             basicCenterColumn
@@ -244,12 +278,175 @@ struct MainWindowView: View {
                                      explorerVisible: explorerVisible, onToggle: toggleWorkspace, onToggleExplorer: toggleExplorer)
                         .equatable()
                 }
-            conversationPanel
+            chatWithPanes
                 .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
         }
     }
 
     private var openTabIDs: [UUID] { OpenTabs.decode(openTabsValue) }
+
+    /// The chats beside the main one, without agents that are gone or now in the main chat.
+    private var paneLayout: PaneLayout {
+        var ids = Set(store.conversations.map(\.id))
+        if let selected = store.selectedID { ids.remove(selected) }
+        return PaneLayout(encoded: paneLayoutValue).keeping(ids)
+    }
+    private func setLayout(_ layout: PaneLayout) {
+        let value = layout.encoded
+        if value != paneLayoutValue { withoutAnimation { paneLayoutValue = value } }
+    }
+    /// Opens an agent in a column at the right; with nothing selected it becomes the main chat.
+    private func openInPane(_ id: UUID) {
+        guard store.conversations.contains(where: { $0.id == id }) else { return }
+        guard let selected = store.selectedID, selected != id else { store.select(id); return }
+        setLayout(paneLayout.opening(id))
+    }
+    /// The pane's agent takes the main chat, and the one there takes its pane.
+    private func promotePane(_ id: UUID) {
+        let layout = paneLayout
+        setLayout(store.selectedID.map { layout.replacing(id, with: $0) } ?? layout.removing(id))
+        withoutAnimation { store.select(id) }
+        focusedComposer = store.selectedID
+    }
+    private func closePane(_ id: UUID) {
+        setLayout(paneLayout.removing(id))
+        if focusedComposer == id { focusedComposer = store.selectedID }
+    }
+    /// An agent dragged from the sidebar or by its pane's bar, dropped on a chat: beside it, above, below or in its place.
+    private func dropAgent(_ id: UUID, on target: PaneLayout.Slot, _ zone: PaneLayout.Zone) {
+        guard store.conversations.contains(where: { $0.id == id }) else { return }
+        guard let selected = store.selectedID else { store.select(id); return }
+        let layout = paneLayout
+        if target == .main, zone == .center {
+            // In the main chat's place: it becomes the main chat, and the one there takes its pane if it had one.
+            if layout.contains(id) { promotePane(id) } else if id != selected { withoutAnimation { store.select(id) } }
+            return
+        }
+        // The main chat's own agent, dragged from the sidebar, moves the main chat.
+        setLayout(layout.placing(id == selected ? .main : .agent(id), at: target, zone))
+        if id != selected, store.conversations.first(where: { $0.id == id })?.parentID == nil { focusedComposer = id }
+    }
+    /// The columns on screen: the main chat's and the nearest that fit. The rest come back when the window grows.
+    private var visibleColumns: [Int] { paneLayout.visibleColumns(columnRoom) }
+    private var visiblePaneIDs: [UUID] {
+        guard selectedConversation != nil else { return [] }
+        let layout = paneLayout
+        return visibleColumns.flatMap { layout.columns[$0] }.compactMap { if case .agent(let id) = $0 { id } else { nil } }
+    }
+    /// Brings a chat hidden for lack of room back, under the main chat.
+    private func revealPane(_ id: UUID) {
+        let layout = paneLayout
+        guard let main = layout.position(of: .main), let last = layout.columns[main.column].last else { return }
+        setLayout(layout.placing(.agent(id), at: last, .bottom))
+        focusedComposer = id
+    }
+    /// The composers ⌥⌘← and ⌥⌘→ move between: the main chat's and those of the agents beside it.
+    private func cycleComposer(_ delta: Int) {
+        let ids = (store.selectedID.map { [$0] } ?? []) + visiblePaneIDs.filter { id in
+            store.conversations.first { $0.id == id }?.parentID == nil
+        }
+        guard !ids.isEmpty else { return }
+        let index = focusedComposer.flatMap(ids.firstIndex(of:)) ?? 0
+        focusedComposer = ids[(index + delta + ids.count) % ids.count]
+    }
+
+    /// The main chat and the agents beside it: columns the user resizes, each a stack of chats.
+    /// Dragging an agent over a chat shows where it would land; files dropped on a chat attach to its agent.
+    private var chatWithPanes: some View {
+        let layout = selectedConversation == nil ? PaneLayout() : paneLayout
+        let visible = layout.visibleColumns(columnRoom)
+        let hidden = layout.columns.indices.filter { !visible.contains($0) }.flatMap { layout.columns[$0] }
+            .compactMap { if case .agent(let id) = $0 { id } else { nil } }
+        return PaneStack(.horizontal, count: visible.count, key: "agentPaneWidths") {
+            ForEach(visible, id: \.self) { column in
+                let slots = layout.columns[column]
+                PaneStack(.vertical, count: slots.count, key: "agentPaneHeights.\(column)") {
+                    ForEach(slots, id: \.self) { slot in paneCell(slot, hidden: hidden) }
+                }
+            }
+        }
+        // Only a change in how many columns fit crosses into the window's state, not every point of a resize.
+        .onGeometryChange(for: Int.self) { AgentPanes.columns(in: $0.size.width) } action: { room in
+            if room != columnRoom { withoutAnimation { columnRoom = room } }
+        }
+    }
+
+    @ViewBuilder private func paneCell(_ slot: PaneLayout.Slot, hidden: [UUID]) -> some View {
+        switch slot {
+        case .main:
+            PaneCell(slot, drops: paneDrops, accepts: selectedConversation != nil, onFiles: { providers in
+                guard let id = store.selectedID else { return }
+                AttachmentDrop.load(providers) { attach($0, to: id) }
+            }, onAgent: { dropAgent($0, on: .main, $1) }) {
+                conversationPanel
+                    .overlay(alignment: .topTrailing) { if !hidden.isEmpty { hiddenPanesMenu(hidden) } }
+            }
+        case .agent(let id):
+            PaneCell(slot, drops: paneDrops, onFiles: { providers in AttachmentDrop.load(providers) { attach($0, to: id) } },
+                     onAgent: { dropAgent($0, on: slot, $1) }) {
+                agentPane(id)
+            }
+        }
+    }
+
+    /// Agents left without room beside the chat, one click away.
+    private func hiddenPanesMenu(_ ids: [UUID]) -> some View {
+        Menu {
+            Section("Sin espacio en la ventana") {
+                ForEach(ids, id: \.self) { id in
+                    if let conversation = store.conversations.first(where: { $0.id == id }) {
+                        Button(conversation.title) { revealPane(id) }
+                    }
+                }
+            }
+            Divider()
+            Button("Cerrar estos paneles") { setLayout(ids.reduce(paneLayout) { $0.removing($1) }) }
+        } label: {
+            Label("+\(ids.count)", systemImage: "rectangle.split.3x1")
+                .font(.system(size: 11, weight: .semibold))
+                .padding(.horizontal, 9).padding(.vertical, 4)
+                .jackGlass(in: Capsule(), basic: JackPalette.panelStrong, interactive: true)
+        }
+        .menuStyle(.button).buttonStyle(.plain).fixedSize()
+        .help("Agentes abiertos al lado que no caben; amplía la ventana o elige uno")
+        .padding(.top, ice ? 52 : 8).padding(.trailing, 10)
+    }
+
+    /// An agent beside the selected one looks like the main chat; a sub-agent gets the compact view, as the helper it is.
+    @ViewBuilder private func agentPane(_ id: UUID) -> some View {
+        if let conversation = store.conversations.first(where: { $0.id == id }) {
+            let status = store.statuses[id] ?? .idle
+            let parentTitle = conversation.parentID.flatMap { parent in store.conversations.first { $0.id == parent }?.title }
+            if conversation.parentID != nil {
+                AgentPaneView(
+                    conversation: conversation,
+                    status: status,
+                    approvals: store.approvals[id] ?? [],
+                    locating: store.locating.contains(id),
+                    parentTitle: parentTitle,
+                    monospaced: monospaced,
+                    onSend: { store.send($0, to: id) },
+                    onStop: { store.stop(id) },
+                    onPromote: { promotePane(id) },
+                    onClose: { closePane(id) },
+                    onRespond: { approval, choice, message in store.respond(conversationID: id, approvalID: approval, choice: choice, message: message) },
+                    onAnswer: { approval, answers in store.answer(conversationID: id, approvalID: approval, answers: answers) }
+                )
+                .equatable()
+                .jackSurface(.canvas)
+            } else {
+                VStack(spacing: 0) {
+                    AgentPaneHeader(conversation: conversation, status: status, subtitle: URL(fileURLWithPath: conversation.projectPath).lastPathComponent,
+                                    onStop: nil, onPromote: { promotePane(id) }, onClose: { closePane(id) })
+                        .equatable()
+                    Rectangle().fill(JackPalette.hairline).frame(height: 1)
+                    conversationView(conversation, inPane: true)
+                }
+                .jackSurface(.canvas)
+            }
+        }
+    }
+
 
     private var tabModels: [AgentTabModel] {
         let byID = Dictionary(uniqueKeysWithValues: store.conversations.map { ($0.id, $0) })
@@ -288,13 +485,14 @@ struct MainWindowView: View {
         }
     }
 
-    private func conversationView(_ conversation: ChatConversation) -> some View {
+    /// The whole chat of an agent: the selected one, or one in a pane, which looks the same.
+    private func conversationView(_ conversation: ChatConversation, inPane: Bool = false) -> some View {
         let status = store.statuses[conversation.id] ?? .idle
         return VStack(spacing: 0) {
-            if let error = store.errorMessage, !error.isEmpty { errorBanner(error) }
+            if !inPane, let error = store.errorMessage, !error.isEmpty { errorBanner(error) }
             messageHistory(conversation)
-                .jackEdgeBar(.top) { iceTabs }
-                .jackEdgeBar(.bottom) { bottomPanels(conversation, status: status) }
+                .jackEdgeBar(.top) { if !inPane { iceTabs } }
+                .jackEdgeBar(.bottom) { bottomPanels(conversation, status: status, inPane: inPane) }
         }
         .onChange(of: store.recalled[conversation.id]) { _, message in
             guard let message else { return }
@@ -302,15 +500,11 @@ struct MainWindowView: View {
             store.clearRecalled(conversation.id)
         }
         .jackSurface(.canvas)
-        .onDrop(of: AttachmentDrop.types, isTargeted: $dropTargeted) { providers in
-            AttachmentDrop.load(providers) { attach($0, to: conversation.id) }
-            return true
-        }
-        .overlay { if dropTargeted { AttachmentDropOverlay() } }
-        .modifier(ImagePlaygroundPresenter(request: $playgroundRequest, onFinish: finishImage))
+        // One presenter, on the main chat: a sheet per pane would open Image Playground several times.
+        .modifier(ImagePlaygroundPresenter(request: inPane ? .constant(nil) : $playgroundRequest, onFinish: finishImage))
         .onChange(of: store.imageRequests.first { $0.conversationID == conversation.id && $0.isPending }?.id, initial: true) { _, id in
             // Opens Image Playground as soon as the agent asks, if the user is looking at this chat.
-            guard let id, playgroundRequest == nil, NSApp.isActive, let request = store.imageRequest(id) else { return }
+            guard !inPane, let id, playgroundRequest == nil, NSApp.isActive, let request = store.imageRequest(id) else { return }
             playgroundRequest = request
         }
         .onChange(of: status.isActive) { wasActive, active in
@@ -320,14 +514,15 @@ struct MainWindowView: View {
     }
 
     /// Approvals, live activity, queued messages, side questions, commands and the composer.
-    private func bottomPanels(_ conversation: ChatConversation, status: ChatStatus) -> some View {
+    private func bottomPanels(_ conversation: ChatConversation, status: ChatStatus, inPane: Bool) -> some View {
         VStack(spacing: 0) {
             if let approvals = store.approvals[conversation.id], !approvals.isEmpty {
-                approvalsPanel(approvals, conversation: conversation)
+                approvalsPanel(approvals, conversation: conversation, inPane: inPane)
             }
             imageRequestsPanel(conversation)
             if isActive(conversation) {
-                AgentActivityView(conversation: conversation, status: status, tokens: store.tokenUsage[conversation.id], projectPath: conversation.projectPath)
+                AgentActivityView(conversation: conversation, status: status, tokens: store.tokenUsage[conversation.id], projectPath: conversation.projectPath,
+                                  locating: store.locating.contains(conversation.id))
                     .padding(.vertical, ice ? 6 : 0)
                     .jackGlass(in: RoundedRectangle(cornerRadius: 12, style: .continuous), basic: .clear)
                     .frame(maxWidth: Self.columnWidth).frame(maxWidth: .infinity)
@@ -345,7 +540,7 @@ struct MainWindowView: View {
             ChatProgressPanel(monitor: store.progress, conversationID: conversation.id, width: Self.columnWidth)
             AsideView(asides: store.asides, conversationID: conversation.id, provider: conversation.provider,
                       composing: Binding(get: { composingAside == conversation.id }, set: { composingAside = $0 ? conversation.id : nil }),
-                      onAsk: { store.askAside($0, in: conversation.id); composerFocused = true })
+                      onAsk: { store.askAside($0, in: conversation.id); focusedComposer = conversation.id })
             if let query = commandQuery(for: conversation) {
                 let matches = CommandSuggestions.matches(availableComposerCommands(conversation), query: query)
                 CommandSuggestions(commands: matches, prefix: commandPrefix(conversation), loading: store.isLoadingCommands(for: conversation),
@@ -357,124 +552,16 @@ struct MainWindowView: View {
                     .onAppear { store.loadCommands(for: conversation) }
                     .onChange(of: query) { _, _ in commandSelection = 0 }
             }
-            composer(conversation)
+            composer(conversation, inPane: inPane)
         }
     }
 
     private func messageHistory(_ conversation: ChatConversation) -> some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                // A plain stack, not a lazy one: while the agent streams, the chat keeps scrolling itself to the end,
-                // and a LazyVStack then sometimes had no row created in view, leaving the chat blank until the user
-                // scrolled. Only the last 100 messages are shown, and rows are Equatable, so the cost stays small.
-                VStack(alignment: .leading, spacing: 0) {
-                    if conversation.messages.isEmpty {
-                        // Only on an empty chat: any row above the messages kept the bottom-anchored lazy stack
-                        // from drawing the rows in view.
-                        ConversationHeader(conversation: conversation).equatable()
-                        ConversationWelcome(conversation: conversation) { text in send(text, in: conversation) }
-                            .padding(.top, 40)
-                    } else {
-                        let count = visibleMessageCounts[conversation.id] ?? 100
-                        let start = max(0, conversation.messages.count - count)
-                        if start > 0 {
-                            Button("Cargar mensajes anteriores") {
-                                visibleMessageCounts[conversation.id] = count + 100
-                            }
-                            .font(.system(size: 11, weight: .medium))
-                            .buttonStyle(.plain)
-                            .foregroundStyle(JackPalette.accent)
-                            .frame(maxWidth: .infinity)
-                            .padding(.bottom, 16)
-                        }
-                        let lastID = conversation.messages.last?.id
-                        let active = isActive(conversation)
-                        ForEach(start..<conversation.messages.count, id: \.self) { index in
-                            let message = conversation.messages[index]
-                            ChatMessageRow(
-                                message: message,
-                                provider: conversation.provider,
-                                projectPath: conversation.projectPath,
-                                isStreaming: active && message.id == lastID,
-                                topSpacing: index == start ? 0 : rowSpacing(previous: conversation.messages[index - 1].role, current: message.role),
-                                monospaced: monospaced
-                            )
-                            .equatable()
-                            .id(message.id)
-                        }
-                    }
-                    Color.clear.frame(height: 1).id(Self.bottomID)
-                }
-                .frame(maxWidth: Self.columnWidth)
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 22)
-                .padding(.top, 18).padding(.bottom, 20)
-            }
-            .defaultScrollAnchor(.bottom)
-            // Only the follow flag crosses into view state, and only when it flips, so scrolling does not re-render the chat.
-            .onScrollGeometryChange(for: ChatScrollMetrics.self) { geometry in
-                ChatScrollMetrics(offset: geometry.contentOffset.y, content: geometry.contentSize.height,
-                                  visible: geometry.containerSize.height,
-                                  // Ice's composer floats over the end of the chat: its inset is part of the scrollable range.
-                                  distanceToBottom: geometry.contentSize.height + geometry.contentInsets.bottom - geometry.visibleRect.maxY)
-            } action: { old, new in
-                var follow = following
-                if new.distanceToBottom < 24 {
-                    follow = true
-                } else if userScrolling, new.offset < old.offset - 0.5 {
-                    // Only the user scrolling back stops the chat from following; SwiftUI also moves the offset
-                    // when it measures rows above, and that used to leave the chat stuck mid-conversation.
-                    follow = false
-                }
-                if follow != following { following = follow }
-                if !userScrolling, new.distanceToBottom < -1 {
-                    // The content shrank (a reply rewritten shorter, a panel below gone, a row smaller than
-                    // estimated) and left the view past the last line, showing a blank chat until the next scroll.
-                    DispatchQueue.main.async { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
-                } else if follow, new.distanceToBottom > 0.5, new.content != old.content || new.visible != old.visible {
-                    // New text, a tool row or a panel below the chat: stay on the agent's last line.
-                    DispatchQueue.main.async { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
-                }
-            }
-            .onScrollPhaseChange { _, phase in
-                let scrolling = phase == .tracking || phase == .interacting || phase == .decelerating
-                if scrolling != userScrolling { userScrolling = scrolling }
-            }
-            .onChange(of: conversation.messages.count) { _, _ in
-                if following { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
-            }
-            .onChange(of: conversation.id) { _, _ in
-                following = true
-                proxy.scrollTo(Self.bottomID, anchor: .bottom)
-            }
-            // A second scroll after the first layout makes the lazy list create the rows in view.
-            .onAppear { DispatchQueue.main.async { proxy.scrollTo(Self.bottomID, anchor: .bottom) } }
-            .overlay(alignment: .bottom) {
-                ZStack {
-                    if !following {
-                        Button {
-                            following = true
-                            withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
-                        } label: {
-                            Label("Volver a la conversación", systemImage: "arrow.down")
-                                .font(.system(size: 11.5, weight: .medium))
-                                .padding(.horizontal, 12).padding(.vertical, 6)
-                                .jackGlass(in: Capsule(), basic: JackPalette.panelStrong, interactive: true)
-                                .overlay { if !ice { Capsule().strokeBorder(JackPalette.hairline) } }
-                                .shadow(color: .black.opacity(ice ? 0 : 0.15), radius: 6, y: 2)
-                                .contentShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.bottom, 12)
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
-                    }
-                }
-                .animation(.easeOut(duration: 0.15), value: following)
-            }
-        }
+        ChatTranscript(conversation: conversation, active: isActive(conversation), monospaced: monospaced, ice: ice,
+                       onPrompt: { send($0, in: conversation) })
+            .equatable()
     }
 
-    private static let bottomID = "jack-chat-bottom"
     /// Widest line of the transcript and composer; wider lines are hard to read.
     static let columnWidth: CGFloat = 900
 
@@ -523,12 +610,6 @@ struct MainWindowView: View {
         }
     }
 
-    private func rowSpacing(previous: String, current: String) -> CGFloat {
-        let activity: Set<String> = ["tool", "reasoning"]
-        if activity.contains(previous), activity.contains(current) { return 3 }
-        if previous == "reasoning" || previous == "tool" || current == "reasoning" || current == "tool" { return 10 }
-        return 16
-    }
 
     @ViewBuilder private func imageRequestsPanel(_ conversation: ChatConversation) -> some View {
         let requests = store.imageRequests.filter { $0.conversationID == conversation.id }
@@ -557,13 +638,13 @@ struct MainWindowView: View {
         }
     }
 
-    private func approvalsPanel(_ approvals: [ChatApproval], conversation: ChatConversation) -> some View {
+    private func approvalsPanel(_ approvals: [ChatApproval], conversation: ChatConversation, inPane: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(approvals) { approval in
                 ApprovalCard(approval: approval, provider: conversation.provider, projectPath: conversation.projectPath,
                              repliesInChat: store.canSend(to: conversation.id) && store.statuses[conversation.id]?.isActive == true,
                              // ⌘↩ belongs to the composer while it holds a message: it interrupts and sends it.
-                             shortcutsEnabled: (drafts[conversation.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                             shortcutsEnabled: !inPane && (drafts[conversation.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                              onRespond: { choice, message in store.respond(conversationID: conversation.id, approvalID: approval.id, choice: choice, message: message) },
                              onAnswer: { answers in store.answer(conversationID: conversation.id, approvalID: approval.id, answers: answers) })
             }
@@ -572,7 +653,7 @@ struct MainWindowView: View {
         .padding(.horizontal, 22).padding(.bottom, 10)
     }
 
-    private func composer(_ conversation: ChatConversation) -> some View {
+    private func composer(_ conversation: ChatConversation, inPane: Bool = false) -> some View {
         let status = store.statuses[conversation.id] ?? .idle
         let busy = status.isActive
         let draft = drafts[conversation.id] ?? ""
@@ -624,7 +705,7 @@ struct MainWindowView: View {
                     }
                 TextEditor(text: draftBinding(for: conversation.id))
                     .font(.system(size: textSize, design: design))
-                    .focused($composerFocused)
+                    .focused($focusedComposer, equals: conversation.id)
                     .scrollContentBackground(.hidden)
                     .modifier(DisableWritingTools())
                     .accessibilityLabel("Mensaje")
@@ -743,7 +824,8 @@ struct MainWindowView: View {
                             .background(JackPalette.panelStrong, in: RoundedRectangle(cornerRadius: ice ? 12 : 6, style: .continuous))
                     }
                     .buttonStyle(.plain)
-                    .keyboardShortcut(".", modifiers: .command)
+                    // ⌘. stops the main chat's agent; a pane's has its button.
+                    .keyboardShortcut(inPane ? nil : KeyboardShortcut(".", modifiers: .command))
                     .help("Detener (⌘.)")
                     .accessibilityLabel("Detener")
                 }
@@ -767,7 +849,7 @@ struct MainWindowView: View {
         .overlay {
             if !ice {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(composerFocused ? JackPalette.accent.opacity(0.45) : JackPalette.hairline, lineWidth: 1)
+                    .strokeBorder(focusedComposer == conversation.id ? JackPalette.accent.opacity(0.45) : JackPalette.hairline, lineWidth: 1)
             }
         }
         .frame(maxWidth: Self.columnWidth).frame(maxWidth: .infinity)
@@ -799,7 +881,7 @@ struct MainWindowView: View {
         drafts[conversation.id] = "\(commandPrefix(conversation))\(command.name) "
         resetHistory(for: conversation.id)
         commandSelection = 0
-        composerFocused = true
+        focusedComposer = store.selectedID
     }
 
     private func draftBinding(for id: UUID) -> Binding<String> {
@@ -877,7 +959,6 @@ struct MainWindowView: View {
         let text = (drafts[conversation.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let files = attachments[conversation.id] ?? []
         guard !text.isEmpty || !files.isEmpty, store.canSend(to: conversation.id) else { return }
-        if store.selectedID != conversation.id { store.select(conversation.id) }
         store.errorMessage = nil
         store.send(text, attachments: files, to: conversation.id, interrupting: interrupting)
         guard store.errorMessage == nil else { return }
@@ -914,7 +995,7 @@ struct MainWindowView: View {
         var files = message.attachments
         for path in attachments[id] ?? [] where !files.contains(path) { files.append(path) }
         attachments[id] = files.isEmpty ? nil : files
-        composerFocused = true
+        focusedComposer = id
     }
 
     /// The panel appears at once: animating its width would relayout the chat and the terminal on every frame.
@@ -923,7 +1004,7 @@ struct MainWindowView: View {
         withoutAnimation {
             if workspaceVisible, workspace.selectedTab(for: id)?.kind == tool {
                 workspaceVisible = false
-                composerFocused = true
+                focusedComposer = store.selectedID
             } else {
                 workspace.reveal(tool, for: id)
                 workspaceVisible = true
@@ -945,18 +1026,31 @@ struct MainWindowView: View {
         withTransaction(transaction, change)
     }
 
+    /// A message about elements picked in the browser. When the agent cannot take it now, or the user
+    /// wants to keep writing, it waits in the agent's composer with the pictures attached.
+    private func sendFromBrowser(_ text: String, files: [String], to id: UUID, now: Bool) {
+        if now, store.canSend(to: id) {
+            store.errorMessage = nil
+            store.send(text, attachments: files, to: id)
+            if store.errorMessage == nil { return }
+        }
+        let current = drafts[id] ?? ""
+        drafts[id] = [current, text].filter { !$0.isEmpty }.joined(separator: "\n\n")
+        attach(files, to: id)
+        focusedComposer = id
+    }
+
     private func attach(_ paths: [String], to id: UUID) {
         guard !paths.isEmpty else { return }
         var current = attachments[id] ?? []
         for path in paths where !current.contains(path) { current.append(path) }
         attachments[id] = current
-        composerFocused = true
+        focusedComposer = store.selectedID
     }
 
     private func send(_ text: String, in conversation: ChatConversation) {
         guard !isActive(conversation) else { return }
-        if store.selectedID != conversation.id { store.select(conversation.id) }
-        store.send(text)
+        store.send(text, to: conversation.id)
     }
 
     private func isActive(_ conversation: ChatConversation) -> Bool {
@@ -968,7 +1062,7 @@ struct MainWindowView: View {
         Task {
             let loaded = await Task.detached(priority: .userInitiated) { ClaudeSessions.load(session) }.value
             store.importClaudeSession(session, messages: loaded.messages, model: loaded.model)
-            composerFocused = true
+            focusedComposer = store.selectedID
         }
     }
 
@@ -1007,11 +1101,17 @@ struct MainWindowView: View {
     }
 
     private func createAgent(_ request: NewAgentRequest) {
+        if request.projectPath.isEmpty {
+            // Automatic: the agent's model chooses the folder and the agent moves to that space.
+            store.createLocating(request.firstMessage, provider: request.provider, model: request.model.isEmpty ? nil : request.model,
+                                 effort: request.effort, projects: ProjectIndex.shared.ordered(recent: recentSpaces))
+            return
+        }
         let previous = store.selectedID
         store.create(projectPath: request.projectPath, provider: request.provider, model: request.model.isEmpty ? nil : request.model, effort: request.effort)
         guard store.selectedID != previous, let id = store.selectedID else { return }
         if request.firstMessage.isEmpty {
-            composerFocused = true
+            focusedComposer = store.selectedID
         } else if let conversation = store.conversations.first(where: { $0.id == id }) {
             send(request.firstMessage, in: conversation)
         }
@@ -1022,7 +1122,7 @@ struct MainWindowView: View {
         var seen = Set<String>()
         var paths = store.conversations.sorted { $0.updatedAt > $1.updatedAt }.map(\.projectPath)
         if let last = UserDefaults.standard.string(forKey: "lastProjectPath") { paths.append(last) }
-        return paths.filter { FileManager.default.fileExists(atPath: $0) && seen.insert($0).inserted }
+        return paths.filter { $0 != ProjectLocator.unplacedFolder && FileManager.default.fileExists(atPath: $0) && seen.insert($0).inserted }
     }
 
     // MARK: Keyboard navigation
@@ -1043,7 +1143,7 @@ struct MainWindowView: View {
                 if ids.indices.contains(index) { store.select(ids[index]) }
             },
             nextAttention: selectNextAttention,
-            focusComposer: { composerFocused = true },
+            focusComposer: { focusedComposer = store.selectedID },
             focusSearch: { searchRequest += 1 },
             toggleUnread: {
                 guard let conversation = selectedConversation else { return }
@@ -1054,7 +1154,13 @@ struct MainWindowView: View {
             toggleSimulator: { toggleWorkspace(.simulator) },
             toggleExplorer: toggleExplorer,
             toggleSidebar: toggleSidebar,
-            closeTab: { store.selectedID.map(closeTab) },
+            // ⌘W in a pane's composer closes that pane, not the main chat's tab.
+            closeTab: {
+                if let id = focusedComposer, visiblePaneIDs.contains(id) { closePane(id) } else { store.selectedID.map(closeTab) }
+            },
+            cyclePane: cycleComposer,
+            closePanes: { setLayout(PaneLayout()); focusedComposer = store.selectedID },
+            paneCount: visiblePaneIDs.count,
             enterBatterySaver: enterBatterySaver,
             hasSelection: selectedConversation != nil,
             agentCount: store.conversations.count
@@ -1097,83 +1203,5 @@ struct MainWindowView: View {
 private struct DisableWritingTools: ViewModifier {
     func body(content: Content) -> some View {
         content.writingToolsBehavior(.disabled)
-    }
-}
-
-
-/// The top of a transcript, like a CLI's banner: who the agent is, its model and its folder.
-private struct ChatScrollMetrics: Equatable {
-    let offset: CGFloat
-    let content: CGFloat
-    let visible: CGFloat
-    let distanceToBottom: CGFloat
-}
-
-private struct ConversationHeader: View, Equatable {
-    let conversation: ChatConversation
-
-    static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.conversation.provider == rhs.conversation.provider && lhs.conversation.model == rhs.conversation.model
-            && lhs.conversation.effort == rhs.conversation.effort && lhs.conversation.projectPath == rhs.conversation.projectPath
-    }
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            providerGlyph(conversation.provider, size: 34)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(conversation.provider.title).font(.mono(12.5, weight: .semibold))
-                Text([conversation.model.isEmpty ? "Modelo por defecto" : conversation.model, conversation.effort].filter { !$0.isEmpty }.joined(separator: " · "))
-                    .font(.mono(12)).foregroundStyle(JackPalette.muted)
-                Text((conversation.projectPath as NSString).abbreviatingWithTildeInPath)
-                    .font(.mono(12)).foregroundStyle(JackPalette.faint)
-                    .lineLimit(1).truncationMode(.middle)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.bottom, 14)
-        .overlay(alignment: .bottom) { Rectangle().fill(JackPalette.hairline).frame(height: 1) }
-    }
-}
-
-private struct ConversationWelcome: View {
-    let conversation: ChatConversation
-    let onPrompt: (String) -> Void
-    private let suggestions: [(symbol: String, text: String)] = [
-        ("doc.text.magnifyingglass", "Resume este proyecto"),
-        ("arrow.triangle.branch", "Revisa los cambios recientes"),
-        ("list.bullet.clipboard", "Ayúdame a planificar el siguiente paso"),
-    ]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            HStack(spacing: 12) {
-                providerGlyph(conversation.provider, size: 38)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("¿Qué hacemos hoy?").font(.system(size: 22, weight: .semibold))
-                    Text("\(conversation.provider.title) está listo en \(URL(fileURLWithPath: conversation.projectPath).lastPathComponent).")
-                        .font(.system(size: 13)).foregroundStyle(JackPalette.muted)
-                }
-            }
-            VStack(spacing: 0) {
-                ForEach(Array(suggestions.enumerated()), id: \.offset) { index, suggestion in
-                    if index > 0 { Divider().padding(.leading, 40) }
-                    Button { onPrompt(suggestion.text) } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: suggestion.symbol).foregroundStyle(JackPalette.accent).frame(width: 18)
-                            Text(suggestion.text).font(.system(size: 13))
-                            Spacer()
-                            Image(systemName: "arrow.up").font(.system(size: 10, weight: .bold)).foregroundStyle(JackPalette.faint)
-                        }
-                        .padding(.horizontal, 12).padding(.vertical, 10)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(JackPalette.hairline, lineWidth: 0.5))
-        }
-        .frame(maxWidth: 520, alignment: .leading)
-        .frame(maxWidth: .infinity)
     }
 }
