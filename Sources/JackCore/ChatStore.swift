@@ -53,6 +53,9 @@ import Foundation
     private var paned = Set<UUID>()
     private var queue: [(UUID, String)] = []
     private var runs: [UUID: Task<Void, Never>] = [:]
+    /// Events and cleanup belong to a specific turn, even when the driver is reused.
+    private var runGenerations: [UUID: UUID] = [:]
+    private var stoppingRuns = Set<UUID>()
     private var drivers: [UUID: any ChatDriver] = [:]
     /// Drivers whose agent stays open between turns, reused for the conversation's next message.
     private var liveDrivers: [UUID: any ChatDriver] = [:]
@@ -736,7 +739,11 @@ import Foundation
         }
         // A kept-alive agent reads its queued messages right after the interruption; the rest are sent when the turn ends.
         driver.stop(keepingQueued: true)
-        if !driver.keepsAlive { runs[id]?.cancel() }
+        if driver.awaitsStopAcknowledgement {
+            stoppingRuns.insert(id)
+            flush(id); settleActivities(id)
+            statuses[id] = .idle
+        } else if !driver.keepsAlive { runs[id]?.cancel() }
         approvals[id] = []
     }
     /// Takes a waiting message back, to edit or discard it. Nil when the agent already read it.
@@ -827,25 +834,38 @@ import Foundation
                                              attachments: (recalled[id]?.attachments ?? []) + attachments)
         }
         if let driver = drivers[id] {
+            stoppingRuns.insert(id)
+            flush(id)
+            settleActivities(id)
             driver.stop()
-            // A kept-alive agent ends its turn itself once interrupted.
-            if !driver.keepsAlive { runs[id]?.cancel() }
-            if runs[id] == nil { statuses[id] = .idle }
-        } else { statuses[id] = .idle }
+            // Protocol interruptions keep their reservation until acknowledgement or a bounded fallback.
+            if !driver.keepsAlive && !driver.awaitsStopAcknowledgement {
+                runs[id]?.cancel()
+                if let generation = runGenerations[id] { finishRun(id, generation: generation, cancelled: true) }
+            }
+        }
+        statuses[id] = .idle
         approvals[id] = []
+        save(id)
     }
     public func respond(conversationID id: UUID, approvalID: String, allow: Bool) {
         respond(conversationID: id, approvalID: approvalID, choice: allow ? "allow" : "deny", message: nil)
     }
     public func respond(conversationID id: UUID, approvalID: String, choice: String, message: String? = nil) {
         guard let driver = drivers[id] else { return }
+        let generation = runGenerations[id]
         Task { [weak self] in
             do {
                 try await driver.respond(approvalID: approvalID, choice: choice, message: message)
-                guard let self else { return }
+                guard let self, self.runGenerations[id] == generation,
+                      self.approvals[id]?.contains(where: { $0.id == approvalID }) == true else { return }
                 self.approvals[id]?.removeAll { $0.id == approvalID }
-                self.statuses[id] = self.approvals[id]?.isEmpty == false ? .waiting : self.runs[id] != nil ? .running : .idle
-            } catch { self?.errorMessage = "No se pudo responder al permiso: \(error.localizedDescription)" }
+                self.restoreStatus(id)
+            } catch {
+                guard let self, self.runGenerations[id] == generation, !self.stoppingRuns.contains(id),
+                      self.approvals[id]?.contains(where: { $0.id == approvalID }) == true else { return }
+                self.errorMessage = "No se pudo responder al permiso: \(error.localizedDescription)"
+            }
         }
     }
     public func rename(_ id: UUID, title: String) {
@@ -855,13 +875,19 @@ import Foundation
     }
     public func answer(conversationID id: UUID, approvalID: String, answers: [String: String]) {
         guard let driver = drivers[id] else { return }
+        let generation = runGenerations[id]
         Task { [weak self] in
             do {
                 try await driver.answer(approvalID: approvalID, answers: answers)
-                guard let self else { return }
+                guard let self, self.runGenerations[id] == generation,
+                      self.approvals[id]?.contains(where: { $0.id == approvalID }) == true else { return }
                 self.approvals[id]?.removeAll { $0.id == approvalID }
-                self.statuses[id] = self.approvals[id]?.isEmpty == false ? .waiting : self.runs[id] != nil ? .running : .idle
-            } catch { self?.errorMessage = "No se pudo enviar la respuesta: \(error.localizedDescription)" }
+                self.restoreStatus(id)
+            } catch {
+                guard let self, self.runGenerations[id] == generation, !self.stoppingRuns.contains(id),
+                      self.approvals[id]?.contains(where: { $0.id == approvalID }) == true else { return }
+                self.errorMessage = "No se pudo enviar la respuesta: \(error.localizedDescription)"
+            }
         }
     }
     // MARK: Images
@@ -883,8 +909,7 @@ import Foundation
         imageRequests[index].state = state
         if case .saved = state {} else { endedImages[id] = imageRequests.remove(at: index) }
         guard statuses[conversation] == .waiting else { return }
-        let waiting = approvals[conversation]?.isEmpty == false || imageRequests.contains { $0.conversationID == conversation && $0.isPending }
-        statuses[conversation] = waiting ? .waiting : runs[conversation] != nil ? .running : .idle
+        restoreStatus(conversation)
     }
 
     /// How a request that already left the chat ended; read once.
@@ -1003,7 +1028,7 @@ import Foundation
         if lightModeEnabled { progressMonitor?.stop(); serverMonitor?.stop() }
         StellarRuntime.shutdown()
         for id in Array(pending.keys) { flush(id) }
-        for (id, driver) in drivers { driver.stop(); runs[id]?.cancel(); settleActivities(id); save(id) }
+        for (id, driver) in drivers { driver.close(); runs[id]?.cancel(); settleActivities(id); save(id) }
         for driver in liveDrivers.values { driver.close() }
         liveDrivers.removeAll()
         archive.flush()
@@ -1023,6 +1048,8 @@ import Foundation
             let notebooks = !lightModeEnabled
             startRun(id, driver: driver) { [weak self] onEvent in
                 let delegation = delegates || images || notebooks ? try? await self?.bridge.delegation(for: id, delegates: delegates, images: images, notebooks: notebooks) : nil
+                try Task.checkCancellation()
+                guard self?.stoppingRuns.contains(id) != true else { throw CancellationError() }
                 try await driver.run(conversation: conversation, prompt: prompt, delegation: delegation, onEvent: onEvent)
             }
         }
@@ -1034,35 +1061,69 @@ import Foundation
         if lightModeEnabled { driver.setEnergySaving(true) }
         if driver.keepsAlive {
             liveDrivers[id] = driver
-            driver.observe(idle: { [weak self] event in self?.receiveIdle(event, for: id) },
-                           unprompted: { [weak self] in self?.beginUnpromptedTurn(id) })
+            driver.observe(idle: { [weak self, weak driver] event in
+                guard let self, let driver, self.liveDrivers[id] === driver else { return }
+                self.receiveIdle(event, for: id)
+            }, unprompted: { [weak self, weak driver] in
+                guard let self, let driver, self.liveDrivers[id] === driver else { return }
+                self.beginUnpromptedTurn(id)
+            })
         }
         return driver
     }
     private func startRun(_ id: UUID, driver: any ChatDriver, _ body: @escaping @MainActor (@escaping @MainActor (ChatEvent) -> Void) async throws -> Void) {
         clearSuggestion(id)
+        let generation = UUID()
+        runGenerations[id] = generation
+        stoppingRuns.remove(id)
         drivers[id] = driver; statuses[id] = .running
         if let c = conversations.first(where: { $0.id == id }), c.provider == .codex {
             budgetBaseline[id] = (c.tokenUsage?.input ?? 0) + (c.tokenUsage?.output ?? 0)
         } else { budgetBaseline[id] = 0 }
         runs[id] = Task { [weak self] in
             do {
-                try await body { [weak self] event in self?.receive(event, for: id) }
+                try Task.checkCancellation()
+                guard self?.stoppingRuns.contains(id) != true else { throw CancellationError() }
+                try await body { [weak self] event in
+                    guard let self, self.runGenerations[id] == generation else { return }
+                    if case .completed = event {
+                        self.finishRun(id, generation: generation, cancelled: false)
+                    } else if !self.stoppingRuns.contains(id) { self.receive(event, for: id) }
+                }
             } catch {
-                if !Task.isCancelled, !(error is CancellationError) { self?.receive(.failure(error.localizedDescription), for: id) }
+                if let self, self.runGenerations[id] == generation, !self.stoppingRuns.contains(id),
+                   !Task.isCancelled, !(error is CancellationError) { self.receive(.failure(error.localizedDescription), for: id) }
             }
-            guard let self else { return }
-            self.flush(id)
-            self.settleActivities(id)
-            if self.statuses[id] != .failed { self.statuses[id] = .idle }
-            self.approvals[id] = []
-            self.finishTurn(id)
-            self.drivers.removeValue(forKey: id); self.runs.removeValue(forKey: id)
-            self.completeJackTurn(id, cancelled: Task.isCancelled)
-            // Claude Code reports its quota as it works; Codex's has to be asked for.
-            if let provider = self.conversations.first(where: { $0.id == id })?.provider, provider == .codex { self.refreshUsageSoon(provider) }
-            self.deliverWaiting(id)
-            self.save(id); self.evictInactiveTranscripts(); self.drainQueue()
+            self?.finishRun(id, generation: generation, cancelled: Task.isCancelled)
+        }
+    }
+    /// A terminal protocol event finishes the turn without waiting for process cleanup.
+    /// The old task may return later, after another turn has already started.
+    private func finishRun(_ id: UUID, generation: UUID, cancelled: Bool) {
+        guard runGenerations[id] == generation else { return }
+        let wasStopping = stoppingRuns.remove(id) != nil
+        let cancelled = cancelled || wasStopping
+        runGenerations.removeValue(forKey: id)
+        flush(id)
+        settleActivities(id)
+        if statuses[id] != .failed { statuses[id] = .idle }
+        approvals[id] = []
+        finishTurn(id)
+        drivers.removeValue(forKey: id); runs.removeValue(forKey: id)
+        completeJackTurn(id, cancelled: cancelled)
+        // Claude Code reports its quota as it works; Codex's has to be asked for.
+        if let provider = conversations.first(where: { $0.id == id })?.provider, provider == .codex { refreshUsageSoon(provider) }
+        deliverWaiting(id)
+        save(id); evictInactiveTranscripts(); drainQueue()
+    }
+
+    private func restoreStatus(_ id: UUID) {
+        if stoppingRuns.contains(id) { statuses[id] = .idle }
+        else if approvals[id]?.isEmpty == false || imageRequests.contains(where: { $0.conversationID == id && $0.isPending }) { statuses[id] = .waiting }
+        else if runs[id] != nil { statuses[id] = .running }
+        else {
+            statuses[id] = queue.contains(where: { $0.0 == id }) ? .queued : .idle
+            drivers.removeValue(forKey: id)
         }
     }
     /// The agent started working by itself, e.g. to report a background subagent's result.
@@ -1232,7 +1293,7 @@ import Foundation
         case .approval(let request):
             if !(approvals[id] ?? []).contains(where: { $0.id == request.id }) { approvals[id, default: []].append(request) }
             statuses[id] = .waiting
-        case .approvalResolved(let requestID): approvals[id]?.removeAll { $0.id == requestID }; statuses[id] = approvals[id]?.isEmpty == false ? .waiting : .running
+        case .approvalResolved(let requestID): approvals[id]?.removeAll { $0.id == requestID }; restoreStatus(id)
         case .mode(let mode):
             if conversations[index].mode != mode { conversations[index].mode = mode; save(id) }
         case let .delivered(messageID, text): receiveDelivered(messageID, text: text, at: index)

@@ -17,7 +17,7 @@ public enum ChatDriverFactory {
 }
 
 @MainActor
-private class ProcessChatDriver: ChatDriver {
+class ProcessChatDriver: ChatDriver {
     var child: StructuredChild?
     var runGeneration = UUID()
     var pendingApprovals: [String: PendingApproval] = [:]
@@ -56,6 +56,7 @@ private class ProcessChatDriver: ChatDriver {
         try await respond(approvalID: approvalID, allow: choice != "deny")
     }
     var keepsAlive: Bool { false }
+    var awaitsStopAcknowledgement: Bool { false }
     func observe(idle: @escaping @MainActor (ChatEvent) -> Void, unprompted: @escaping @MainActor () -> Void) {}
     func follow(onEvent: @escaping @MainActor (ChatEvent) -> Void) async throws {}
     func inject(_ message: ChatQueuedMessage, conversation: ChatConversation) -> Bool { false }
@@ -103,14 +104,31 @@ private enum ChatDriverError: LocalizedError {
 }
 
 enum CodexProtocol {
-    static func event(_ object: [String: Any], session: inout String?, approvals: inout [String: PendingApproval]) -> [ChatEvent] {
+    static func event(_ object: [String: Any], session: inout String?, approvals: inout [String: PendingApproval], permissionProfiles: Bool = false) -> [ChatEvent] {
         if let method = object["method"] as? String {
             let params = object["params"] as? [String: Any] ?? [:]
+            if method == "serverRequest/resolved", let rpcID = params["requestId"] {
+                let matching = approvals.filter { _, pending in
+                    String(describing: pending.payload["rpcID"] ?? "") == String(describing: rpcID)
+                        && (pending.payload["params"] as? [String: Any])?["threadId"] as? String == params["threadId"] as? String
+                }.map(\.key)
+                for id in matching { approvals.removeValue(forKey: id) }
+                return matching.map { .approvalResolved($0) }
+            }
+            if permissionProfiles, method == "item/permissions/requestApproval", let rpcID = object["id"],
+               let permissions = params["permissions"] as? [String: Any] {
+                let id = "codex-permissions-\(String(describing: rpcID))"
+                approvals[id] = PendingApproval(payload: ["rpcID": rpcID, "method": method, "params": params], provider: "codex")
+                var approval = ChatApproval(id: id, title: "Acceso adicional a red y archivos", detail: permissionDetails(params, permissions: permissions))
+                approval.tool = "request_permissions"
+                approval.choices = [.init(id: "session", title: "Permitir durante esta sesión")]
+                return [.approval(approval)]
+            }
             if method == "item/tool/requestUserInput", let rpcID = object["id"],
                let data = try? JSONSerialization.data(withJSONObject: params["questions"] ?? []),
                let questions = try? JSONDecoder().decode([ChatInputQuestion].self, from: data) {
                 let approvalID = "codex-input-\(String(describing: rpcID))"
-                approvals[approvalID] = PendingApproval(payload: ["rpcID": rpcID, "method": method, "questionIDs": questions.map(\.id)], provider: "codex")
+                approvals[approvalID] = PendingApproval(payload: ["rpcID": rpcID, "method": method, "params": params, "questionIDs": questions.map(\.id)], provider: "codex")
                 var approval = ChatApproval(id: approvalID, title: "Preguntas del agente", detail: "")
                 approval.questions = questions
                 return [.approval(approval)]
@@ -182,21 +200,122 @@ enum CodexProtocol {
         }
         return []
     }
+
+    private static func permissionDetails(_ params: [String: Any], permissions: [String: Any]) -> String {
+        var lines = [params["reason"] as? String ?? "", (params["cwd"] as? String).map { "Carpeta: " + $0 } ?? ""]
+        if let network = permissions["network"] as? [String: Any], let enabled = network["enabled"] as? Bool {
+            lines.append("Red: " + (enabled ? "permitir conexiones" : "sin conexiones"))
+        }
+        if let fs = permissions["fileSystem"] as? [String: Any] {
+            for (key, label) in [("read", "Lectura"), ("write", "Escritura")] {
+                lines += (fs[key] as? [String] ?? []).map { label + ": " + $0 }
+            }
+            for entry in fs["entries"] as? [[String: Any]] ?? [] {
+                let path = entry["path"] as? [String: Any] ?? [:]
+                let access = entry["access"] as? String ?? ""
+                let label = access == "write" ? "Escritura" : access == "read" ? "Lectura" : "Denegado"
+                let value = path["path"] as? String ?? path["pattern"] as? String ?? boundedJSON(path["value"] ?? path)
+                lines.append(label + ": " + value)
+            }
+        }
+        return lines.filter { !$0.isEmpty }.joined(separator: "\n")
+    }
+
+    static func approvalResult(_ pending: PendingApproval, choice: String) throws -> [String: Any] {
+        if pending.payload["method"] as? String == "item/permissions/requestApproval" {
+            guard ["allow", "deny", "session"].contains(choice),
+                  let params = pending.payload["params"] as? [String: Any],
+                  let permissions = params["permissions"] as? [String: Any] else { throw ChatDriverError.invalidApproval(choice) }
+            return ["permissions": choice == "deny" ? [:] : permissions, "scope": choice == "session" ? "session" : "turn"]
+        }
+        guard ["allow", "deny"].contains(choice) else { throw ChatDriverError.invalidApproval(choice) }
+        return ["decision": choice == "allow" ? "accept" : "decline"]
+    }
 }
 
 @MainActor
-private final class CodexChatDriver: ProcessChatDriver {
+final class CodexChatDriver: ProcessChatDriver {
     private var nextID = 1
     private var threadID: String?
+    private var turnID: String?
+    private var turnRequested = false
+    private var energySaving = false
+    private var interrupting: Task<Void, Never>?
+    private var interruptRequestID: Int?
+    private var sink: (@MainActor (ChatEvent) -> Void)?
+    private let executableOverride: String?
+    private let interruptDeadline: Duration
+
+    init(executable: String? = nil, interruptDeadline: Duration = .seconds(5)) {
+        executableOverride = executable
+        self.interruptDeadline = interruptDeadline
+    }
+
+    override var awaitsStopAcknowledgement: Bool { interrupting != nil }
+    override func close() {
+        interrupting?.cancel(); interrupting = nil
+        turnID = nil; threadID = nil; turnRequested = false; interruptRequestID = nil; sink = nil
+        super.stop()
+    }
+    override func setEnergySaving(_ enabled: Bool) {
+        energySaving = enabled
+        if enabled {
+            for (id, pending) in pendingApprovals where pending.payload["method"] as? String == "item/permissions/requestApproval" {
+                if let rpcID = pending.payload["rpcID"] {
+                    try? child?.writeJSON(["id": rpcID, "result": ["permissions": [:], "scope": "turn"]])
+                }
+                pendingApprovals.removeValue(forKey: id)
+                sink?(.approvalResolved(id))
+            }
+            if interrupting != nil {
+                let completion = sink
+                close()
+                completion?(.completed)
+            }
+        }
+    }
+    override func stop() {
+        guard !energySaving, let process = child, threadID != nil, turnRequested else { close(); return }
+        guard interrupting == nil else { return }
+        let generation = runGeneration
+        pendingApprovals.removeAll()
+        interrupting = Task { [weak self] in
+            guard let self else { return }
+            try? await Task.sleep(for: self.interruptDeadline)
+            guard !Task.isCancelled, self.runGeneration == generation else { return }
+            process.terminate()
+            await process.waitForExit()
+            guard !Task.isCancelled, self.runGeneration == generation else { return }
+            // Release Jack's slot even if an inherited stdout pipe never closes.
+            self.sink?(.completed)
+            self.close()
+        }
+        sendInterrupt()
+    }
+    private func sendInterrupt() {
+        guard interrupting != nil, interruptRequestID == nil, let process = child, let threadID, let turnID else { return }
+        let requestID = id()
+        do {
+            try process.writeJSON(["id": requestID, "method": "turn/interrupt", "params": ["threadId": threadID, "turnId": turnID]])
+            interruptRequestID = requestID
+        } catch { process.terminate() }
+    }
 
     override func run(conversation: ChatConversation, prompt: String, onEvent: @escaping @MainActor (ChatEvent) -> Void) async throws {
         try await run(conversation: conversation, prompt: prompt, delegation: nil, onEvent: onEvent)
     }
 
     override func run(conversation: ChatConversation, prompt: String, delegation: ChatDelegation?, onEvent: @escaping @MainActor (ChatEvent) -> Void) async throws {
-        stop()
+        close()
         let generation = UUID(); runGeneration = generation
-        guard let executable = ExecutableResolver.resolve("codex", override: UserDefaults.standard.string(forKey: "providerExecutablePath.codex")) else { throw ChatDriverError.executableMissing("codex") }
+        sink = onEvent
+        defer {
+            if runGeneration == generation {
+                interrupting?.cancel(); interrupting = nil
+                turnID = nil; turnRequested = false; interruptRequestID = nil; sink = nil
+            }
+        }
+        guard let executable = ExecutableResolver.resolve("codex", override: executableOverride ?? UserDefaults.standard.string(forKey: "providerExecutablePath.codex")) else { throw ChatDriverError.executableMissing("codex") }
         let arguments = ["app-server", "--listen", "stdio://"] + (delegation.map(ChatRunConfiguration.codexDelegation) ?? [])
         // The token travels in the environment, not in the command line other processes can read.
         let environment = (delegation.map { ["JACK_MCP_TOKEN": $0.token] } ?? [:]).merging(ProgressFiles.environment(for: conversation.id)) { _, new in new }
@@ -205,6 +324,7 @@ private final class CodexChatDriver: ProcessChatDriver {
         do {
         let initID = id(); try process.writeJSON(["id": initID, "method": "initialize", "params": ["clientInfo": ["name": "jack", "title": "Jack", "version": "1"], "capabilities": ["experimentalApi": true]]])
         let initTimeout = Task { try? await Task.sleep(for: .seconds(20)); if !Task.isCancelled { process.terminate() } }
+        defer { initTimeout.cancel() }
         try await waitForResponse(id: initID, process: process, reader: reader, generation: generation, onEvent: onEvent)
         initTimeout.cancel()
         try process.writeJSON(["method": "initialized", "params": [:]])
@@ -231,6 +351,7 @@ private final class CodexChatDriver: ProcessChatDriver {
             skill = CodexCommands.skills(from: response).first { $0["name"] as? String == command.name }
         }
         let requestID = id()
+        turnRequested = true
         switch command?.name {
         case "compact" where skill == nil:
             try process.writeJSON(["id": requestID, "method": "thread/compact/start", "params": ["threadId": threadID]])
@@ -246,19 +367,47 @@ private final class CodexChatDriver: ProcessChatDriver {
             try Task.checkCancellation()
             guard runGeneration == generation else { throw CancellationError() }
             guard let object = jsonObject(line) else { continue }
-            let events = CodexProtocol.event(object, session: &self.threadID, approvals: &pendingApprovals)
+            let params = object["params"] as? [String: Any] ?? [:]
+            let result = object["result"] as? [String: Any] ?? [:]
+            if let incomingThread = params["threadId"] as? String, incomingThread != self.threadID { continue }
+            if let incomingTurn = params["turnId"] as? String, let turnID, incomingTurn != turnID { continue }
+            if let incomingTurn = (params["turn"] as? [String: Any])?["id"] as? String,
+               object["method"] as? String == "turn/completed", let turnID, incomingTurn != turnID { continue }
+            if object["method"] as? String == "turn/started" || object["id"] as? Int == requestID {
+                if let turn = (params["turn"] ?? result["turn"]) as? [String: Any], let id = turn["id"] as? String {
+                    turnID = id
+                    sendInterrupt()
+                }
+            }
+            if object["method"] as? String == "turn/completed", interrupting != nil,
+               (params["turn"] as? [String: Any])?["status"] as? String == "interrupted" {
+                emit(.completed, generation: generation, to: onEvent)
+                completed = true
+                break
+            }
+            // Stopping must not reopen a permission prompt. The interrupt clears server requests.
+            if interrupting != nil, object["method"] != nil, let rpcID = object["id"] {
+                try process.writeJSON(["id": rpcID, "error": ["code": -32600, "message": "Turn is being interrupted"]])
+                continue
+            }
+            let events = CodexProtocol.event(object, session: &self.threadID, approvals: &pendingApprovals, permissionProfiles: !energySaving)
+            let knownRequest = pendingApprovals.values.contains {
+                String(describing: $0.payload["rpcID"] ?? "") == String(describing: object["id"] ?? "") && $0.payload["method"] as? String == object["method"] as? String
+            }
             for event in events {
                 emit(event, generation: generation, to: onEvent)
                 if case .completed = event { completed = true }
                 if case .failure(let message) = event { throw ChatDriverError.protocolFailure(message) }
             }
             if let rpcID = object["id"], let method = object["method"] as? String {
-                let known = pendingApprovals.values.contains { String(describing: $0.payload["rpcID"] ?? "") == String(describing: rpcID) && $0.payload["method"] as? String == method }
-                if !known { try process.writeJSON(["id": rpcID, "error": ["code": -32601, "message": "Unsupported app-server request: \(method)"]]) }
+                if !knownRequest { try process.writeJSON(["id": rpcID, "error": ["code": -32601, "message": "Unsupported app-server request: \(method)"]]) }
             }
             if completed { break }
         }
-        if !completed { throw ChatDriverError.process(await process.failureDescription(default: "Codex app-server ended before the turn completed.")) }
+        if !completed {
+            if interrupting != nil { emit(.completed, generation: generation, to: onEvent) }
+            else { throw ChatDriverError.process(await process.failureDescription(default: "Codex app-server ended before the turn completed.")) }
+        }
         await finish(process, generation: generation)
         } catch {
             await finish(process, generation: generation)
@@ -268,8 +417,16 @@ private final class CodexChatDriver: ProcessChatDriver {
 
     override func resolve(_ pending: PendingApproval, allow: Bool) async throws {
         guard let process = child, let rpcID = pending.payload["rpcID"] else { throw ChatDriverError.invalidApproval("expired") }
-        let result: [String: Any] = ["decision": allow ? "accept" : "decline"]
+        let result = try CodexProtocol.approvalResult(pending, choice: allow ? "allow" : "deny")
         try process.writeJSON(["id": rpcID, "result": result])
+    }
+    override func respond(approvalID: String, choice: String, message: String?) async throws {
+        guard interrupting == nil, let process = child, let pending = pendingApprovals[approvalID], let rpcID = pending.payload["rpcID"] else {
+            throw ChatDriverError.invalidApproval(approvalID)
+        }
+        let result = try CodexProtocol.approvalResult(pending, choice: choice)
+        try process.writeJSON(["id": rpcID, "result": result])
+        pendingApprovals.removeValue(forKey: approvalID)
     }
     override func answer(approvalID: String, answers: [String: String]) async throws {
         guard let process = child, let pending = pendingApprovals[approvalID],
@@ -699,12 +856,15 @@ private final class ClaudeChatDriver: ProcessChatDriver {
 
     override func run(conversation: ChatConversation, prompt: String, delegation: ChatDelegation?, onEvent: @escaping @MainActor (ChatEvent) -> Void) async throws {
         guard sink == nil else { throw ChatDriverError.process("Claude Code ya está trabajando en esta conversación.") }
+        let generation = runGeneration
         idleClose?.cancel()
         closesWhenIdle = conversation.parentID != nil
         // A fresh SSH session starts with the remote login keychain unlocked when a password is saved for it.
         if let endpoint = conversation.remote, child == nil {
             await Task.detached(priority: .userInitiated) { SSHKeySetup.unlockKeychain(endpoint: endpoint) }.value
         }
+        try Task.checkCancellation()
+        guard runGeneration == generation else { throw CancellationError() }
         let process = try session(for: conversation, delegation: delegation)
         _ = setMode(conversation.mode ?? "manual")
         if !conversation.model.isEmpty, conversation.model != liveModel {
@@ -759,6 +919,8 @@ private final class ClaudeChatDriver: ProcessChatDriver {
     override func stop() { stop(keepingQueued: false) }
 
     override func stop(keepingQueued: Bool) {
+        // Also invalidate startup, before the turn has installed its event sink.
+        runGeneration = UUID()
         guard sink != nil, interrupting == nil else { return }
         pendingApprovals.removeAll()
         var interrupt: [String: Any] = ["subtype": "interrupt"]

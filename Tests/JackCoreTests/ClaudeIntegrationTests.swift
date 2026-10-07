@@ -74,7 +74,12 @@ final class ClaudeIntegrationTests: XCTestCase {
 
         store.stop(id)
         XCTAssertEqual(driver.interrupts, 1)
-        XCTAssertEqual(store.statuses[id], .running, "the turn ends when the agent confirms the interrupt")
+        XCTAssertEqual(store.statuses[id], .idle, "stopping clears the activity immediately")
+        XCTAssertTrue(store.isBusy(id), "the driver keeps its reservation until the interrupt is acknowledged")
+        driver.callback?(.approvalResolved("late"))
+        driver.callback?(.approval(ChatApproval(id: "late", title: "Late permission", detail: "")))
+        XCTAssertEqual(store.statuses[id], .idle)
+        XCTAssertTrue(store.approvals[id]?.isEmpty != false)
         driver.callback?(.completed); driver.finish(); await settle()
         XCTAssertEqual(store.statuses[id], .idle)
 
@@ -82,6 +87,22 @@ final class ClaudeIntegrationTests: XCTestCase {
         XCTAssertEqual(drivers().count, 1, "the same process serves the next turn")
         XCTAssertEqual(driver.runs, 2)
         driver.finish(); await settle()
+    }
+
+    @MainActor func testStoppingLiveAgentBeforeStartupDoesNotLaunchIt() async throws {
+        let (store, folder, drivers) = fixture()
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        let id = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .claude))
+        store.send("primero")
+        store.stop(id)
+        XCTAssertEqual(store.statuses[id], .idle)
+        await settle()
+        XCTAssertEqual(drivers().first?.runs, 0)
+        XCTAssertEqual(store.statuses[id], .idle)
+        XCTAssertEqual(store.activeCount, 0)
+        store.send("segundo"); await settle()
+        XCTAssertEqual(drivers().first?.runs, 1)
+        drivers().first?.finish(); await settle()
     }
 
     @MainActor func testStoppingReturnsWaitingMessagesAndInterruptingKeepsThemQueued() async throws {
@@ -167,6 +188,45 @@ final class ClaudeIntegrationTests: XCTestCase {
         driver.callback?(.completed); driver.finish(); await settle()
         XCTAssertEqual(store.statuses[id], .idle)
         XCTAssertEqual(store.selectedConversation?.messages.last?.text, "El subagente terminó")
+    }
+
+    @MainActor func testIdlePermissionResolutionDoesNotStartPhantomTurn() async throws {
+        let (store, folder, drivers) = fixture()
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        let id = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .claude))
+        store.send("primero"); await settle()
+        let driver = try XCTUnwrap(drivers().first)
+        driver.callback?(.completed); driver.finish(); await settle()
+        driver.idle?(.approvalResolved("old"))
+        XCTAssertEqual(store.statuses[id], .idle)
+        XCTAssertFalse(store.isBusy(id))
+        driver.idle?(.approval(ChatApproval(id: "background", title: "Permiso", detail: "")))
+        XCTAssertEqual(store.statuses[id], .waiting)
+        driver.idle?(.approvalResolved("background"))
+        XCTAssertEqual(store.statuses[id], .idle)
+        XCTAssertEqual(store.activeCount, 0)
+    }
+
+    @MainActor func testUnpromptedTurnCanStartBeforePreviousTaskReturns() async throws {
+        let (store, folder, drivers) = fixture()
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        let id = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .claude))
+        store.send("primero"); await settle()
+        let driver = try XCTUnwrap(drivers().first)
+        let oldContinuation = driver.continuation
+        driver.continuation = nil
+        let oldCallback = driver.callback
+        driver.callback?(.completed)
+        driver.unprompted?(); await settle()
+        XCTAssertEqual(driver.follows, 1)
+        XCTAssertEqual(store.statuses[id], .running)
+        oldCallback?(.completed)
+        oldContinuation?.resume(); await settle()
+        XCTAssertEqual(store.statuses[id], .running)
+        XCTAssertEqual(store.activeCount, 1)
+        driver.callback?(.text(id: "report", text: "Listo", replace: true))
+        driver.callback?(.completed); driver.finish(); await settle()
+        XCTAssertEqual(store.statuses[id], .idle)
     }
 
     @MainActor func testIdlePromptSuggestionIsStoredAndClearedWhenSending() async throws {

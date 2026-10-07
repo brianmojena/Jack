@@ -52,7 +52,9 @@ struct ApprovalCard: View {
     }
 
     @ViewBuilder private var preview: some View {
-        if let tool = approval.tool {
+        if approval.tool == "request_permissions" {
+            OutputBox(text: approval.detail)
+        } else if let tool = approval.tool {
             let presentation = ToolPresentation(message: ChatMessage(role: "tool", text: tool, detail: approval.detail), projectPath: projectPath)
             let diff = ToolActivityRow.diffLines(for: presentation)
             if !diff.isEmpty {

@@ -6,14 +6,21 @@ import XCTest
     var continuation: CheckedContinuation<Void, Never>?
     var answers: [(String, Bool)] = []
     var stopped = false
+    var finishesOnStop = true
+    var holdResponses = false
+    var responseContinuation: CheckedContinuation<Void, Never>?
     var energySavingChanges: [Bool] = []
     func setEnergySaving(_ enabled: Bool) { energySavingChanges.append(enabled) }
     func run(conversation: ChatConversation, prompt: String, onEvent: @escaping @MainActor (ChatEvent) -> Void) async throws {
         callback = onEvent
         await withCheckedContinuation { continuation = $0 }
     }
-    func respond(approvalID: String, allow: Bool) async throws { answers.append((approvalID, allow)) }
-    func stop() { stopped = true; finish() }
+    func respond(approvalID: String, allow: Bool) async throws {
+        answers.append((approvalID, allow))
+        if holdResponses { await withCheckedContinuation { responseContinuation = $0 } }
+    }
+    func answer(approvalID: String, answers: [String: String]) async throws { try await respond(approvalID: approvalID, allow: true) }
+    func stop() { stopped = true; if finishesOnStop { finish() } }
     func finish() { continuation?.resume(); continuation = nil }
 }
 
@@ -287,6 +294,117 @@ final class ChatStoreTests: XCTestCase {
         XCTAssertEqual(try archive.load(id)?.sessionID, "native-session")
         XCTAssertEqual(try archive.load(id)?.messages.count, 2)
     }
+    @MainActor func testCompletionReleasesSlotBeforeDriverCleanupAndIgnoresOldTurn() async throws {
+        let (store, archive, folder, drivers) = fixture()
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        store.setConcurrency(1)
+        let id = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .codex))
+        store.send("primero"); await settle()
+        let first = try XCTUnwrap(drivers().first)
+        first.callback?(.text(id: "reply", text: "Listo", replace: true))
+        first.callback?(.tool(id: "tool", title: "Read", detail: "", status: "running"))
+        first.callback?(.completed)
+        XCTAssertEqual(store.statuses[id], .idle)
+        XCTAssertEqual(store.activeCount, 0, "cleanup must not reserve a concurrency slot")
+        XCTAssertFalse(store.isBusy(id))
+        XCTAssertEqual(store.selectedConversation?.messages.first { $0.id == "tool" }?.status, "interrupted")
+        archive.flush()
+        XCTAssertEqual(try archive.load(id)?.messages.first { $0.id == "reply" }?.text, "Listo")
+
+        store.send("segundo"); await settle()
+        let second = try XCTUnwrap(drivers().last)
+        XCTAssertEqual(drivers().count, 2)
+        first.callback?(.approvalResolved("old"))
+        first.callback?(.approval(ChatApproval(id: "old", title: "Old permission", detail: "")))
+        first.callback?(.text(id: "late", text: "Old text", replace: true))
+        first.finish(); await settle()
+        XCTAssertEqual(store.statuses[id], .running, "old cleanup must not finish the new turn")
+        XCTAssertEqual(store.activeCount, 1)
+        XCTAssertTrue(store.approvals[id]?.isEmpty != false)
+        XCTAssertFalse(store.selectedConversation?.messages.contains { $0.id == "late" } == true)
+        second.finish(); await settle()
+    }
+
+    @MainActor func testLatePermissionResponsesCannotClearNextTurnsPermission() async throws {
+        for answering in [false, true] {
+            let (store, _, folder, drivers) = fixture()
+            defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+            let id = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .codex))
+            store.send("primero"); await settle()
+            let first = try XCTUnwrap(drivers().first)
+            first.holdResponses = true
+            first.callback?(.approval(ChatApproval(id: "permission", title: "Primero", detail: "")))
+            if answering { store.answer(conversationID: id, approvalID: "permission", answers: ["q": "yes"]) }
+            else { store.respond(conversationID: id, approvalID: "permission", allow: true) }
+            await settle()
+            let response = try XCTUnwrap(first.responseContinuation)
+            first.callback?(.completed); first.finish(); await settle()
+            store.send("segundo"); await settle()
+            let second = try XCTUnwrap(drivers().last)
+            second.callback?(.approval(ChatApproval(id: "permission", title: "Segundo", detail: "")))
+            response.resume(); first.responseContinuation = nil
+            await settle()
+            XCTAssertEqual(store.statuses[id], .waiting)
+            XCTAssertEqual(store.approvals[id]?.first?.title, "Segundo")
+            second.finish(); await settle()
+        }
+    }
+
+    @MainActor func testProtocolCompletionFlushesHiddenLightChat() async throws {
+        let (store, archive, folder, drivers) = fixture()
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        store.setLightMode(true)
+        let id = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .codex))
+        store.send("primero"); await settle()
+        let driver = try XCTUnwrap(drivers().first)
+        store.create(projectPath: NSTemporaryDirectory(), provider: .claude)
+        store.setLightWindowVisible(false)
+        driver.callback?(.text(id: "reply", text: "Listo", replace: true))
+        driver.callback?(.completed)
+        archive.flush()
+        XCTAssertEqual(store.statuses[id], .idle)
+        XCTAssertEqual(store.activeCount, 0)
+        XCTAssertEqual(try archive.load(id)?.messages.last?.text, "Listo")
+        driver.finish(); await settle()
+    }
+
+    @MainActor func testStopReleasesSlotEvenIfDriverDoesNotReturn() async throws {
+        let (store, _, folder, drivers) = fixture()
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        store.setConcurrency(1)
+        let id = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .codex))
+        store.send("primero"); await settle()
+        let first = try XCTUnwrap(drivers().first)
+        first.finishesOnStop = false
+        first.callback?(.tool(id: "tool", title: "Bash", detail: "sleep 30", status: "running"))
+        store.send("pendiente", to: id)
+        store.stop(id)
+        XCTAssertEqual(store.statuses[id], .idle)
+        XCTAssertEqual(store.activeCount, 0)
+        XCTAssertEqual(store.recalled[id]?.text, "pendiente")
+        XCTAssertEqual(store.selectedConversation?.messages.last?.status, "interrupted")
+        store.send("segundo"); await settle()
+        XCTAssertEqual(drivers().count, 2)
+        first.callback?(.completed)
+        first.callback?(.approvalResolved("late"))
+        first.finish(); await settle()
+        XCTAssertEqual(store.statuses[id], .running)
+        XCTAssertEqual(store.activeCount, 1)
+        drivers().last?.finish(); await settle()
+    }
+
+    @MainActor func testStopBeforeStartupDoesNotLaunchDriver() async throws {
+        let (store, _, folder, drivers) = fixture()
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        let id = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .codex))
+        store.send("primero")
+        store.stop(id)
+        await settle()
+        XCTAssertEqual(store.statuses[id], .idle)
+        XCTAssertEqual(store.activeCount, 0)
+        XCTAssertNil(drivers().first?.callback, "a cancelled task must not launch a provider")
+    }
+
     @MainActor func testPermissionResponseAndStopAreScopedToConversation() async throws {
         let (store, _, folder, drivers) = fixture()
         defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }

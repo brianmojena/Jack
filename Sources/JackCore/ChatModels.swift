@@ -241,6 +241,8 @@ public struct ChatCommand: Identifiable, Codable, Equatable {
     /// The agent's process outlives each turn: the driver is reused, and the agent may start turns on its own,
     /// for example when a background task it launched finishes.
     var keepsAlive: Bool { get }
+    /// A stopped single-use driver still owns its slot until the protocol confirms the interruption.
+    var awaitsStopAcknowledgement: Bool { get }
     /// `idle` receives events between turns; `unprompted` is called when the agent starts a turn by itself,
     /// which the caller consumes with `follow`.
     func observe(idle: @escaping @MainActor (ChatEvent) -> Void, unprompted: @escaping @MainActor () -> Void)
@@ -272,6 +274,7 @@ public extension ChatDriver {
         throw NSError(domain: "Jack", code: 1, userInfo: [NSLocalizedDescriptionKey: "Este proveedor no admite preguntas interactivas."])
     }
     var keepsAlive: Bool { false }
+    var awaitsStopAcknowledgement: Bool { false }
     func observe(idle: @escaping @MainActor (ChatEvent) -> Void, unprompted: @escaping @MainActor () -> Void) {}
     func follow(onEvent: @escaping @MainActor (ChatEvent) -> Void) async throws {}
     func inject(_ message: ChatQueuedMessage, conversation: ChatConversation) -> Bool { false }
