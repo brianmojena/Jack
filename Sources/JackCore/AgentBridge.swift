@@ -9,8 +9,9 @@ public struct ChatDelegation: Equatable {
     public var delegates: Bool
     /// The agent may create images with Image Playground.
     public var images: Bool
-    public init(url: URL, token: String, delegates: Bool = true, images: Bool = false) {
-        self.url = url; self.token = token; self.delegates = delegates; self.images = images
+    public var notebooks: Bool
+    public init(url: URL, token: String, delegates: Bool = true, images: Bool = false, notebooks: Bool = false) {
+        self.url = url; self.token = token; self.delegates = delegates; self.images = images; self.notebooks = notebooks
     }
 
     /// Tells every agent with the `jack` tools when to create an image.
@@ -63,20 +64,20 @@ public struct ChatDelegation: Equatable {
     private var callers: [String: UUID] = [:]
     private var tokens: [UUID: String] = [:]
     /// What each caller may do: the token stays the same, so a later run can change it.
-    private var permissions: [UUID: (delegates: Bool, images: Bool)] = [:]
+    private var permissions: [UUID: (delegates: Bool, images: Bool, notebooks: Bool)] = [:]
 
     init(store: ChatStore) { self.store = store }
 
     /// Starts the server on first use; agents that never delegate cost nothing.
-    public func delegation(for conversationID: UUID, delegates: Bool = true, images: Bool = false) async throws -> ChatDelegation {
+    public func delegation(for conversationID: UUID, delegates: Bool = true, images: Bool = false, notebooks: Bool = false) async throws -> ChatDelegation {
         let port = try await ensureListening()
         let token = tokens[conversationID] ?? {
             let value = (0..<4).map { _ in UUID().uuidString.replacingOccurrences(of: "-", with: "") }.joined()
             tokens[conversationID] = value; callers[value] = conversationID
             return value
         }()
-        permissions[conversationID] = (delegates, images)
-        return ChatDelegation(url: URL(string: "http://127.0.0.1:\(port)/mcp")!, token: token, delegates: delegates, images: images)
+        permissions[conversationID] = (delegates, images, notebooks)
+        return ChatDelegation(url: URL(string: "http://127.0.0.1:\(port)/mcp")!, token: token, delegates: delegates, images: images, notebooks: notebooks)
     }
 
     public func stop() {
@@ -169,8 +170,9 @@ public struct ChatDelegation: Equatable {
         case "ping":
             return Self.result(id: id, [:])
         case "tools/list":
-            let allowed = permissions[caller] ?? (true, false)
+            let allowed = permissions[caller] ?? (true, false, false)
             let tools = (allowed.delegates ? Self.tools : []) + (allowed.images ? [Self.imageTool] : [])
+                + (allowed.notebooks && store?.lightModeEnabled == false ? Self.notebookTools : [])
             return Self.result(id: id, ["tools": tools])
         case "tools/call":
             let name = params["name"] as? String ?? ""
@@ -226,13 +228,19 @@ public struct ChatDelegation: Equatable {
         "reference_image": ["type": "string", "description": "Optional path of an image to start from."],
     ], required: ["prompt"])
 
-    private static func tool(_ name: String, _ description: String, _ properties: [String: Any], required: [String]) -> [String: Any] {
+    static func tool(_ name: String, _ description: String, _ properties: [String: Any], required: [String]) -> [String: Any] {
         ["name": name, "description": description, "inputSchema": ["type": "object", "properties": properties, "required": required, "additionalProperties": false]]
     }
 
     func call(_ name: String, arguments: [String: Any], caller: UUID) async -> (String, Bool) {
         guard let store else { return ("Jack is closing.", true) }
         guard let parent = store.conversations.first(where: { $0.id == caller }) else { return ("The calling conversation no longer exists.", true) }
+        if name.hasPrefix("notebook_") {
+            guard permissions[caller]?.notebooks == true, !store.lightModeEnabled else {
+                return ("Notebook tools are available only in Normal mode.", true)
+            }
+            return await notebookCall(name, arguments: arguments, conversation: parent, workspace: store.notebooks)
+        }
         if name == "generate_image" { return await generateImage(arguments, caller: parent, store: store) }
         guard permissions[caller]?.delegates ?? true else { return ("Only the agent the user talks to can manage other agents.", true) }
         let children = store.conversations.filter { $0.parentID == caller }

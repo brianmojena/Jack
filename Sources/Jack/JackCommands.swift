@@ -30,12 +30,30 @@ extension FocusedValues {
     @Entry var jackActions: JackActions?
 }
 
+/// The same persisted switch is available in both window layouts and the app menu.
+struct LightModeToggle: View {
+    @AppStorage("lightModeEnabled") private var enabled = false
+
+    var body: some View {
+        Toggle(isOn: $enabled) {
+            Label("Light", systemImage: "leaf")
+                .font(.system(size: 11, weight: .medium))
+        }
+        .toggleStyle(.switch)
+        .controlSize(.mini)
+        .fixedSize()
+        .accessibilityLabel("Modo Light")
+        .help(enabled ? "Desactivar Light y volver al modo Normal (⌃⌘L)" : "Activar el modo Light para ahorrar batería (⌃⌘L)")
+    }
+}
+
 struct JackCommands: Commands {
     @FocusedValue(\.jackActions) private var actions
+    @AppStorage("lightModeEnabled") private var lightMode = false
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
-            Button("Nuevo agente") { actions?.newAgent() }
+            Button(lightMode ? "Nuevo agente…" : "Nuevo agente") { actions?.newAgent() }
                 .keyboardShortcut("n", modifiers: .command)
                 .disabled(actions == nil)
             Button("Retomar sesión de Claude Code…") { actions?.resumeClaudeSession() }
@@ -52,9 +70,11 @@ struct JackCommands: Commands {
                 .keyboardShortcut("w", modifiers: [.command, .shift])
         }
         CommandGroup(before: .sidebar) {
+            Toggle("Modo Light", isOn: $lightMode)
+                .keyboardShortcut("l", modifiers: [.command, .control])
             Button("Mostrar u ocultar barra lateral") { actions?.toggleSidebar() }
                 .keyboardShortcut("s", modifiers: [.command, .control])
-                .disabled(actions == nil)
+                .disabled(actions == nil || lightMode)
             Button("Mostrar u ocultar archivos") { actions?.toggleExplorer() }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
                 .disabled(actions?.hasSelection != true)
@@ -102,16 +122,16 @@ struct JackCommands: Commands {
             Divider()
             Button("Mostrar u ocultar terminal") { actions?.toggleTerminal() }
                 .keyboardShortcut("`", modifiers: .control)
-                .disabled(actions?.hasSelection != true)
+                .disabled(actions?.hasSelection != true || lightMode)
             Button("Mostrar u ocultar navegador") { actions?.toggleBrowser() }
                 .keyboardShortcut("b", modifiers: [.command, .shift])
-                .disabled(actions?.hasSelection != true)
+                .disabled(actions?.hasSelection != true || lightMode)
             Button("Mostrar u ocultar simulador de iOS") { actions?.toggleSimulator() }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
-                .disabled(actions?.hasSelection != true)
+                .disabled(actions?.hasSelection != true || lightMode)
             Button("Mostrar u ocultar Git") { actions?.toggleGit() }
                 .keyboardShortcut("g", modifiers: [.command, .shift])
-                .disabled(actions?.hasSelection != true)
+                .disabled(actions?.hasSelection != true || lightMode)
         }
     }
 }

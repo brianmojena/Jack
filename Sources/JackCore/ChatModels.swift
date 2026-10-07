@@ -223,6 +223,8 @@ public struct ChatCommand: Identifiable, Codable, Equatable {
     func setMode(_ mode: String) -> Bool
     /// Ends the agent's process.
     func close()
+    /// Only Light changes idle lifetime; pending/background work must remain alive.
+    func setEnergySaving(_ enabled: Bool)
 }
 public extension ChatDriver {
     func run(conversation: ChatConversation, prompt: String, delegation: ChatDelegation?, onEvent: @escaping @MainActor (ChatEvent) -> Void) async throws {
@@ -243,6 +245,7 @@ public extension ChatDriver {
     func stop(keepingQueued: Bool) { stop() }
     func setMode(_ mode: String) -> Bool { false }
     func close() { stop() }
+    func setEnergySaving(_ enabled: Bool) {}
 }
 
 /// Jack commands are local to the app; provider slash commands retain their own routing.

@@ -95,6 +95,7 @@ struct StatusBar: View, Equatable {
             .menuIndicator(.hidden)
             .fixedSize()
             .help("Agentes trabajando ahora y máximo en paralelo")
+            LightModeToggle()
         }
         .font(.system(size: 11).monospacedDigit())
         .foregroundStyle(JackPalette.muted)

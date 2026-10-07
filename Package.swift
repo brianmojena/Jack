@@ -20,7 +20,8 @@ let package = Package(
         .executableTarget(name: "JackProbe", dependencies: ["JackCore"]),
         .executableTarget(name: "JackChatProbe", dependencies: ["JackCore"]),
         .executableTarget(name: "JackProgress", dependencies: ["JackCore"]),
-        .testTarget(name: "JackCoreTests", dependencies: ["JackCore"])
+        .testTarget(name: "JackCoreTests", dependencies: ["JackCore"]),
+        .testTarget(name: "JackUITests", dependencies: ["Jack"])
     ],
     swiftLanguageVersions: [.v5]
 )

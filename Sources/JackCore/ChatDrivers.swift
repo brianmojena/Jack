@@ -64,6 +64,7 @@ private class ProcessChatDriver: ChatDriver {
     func stop(keepingQueued: Bool) { stop() }
     func setMode(_ mode: String) -> Bool { false }
     func close() { stop() }
+    func setEnergySaving(_ enabled: Bool) {}
 
     func begin(_ executable: String, arguments: [String], directory: String, environment: [String: String] = [:]) throws -> StructuredChild {
         let process = try StructuredChild(executable: executable, arguments: arguments, directory: directory, environment: environment)
@@ -209,14 +210,14 @@ private final class CodexChatDriver: ProcessChatDriver {
         try process.writeJSON(["method": "initialized", "params": [:]])
         if let saved = conversation.sessionID, !saved.isEmpty {
             var params: [String: Any] = ["threadId": saved]
-            if let instructions = ChatRunConfiguration.agentInstructions(delegating: delegation?.delegates == true, images: delegation?.images == true) { params["developerInstructions"] = instructions }
+            if let instructions = ChatRunConfiguration.agentInstructions(delegating: delegation?.delegates == true, images: delegation?.images == true, notebooks: delegation?.notebooks == true) { params["developerInstructions"] = instructions }
             let requestID = id(); try process.writeJSON(["id": requestID, "method": "thread/resume", "params": params])
             try await waitForResponse(id: requestID, process: process, reader: reader, generation: generation, onEvent: onEvent)
             threadID = saved
         } else {
             let requestID = id()
             var params: [String: Any] = ["cwd": conversation.projectPath, "model": nonempty(conversation.model), "approvalPolicy": "on-request", "sandbox": "workspace-write"]
-            if let instructions = ChatRunConfiguration.agentInstructions(delegating: delegation?.delegates == true, images: delegation?.images == true) { params["developerInstructions"] = instructions }
+            if let instructions = ChatRunConfiguration.agentInstructions(delegating: delegation?.delegates == true, images: delegation?.images == true, notebooks: delegation?.notebooks == true) { params["developerInstructions"] = instructions }
             try process.writeJSON(["id": requestID, "method": "thread/start", "params": params])
             try await waitForResponse(id: requestID, process: process, reader: reader, generation: generation, onEvent: onEvent)
         }
@@ -675,6 +676,13 @@ private final class ClaudeChatDriver: ProcessChatDriver {
     private var queued: [String: String] = [:]
     /// Delegated agents close right after their turn: an orchestrator may start several, and memory is scarce.
     private var closesWhenIdle = false
+    private var energySaving = false
+
+    override func setEnergySaving(_ enabled: Bool) {
+        guard energySaving != enabled else { return }
+        energySaving = enabled
+        scheduleIdleClose()
+    }
 
     override var keepsAlive: Bool { true }
 
@@ -796,7 +804,7 @@ private final class ClaudeChatDriver: ProcessChatDriver {
     private func session(for conversation: ChatConversation, delegation: ChatDelegation?) throws -> StructuredChild {
         guard let executable = ExecutableResolver.resolve("claude", override: UserDefaults.standard.string(forKey: "providerExecutablePath.claude")) else { throw ChatDriverError.executableMissing("claude") }
         let delegationArgs = (delegation.map(ChatRunConfiguration.claudeDelegation) ?? [])
-            + (ChatRunConfiguration.agentInstructions(delegating: delegation?.delegates == true, images: delegation?.images == true).map { ["--append-system-prompt", $0] } ?? [])
+            + (ChatRunConfiguration.agentInstructions(delegating: delegation?.delegates == true, images: delegation?.images == true, notebooks: delegation?.notebooks == true).map { ["--append-system-prompt", $0] } ?? [])
         let signature = [executable] + ChatRunConfiguration.claudeLaunchSignature(conversation) + delegationArgs
         // Restarting would end background subagents; new settings wait until they finish.
         if let child, signature == launch || decoder.backgroundTaskCount > 0 { return child }
@@ -954,7 +962,8 @@ private final class ClaudeChatDriver: ProcessChatDriver {
         // Queued messages start a turn of their own as soon as the agent reads them.
         guard child != nil, sink == nil, queued.isEmpty else { return }
         let minutes = closesWhenIdle ? 0 : UserDefaults.standard.object(forKey: ChatDriverFactory.claudeKeepAliveKey) as? Int ?? 5
-        let seconds = decoder.backgroundTaskCount > 0 ? max(60, minutes * 60) : minutes * 60
+        let idleSeconds = energySaving ? min(30, minutes * 60) : minutes * 60
+        let seconds = decoder.backgroundTaskCount > 0 ? max(60, minutes * 60) : idleSeconds
         idleClose = Task { [weak self] in
             if seconds > 0 { try? await Task.sleep(for: .seconds(seconds)) }
             guard !Task.isCancelled, let self, self.sink == nil, self.unpromptedEvents == nil, self.queued.isEmpty else { return }
@@ -1021,7 +1030,7 @@ private final class OpenCodeChatDriver: ProcessChatDriver {
                 }
             } else {
                 var body = ChatRunConfiguration.openCodePrompt(conversation, prompt: prompt)
-                if let instructions = ChatRunConfiguration.agentInstructions(delegating: delegation?.delegates == true, images: delegation?.images == true) { body["system"] = instructions }
+                if let instructions = ChatRunConfiguration.agentInstructions(delegating: delegation?.delegates == true, images: delegation?.images == true, notebooks: delegation?.notebooks == true) { body["system"] = instructions }
                 try await requestNoContent(root, path: sessionPath + "/prompt_async", method: "POST", body: body, password: password)
             }
             try await streamTask.value
@@ -1408,9 +1417,9 @@ enum ChatRunConfiguration {
         return ["--mcp-config", config, "--allowedTools", "mcp__jack"]
     }
     /// What Jack tells every agent: how to show progress, and the `jack` tools it gets.
-    static func agentInstructions(delegating: Bool, images: Bool = false) -> String? {
+    static func agentInstructions(delegating: Bool, images: Bool = false, notebooks: Bool = false) -> String? {
         let parts = [ProgressFiles.isAvailable ? ProgressFiles.helperInstructions : nil, delegating ? ChatDelegation.instructions : nil,
-                     images ? ChatDelegation.imageInstructions : nil].compactMap { $0 }
+                     images ? ChatDelegation.imageInstructions : nil, notebooks ? NotebookWorkspace.agentInstructions : nil].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: "\n\n")
     }
     static func claudeSettings(_ conversation: ChatConversation) -> [String] {

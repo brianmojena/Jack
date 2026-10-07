@@ -18,6 +18,12 @@ import Foundation
     @Published public private(set) var loadingLocalModels = false
     @Published public var errorMessage: String?
     @Published public private(set) var maxConcurrent = 4
+    /// Light's preferences are independent of Normal's.
+    @Published public private(set) var lightMaxConcurrent = 1
+    public private(set) var lightModeEnabled = false
+    private var lightWindowVisible = true
+    private var lightDetailsVisible = false
+    public var effectiveMaxConcurrent: Int { lightModeEnabled ? lightMaxConcurrent : maxConcurrent }
     @Published public private(set) var usage: [ChatProvider: ProviderUsage] = [:]
     @Published public private(set) var tokenUsage: [UUID: ChatTokenUsage] = [:]
     @Published public private(set) var refreshingUsage = false
@@ -58,10 +64,29 @@ import Foundation
     /// Orchestrators blocked in wait_for_agents; they don't take a concurrency slot from their sub-agents.
     private var delegatedWaits: [UUID: Int] = [:]
     public lazy var bridge = AgentBridge(store: self)
+    private var notebookWorkspace: NotebookWorkspace?
+    public var notebooks: NotebookWorkspace {
+        if let notebookWorkspace { return notebookWorkspace }
+        let workspace = NotebookWorkspace(enabled: !lightModeEnabled)
+        notebookWorkspace = workspace
+        return workspace
+    }
     /// Progress bars agents report with `jack-progress`; created on first use so tests don't watch the real folder.
-    public lazy var progress = ProgressMonitor()
+    private var progressMonitor: ProgressMonitor?
+    public var progress: ProgressMonitor {
+        if let progressMonitor { return progressMonitor }
+        let monitor = ProgressMonitor(watching: !lightModeEnabled)
+        progressMonitor = monitor
+        return monitor
+    }
     /// Servers running in the user's projects, whichever session started them.
-    public lazy var servers = ServerMonitor(projects: { [weak self] in Set(self?.conversations.map(\.projectPath) ?? []) })
+    private var serverMonitor: ServerMonitor?
+    public var servers: ServerMonitor {
+        if let serverMonitor { return serverMonitor }
+        let monitor = ServerMonitor(projects: { [weak self] in Set(self?.conversations.map(\.projectPath) ?? []) }, watching: !lightModeEnabled)
+        serverMonitor = monitor
+        return monitor
+    }
     /// Images agents asked for with `generate_image`, waiting for the user in Image Playground or just created.
     @Published public private(set) var imageRequests: [ChatImageRequest] = []
     /// Imported Claude Code sessions whose history is being read.
@@ -89,7 +114,8 @@ import Foundation
     /// Lets Claude Code agents create and monitor other agents through Jack's MCP tools.
     public var delegationEnabled: Bool { preferences?.object(forKey: "delegationEnabled") as? Bool ?? true }
 
-    public init(archive: ChatArchive = ChatArchive(), preferences: UserDefaults? = .standard, driverFactory: ((ChatProvider) -> any ChatDriver)? = nil, commandLoader: ((ChatProvider, String) async throws -> [ChatCommand])? = nil) {
+    public init(archive: ChatArchive = ChatArchive(), preferences: UserDefaults? = .standard, driverFactory: ((ChatProvider) -> any ChatDriver)? = nil, commandLoader: ((ChatProvider, String) async throws -> [ChatCommand])? = nil, lightMode: Bool = false) {
+        self.lightModeEnabled = lightMode
         self.loadCommandList = commandLoader ?? { try await ChatCommandService.load($0, directory: $1) }
         self.archive = archive
         let templateURL = archive.directory.appendingPathComponent("commands.json")
@@ -101,6 +127,7 @@ import Foundation
         self.makeDriver = driverFactory ?? { ChatDriverFactory.make($0) }
         for provider in ChatProvider.allCases { recentModels[provider] = preferences?.stringArray(forKey: "recentModels.\(provider.rawValue)") ?? [] }
         if let saved = preferences?.object(forKey: "maxConcurrentAgents") as? Int { maxConcurrent = max(0, min(64, saved)) }
+        if let saved = preferences?.object(forKey: "lightMaxConcurrentAgents") as? Int { lightMaxConcurrent = max(1, min(64, saved)) }
         do {
             conversations = try archive.loadIndex()
             for conversation in conversations { if let value = conversation.tokenUsage { tokenUsage[conversation.id] = value } }
@@ -110,6 +137,41 @@ import Foundation
         maxConcurrent = max(0, min(64, count))
         preferences?.set(maxConcurrent, forKey: "maxConcurrentAgents")
         drainQueue()
+    }
+    public func setLightConcurrency(_ count: Int) {
+        lightMaxConcurrent = max(1, min(64, count))
+        preferences?.set(lightMaxConcurrent, forKey: "lightMaxConcurrentAgents")
+        drainQueue()
+    }
+    public func setLightMode(_ enabled: Bool) {
+        guard enabled != lightModeEnabled else { return }
+        flushTask?.cancel(); flushTask = nil
+        for id in Array(pending.keys) { flush(id) }
+        lightModeEnabled = enabled
+        notebookWorkspace?.setEnabled(!enabled)
+        lightWindowVisible = true
+        lightDetailsVisible = false
+        if enabled { usageRefresh?.cancel(); usageRefresh = nil }
+        progressMonitor?.setWatching(!enabled)
+        serverMonitor?.setWatching(!enabled)
+        for driver in liveDrivers.values { driver.setEnergySaving(enabled) }
+        for driver in drivers.values { driver.setEnergySaving(enabled) }
+        drainQueue()
+    }
+    /// Visibility changes arrive from AppKit; no visibility polling is needed.
+    public func setLightWindowVisible(_ visible: Bool) {
+        guard visible != lightWindowVisible else { return }
+        lightWindowVisible = visible
+        guard lightModeEnabled else { return }
+        if visible {
+            if let selectedID { flush(selectedID) }
+        } else {
+            flushTask?.cancel(); flushTask = nil
+        }
+    }
+    public func setLightDetailsVisible(_ visible: Bool) {
+        lightDetailsVisible = visible
+        if visible { for id in Array(pending.keys) { flush(id) } }
     }
     public func refreshUsage(_ providers: [ChatProvider] = ChatProvider.allCases) async {
         guard !refreshingUsage else { return }
@@ -123,10 +185,10 @@ import Foundation
     private var usageRefresh: Task<Void, Never>?
     /// Reads a provider's quota shortly after one of its turns, once for several turns that end together.
     private func refreshUsageSoon(_ provider: ChatProvider) {
-        guard usageRefresh == nil, !stopped else { return }
+        guard usageRefresh == nil, !stopped, !lightModeEnabled else { return }
         usageRefresh = Task { [weak self] in
             try? await Task.sleep(for: .seconds(4))
-            guard let self, !self.stopped else { return }
+            guard !Task.isCancelled, let self, !self.stopped, !self.lightModeEnabled else { return }
             await self.refreshUsage([provider])
             self.usageRefresh = nil
         }
@@ -197,12 +259,20 @@ import Foundation
     private func place(_ id: UUID) {
         guard locateTasks[id] == nil, let conversation = conversations.first(where: { $0.id == id }) else { return }
         let request = Self.request(of: conversation)
-        // Always include Jack's current projects, even if the disk index is stale.
-        var seen = Set<String>()
-        let openProjects = conversations.sorted { $0.updatedAt > $1.updatedAt }.map(\.projectPath)
-            .filter { $0 != ProjectLocator.unplacedFolder && seen.insert($0).inserted }
-        let projects = openProjects + knownProjects.filter { $0 != ProjectLocator.unplacedFolder && seen.insert($0).inserted }
-        let knownPath = ProjectLocator.knownPath(in: request, projects: projects, openProjects: openProjects)
+        let projects: [String]
+        let knownPath: String?
+        if lightModeEnabled {
+            // Preserve Light's existing folder workflow; new automatic routing is Normal-only.
+            projects = knownProjects.isEmpty ? Array(Set(conversations.map(\.projectPath))) : knownProjects
+            knownPath = nil
+        } else {
+            // Always include Jack's current projects, even if the disk index is stale.
+            var seen = Set<String>()
+            let openProjects = conversations.sorted { $0.updatedAt > $1.updatedAt }.map(\.projectPath)
+                .filter { $0 != ProjectLocator.unplacedFolder && seen.insert($0).inserted }
+            projects = openProjects + knownProjects.filter { $0 != ProjectLocator.unplacedFolder && seen.insert($0).inserted }
+            knownPath = ProjectLocator.knownPath(in: request, projects: projects, openProjects: openProjects)
+        }
         let locate = locateProject, deadline = locateDeadline
         locating.insert(id)
         statuses[id] = .running
@@ -247,7 +317,7 @@ import Foundation
                 self.save(id)
                 return
             }
-            self.conversations[index].projectPath = ProjectLocator.existingPath(path, projects: projects)
+            self.conversations[index].projectPath = self.lightModeEnabled ? path : ProjectLocator.existingPath(path, projects: projects)
             self.conversations[index].updatedAt = Date()
             self.preferences?.set(self.conversations[index].projectPath, forKey: "lastProjectPath")
             self.save(id)
@@ -353,6 +423,7 @@ import Foundation
         return true
     }
     public func select(_ id: UUID) {
+        if lightModeEnabled { flush(id) }
         guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
         if !loaded.contains(id) {
             do { if let transcript = try archive.load(id) { conversations[index].messages = transcript.messages }; loaded.insert(id); settleBackground(id) }
@@ -777,6 +848,8 @@ import Foundation
         stopped = true; queue.removeAll(); flushTask?.cancel(); flushTask = nil
         for id in Array(locateTasks.keys) { cancelLocating(id) }
         asides.cancelAll()
+        notebookWorkspace?.stop()
+        if lightModeEnabled { progressMonitor?.stop(); serverMonitor?.stop() }
         StellarRuntime.shutdown()
         for id in Array(pending.keys) { flush(id) }
         for (id, driver) in drivers { driver.stop(); runs[id]?.cancel(); settleActivities(id); save(id) }
@@ -786,7 +859,7 @@ import Foundation
     }
     private func drainQueue() {
         guard !stopped else { return }
-        while (maxConcurrent == 0 || runs.count - delegatedWaits.count < maxConcurrent),
+        while (effectiveMaxConcurrent == 0 || runs.count - delegatedWaits.count < effectiveMaxConcurrent),
               // A message waits while its agent is busy with a turn it started by itself.
               let next = queue.firstIndex(where: { runs[$0.0] == nil }) {
             let (id, queuedPrompt) = queue.remove(at: next)
@@ -796,8 +869,9 @@ import Foundation
             // Only top-level agents may delegate, so sub-agents cannot spawn more agents. Every agent may create images.
             let delegates = conversation.parentID == nil && delegationEnabled
             let images = imageGenerationAvailable
+            let notebooks = !lightModeEnabled
             startRun(id, driver: driver) { [weak self] onEvent in
-                let delegation = delegates || images ? try? await self?.bridge.delegation(for: id, delegates: delegates, images: images) : nil
+                let delegation = delegates || images || notebooks ? try? await self?.bridge.delegation(for: id, delegates: delegates, images: images, notebooks: notebooks) : nil
                 try await driver.run(conversation: conversation, prompt: prompt, delegation: delegation, onEvent: onEvent)
             }
         }
@@ -806,6 +880,7 @@ import Foundation
         let id = conversation.id
         if let live = liveDrivers[id] { return live }
         let driver = makeDriver(conversation.provider)
+        if lightModeEnabled { driver.setEnergySaving(true) }
         if driver.keepsAlive {
             liveDrivers[id] = driver
             driver.observe(idle: { [weak self] event in self?.receiveIdle(event, for: id) },
@@ -912,18 +987,47 @@ import Foundation
     private func receive(_ event: ChatEvent, for id: UUID) {
         switch event {
         case .text, .reasoning, .toolOutput, .tool:
-            pending[id, default: []].append(event)
+            if lightModeEnabled { bufferLight(event, for: id) }
+            else { pending[id, default: []].append(event) }
+            if lightModeEnabled {
+                guard lightWindowVisible, id == selectedID else { return }
+                // Keep hidden details for history without scheduling a UI update for each fragment.
+                if case .text = event {} else if !lightDetailsVisible { return }
+            }
             if flushTask == nil {
+                let delay: UInt64 = lightModeEnabled ? 1_000_000_000 : 50_000_000
                 flushTask = Task { [weak self] in
-                    try? await Task.sleep(nanoseconds: 50_000_000)
+                    try? await Task.sleep(nanoseconds: delay)
                     guard !Task.isCancelled, let self else { return }
                     self.flushTask = nil
-                    for key in Array(self.pending.keys) { self.flush(key) }
+                    if self.lightModeEnabled {
+                        if self.lightWindowVisible, let selected = self.selectedID { self.flush(selected) }
+                    } else {
+                        for key in Array(self.pending.keys) { self.flush(key) }
+                    }
                 }
             }
         default:
             flush(id); apply(event, for: id)
         }
+    }
+    /// Bound deferred tool output and coalesce consecutive deltas while a Light chat is hidden.
+    /// Tool/input transitions stay ordered exactly as in the provider's event stream.
+    private func bufferLight(_ event: ChatEvent, for id: UUID) {
+        var merged: ChatEvent?
+        if let last = pending[id]?.last {
+            switch (last, event) {
+            case let (.text(oldID, old, oldReplace), .text(newID, text, replace)) where oldID == newID:
+                merged = .text(id: newID, text: replace ? text : old + text, replace: oldReplace || replace)
+            case let (.reasoning(oldID, old, oldReplace), .reasoning(newID, text, replace)) where oldID == newID:
+                merged = .reasoning(id: newID, text: replace ? text : old + text, replace: oldReplace || replace)
+            case let (.toolOutput(oldID, old), .toolOutput(newID, text)) where oldID == newID:
+                merged = .toolOutput(id: newID, text: String((old + text).suffix(65_536)))
+            default: break
+            }
+        }
+        if let merged, let index = pending[id]?.indices.last { pending[id]?[index] = merged }
+        else { pending[id, default: []].append(event) }
     }
     private func flush(_ id: UUID) {
         guard let events = pending.removeValue(forKey: id), !events.isEmpty, let index = conversations.firstIndex(where: { $0.id == id }) else { return }
