@@ -64,6 +64,13 @@ import Foundation
     /// Orchestrators blocked in wait_for_agents; they don't take a concurrency slot from their sub-agents.
     private var delegatedWaits: [UUID: Int] = [:]
     public lazy var bridge = AgentBridge(store: self)
+    private var notebookWorkspace: NotebookWorkspace?
+    public var notebooks: NotebookWorkspace {
+        if let notebookWorkspace { return notebookWorkspace }
+        let workspace = NotebookWorkspace(enabled: !lightModeEnabled)
+        notebookWorkspace = workspace
+        return workspace
+    }
     /// Progress bars agents report with `jack-progress`; created on first use so tests don't watch the real folder.
     private var progressMonitor: ProgressMonitor?
     public var progress: ProgressMonitor {
@@ -141,6 +148,7 @@ import Foundation
         flushTask?.cancel(); flushTask = nil
         for id in Array(pending.keys) { flush(id) }
         lightModeEnabled = enabled
+        notebookWorkspace?.setEnabled(!enabled)
         lightWindowVisible = true
         lightDetailsVisible = false
         if enabled { usageRefresh?.cancel(); usageRefresh = nil }
@@ -840,6 +848,7 @@ import Foundation
         stopped = true; queue.removeAll(); flushTask?.cancel(); flushTask = nil
         for id in Array(locateTasks.keys) { cancelLocating(id) }
         asides.cancelAll()
+        notebookWorkspace?.stop()
         if lightModeEnabled { progressMonitor?.stop(); serverMonitor?.stop() }
         StellarRuntime.shutdown()
         for id in Array(pending.keys) { flush(id) }
@@ -860,8 +869,9 @@ import Foundation
             // Only top-level agents may delegate, so sub-agents cannot spawn more agents. Every agent may create images.
             let delegates = conversation.parentID == nil && delegationEnabled
             let images = imageGenerationAvailable
+            let notebooks = !lightModeEnabled
             startRun(id, driver: driver) { [weak self] onEvent in
-                let delegation = delegates || images ? try? await self?.bridge.delegation(for: id, delegates: delegates, images: images) : nil
+                let delegation = delegates || images || notebooks ? try? await self?.bridge.delegation(for: id, delegates: delegates, images: images, notebooks: notebooks) : nil
                 try await driver.run(conversation: conversation, prompt: prompt, delegation: delegation, onEvent: onEvent)
             }
         }
