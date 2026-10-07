@@ -47,6 +47,7 @@
 		65138D0E8C01F36F52CF9E9E /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 32B0BA461A610CE350B86967 /* AppIcon.icon */; };
 		6A89D2DA42A687D07F5F2C3F /* SimulatorPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A3D7246F7BBDA7A8018807 /* SimulatorPanel.swift */; };
 		6EB861C0B842D3CECBD7F800 /* ExecutableResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A45A93DAF44DBBC83A60C50 /* ExecutableResolver.swift */; };
+		7115EB2F2F1B010FA082BF0D /* FlowPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17C8EF45B0037C8560493285 /* FlowPanel.swift */; };
 		7441A1CC448183A8E8566D6D /* WindowChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49EB006FB5D21FFC9B93D8CF /* WindowChrome.swift */; };
 		7C20E12504FE7813682A0B19 /* ProjectLocator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6143A83A4EEEBF4CC0FE7C86 /* ProjectLocator.swift */; };
 		7CF0D92236427584C6ED9239 /* PaneSplit.swift in Sources */ = {isa = PBXBuildFile; fileRef = BECA119E22381166808B5690 /* PaneSplit.swift */; };
@@ -62,6 +63,7 @@
 		9E0D42BCAC6096551B207E07 /* Git.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD49B26FBE95D7FD23912D74 /* Git.swift */; };
 		9E32EAA13FF894FCB4AAB92D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2E1B2F8CCC4DBA9277E4269 /* SettingsView.swift */; };
 		A2732E28952569560148E19D /* ChatDrivers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CE721E7266C74484EE01DBD /* ChatDrivers.swift */; };
+		A39B7CF137522252F4D1A9C3 /* PlanFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D47B1B2C9E68EC321647E2E /* PlanFlow.swift */; };
 		A7D328F4FA370B7E3C7FFB6F /* ChatProcess.swift in Sources */ = {isa = PBXBuildFile; fileRef = E229CF3EA3E5C8331E30BF2D /* ChatProcess.swift */; };
 		A98FB0615710A756161AC7F6 /* JackApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC084525C4D6CE0EBEF1CF88 /* JackApp.swift */; };
 		ACC1F89F78B5AD87F0004663 /* ImagePlaygroundViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEB5D3C1C311E732214D3E5F /* ImagePlaygroundViews.swift */; };
@@ -159,6 +161,7 @@
 		112E9D6E62140F40A3F29A21 /* AgentBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentBridge.swift; sourceTree = "<group>"; };
 		12A56C2DEDA3D8023FD61366 /* JackDesign.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JackDesign.swift; sourceTree = "<group>"; };
 		138D59F70F9CA07105FD1933 /* FileExplorer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileExplorer.swift; sourceTree = "<group>"; };
+		17C8EF45B0037C8560493285 /* FlowPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowPanel.swift; sourceTree = "<group>"; };
 		1ABE22C8EB6AC06EEB29920D /* ServerViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerViews.swift; sourceTree = "<group>"; };
 		1FCA7EE32BDFA05868D21D74 /* ChatAside.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatAside.swift; sourceTree = "<group>"; };
 		21FADA6FCE0D89345442C744 /* SSHKeySetup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHKeySetup.swift; sourceTree = "<group>"; };
@@ -187,6 +190,7 @@
 		67147764C7E299C6400683A6 /* AgentFoldersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentFoldersView.swift; sourceTree = "<group>"; };
 		6AA8C81C6A84E8DDF53B0226 /* AsideView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AsideView.swift; sourceTree = "<group>"; };
 		6B8F35219BDD3B6F10A58137 /* JackCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JackCommands.swift; sourceTree = "<group>"; };
+		6D47B1B2C9E68EC321647E2E /* PlanFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanFlow.swift; sourceTree = "<group>"; };
 		7099A2B3636CAE85AFECF7D0 /* GitPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitPanel.swift; sourceTree = "<group>"; };
 		83D024EB758956F78F8FDB4B /* ProjectFinder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectFinder.swift; sourceTree = "<group>"; };
 		85DCC6EA3147FF905D955068 /* NotebookTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotebookTools.swift; sourceTree = "<group>"; };
@@ -302,6 +306,7 @@
 				DD0F0EC32A5D428E50E5152F /* NotebookSession.swift */,
 				85DCC6EA3147FF905D955068 /* NotebookTools.swift */,
 				D509AEAE925B54594B2E191B /* PaneLayout.swift */,
+				6D47B1B2C9E68EC321647E2E /* PlanFlow.swift */,
 				AF1118CA07727753620BBFEB /* ProgressMonitor.swift */,
 				5BD8FE80738952666BEDFBA7 /* ProgressTasks.swift */,
 				83D024EB758956F78F8FDB4B /* ProjectFinder.swift */,
@@ -373,6 +378,7 @@
 				3789D85F443A38492640A492 /* ClaudeSessionPicker.swift */,
 				0AD6A284F00CF9276696D1F8 /* ContextPanelView.swift */,
 				138D59F70F9CA07105FD1933 /* FileExplorer.swift */,
+				17C8EF45B0037C8560493285 /* FlowPanel.swift */,
 				7099A2B3636CAE85AFECF7D0 /* GitPanel.swift */,
 				EEB5D3C1C311E732214D3E5F /* ImagePlaygroundViews.swift */,
 				CC084525C4D6CE0EBEF1CF88 /* JackApp.swift */,
@@ -553,6 +559,7 @@
 				8CFA9AFD04527815E8EC6FC0 /* ClaudeSessionPicker.swift in Sources */,
 				F4C4F1A3CBF9BF0DD8CEB3FB /* ContextPanelView.swift in Sources */,
 				051E30A12B62E96A652522D3 /* FileExplorer.swift in Sources */,
+				7115EB2F2F1B010FA082BF0D /* FlowPanel.swift in Sources */,
 				F3A1B52289DFE06DBCA59FC9 /* GitPanel.swift in Sources */,
 				ACC1F89F78B5AD87F0004663 /* ImagePlaygroundViews.swift in Sources */,
 				A98FB0615710A756161AC7F6 /* JackApp.swift in Sources */,
@@ -615,6 +622,7 @@
 				C9B11725023A9D298A27281D /* NotebookSession.swift in Sources */,
 				5A56C9CADC26642A0D180421 /* NotebookTools.swift in Sources */,
 				125DC2F3E2AC2F34CBF5DA1A /* PaneLayout.swift in Sources */,
+				A39B7CF137522252F4D1A9C3 /* PlanFlow.swift in Sources */,
 				4EEE59F330E778DC3B2E53D1 /* ProgressMonitor.swift in Sources */,
 				13E5587D2DFD397AFB57C9B5 /* ProgressTasks.swift in Sources */,
 				D0940594786ADCB9DF4AD81B /* ProjectFinder.swift in Sources */,

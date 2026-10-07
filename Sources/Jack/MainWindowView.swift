@@ -22,6 +22,8 @@ struct MainWindowView: View {
     /// The chat shaded under a drag. Held, not observed: only the shades redraw while dragging.
     @State private var paneDrops = PaneDropState()
     @State private var workspaceVisible = false
+    /// Plans of the selected agent that already had their flowchart shown, or were there when it was selected.
+    @State private var seenPlans: Set<String> = []
     @AppStorage("explorerVisible") private var explorerVisible = false
     @AppStorage("sidebarVisible") private var sidebarVisible = true
     @AppStorage("openTabs") private var openTabsValue = ""
@@ -48,6 +50,11 @@ struct MainWindowView: View {
     private var selectedConversation: ChatConversation? { store.selectedConversation }
     private var importedClaudeSessions: Set<String> { Set(store.conversations.compactMap { $0.provider == .claude ? $0.sessionID : nil }) }
     private var ice: Bool { interfaceStyle == .ice }
+    /// Identifies the plan the selected agent is putting forward, when it has steps to draw.
+    private var planKey: String? {
+        guard let id = store.selectedID, let offer = store.plan(for: id), PlanFlow.parse(offer.markdown) != nil else { return nil }
+        return "\(id.uuidString)|\(offer.key)"
+    }
 
     var body: some View {
         Group {
@@ -74,11 +81,21 @@ struct MainWindowView: View {
         }
         .onChange(of: store.selectedID, initial: true) { previous, id in
             guard let id else { return }
+            // A plan already there when the agent is selected is not news.
+            if let key = planKey { seenPlans.insert(key) }
             let open = OpenTabs.opening(id, in: openTabIDs, after: previous)
             if open != openTabIDs { openTabsValue = OpenTabs.encode(open) }
             // The agent now in the main chat leaves its pane.
             let layout = PaneLayout(encoded: paneLayoutValue)
             if layout.contains(id) { setLayout(layout.removing(id)) }
+        }
+        // A plan put forward by the agent in the main chat draws its flowchart in the right pane.
+        .onChange(of: planKey) { _, key in
+            guard let key, seenPlans.insert(key).inserted, let id = store.selectedID else { return }
+            withoutAnimation {
+                workspace.reveal(.flow, for: id)
+                workspaceVisible = true
+            }
         }
         .onChange(of: paneLayoutValue, initial: true) { _, _ in store.showInPanes(paneLayout.agents) }
         .onChange(of: store.imageRequests.filter(\.isPending).count) { before, now in
@@ -213,7 +230,7 @@ struct MainWindowView: View {
                 centerColumn
             } trailing: {
                 if let conversation {
-                    WorkspacePane(sessions: workspace, conversationID: conversation.id, projectPath: conversation.projectPath, remote: conversation.remote,
+                    WorkspacePane(sessions: workspace, store: store, conversationID: conversation.id, projectPath: conversation.projectPath, remote: conversation.remote,
                                   onClose: { withoutAnimation { workspaceVisible = false }; focusedComposer = store.selectedID })
                         .equatable()
                 }

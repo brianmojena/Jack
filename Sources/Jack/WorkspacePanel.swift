@@ -5,7 +5,7 @@ import SwiftUI
 import WebKit
 
 enum WorkspaceTool: String, CaseIterable, Identifiable {
-    case terminal, browser, simulator, git
+    case terminal, browser, simulator, git, flow
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -13,6 +13,7 @@ enum WorkspaceTool: String, CaseIterable, Identifiable {
         case .browser: "Navegador"
         case .simulator: "Simulador"
         case .git: "Git"
+        case .flow: "Flujo"
         }
     }
     var symbol: String {
@@ -21,6 +22,7 @@ enum WorkspaceTool: String, CaseIterable, Identifiable {
         case .browser: "globe"
         case .simulator: "iphone"
         case .git: "arrow.triangle.branch"
+        case .flow: "flowchart"
         }
     }
 }
@@ -66,8 +68,8 @@ struct WorkspaceTab: Identifiable, Equatable {
     @discardableResult
     func open(_ kind: WorkspaceTool, for conversation: UUID) -> WorkspaceTab {
         let list = tabs(for: conversation)
-        // One simulator or Git tab per agent is enough: they show the same device and the same project.
-        if kind == .simulator || kind == .git, let existing = list.first(where: { $0.kind == kind }) {
+        // One simulator, Git or flow tab per agent is enough: they show the same device, project and plan.
+        if kind == .simulator || kind == .git || kind == .flow, let existing = list.first(where: { $0.kind == kind }) {
             selection[conversation] = existing.id
             return existing
         }
@@ -160,6 +162,8 @@ struct WorkspaceTab: Identifiable, Equatable {
 /// The right-hand pane: the selected agent's terminals and browser tabs.
 struct WorkspacePane: View, Equatable {
     @ObservedObject var sessions: WorkspaceSessions
+    /// Only the flow tab reads it, to find the plan.
+    let store: ChatStore
     let conversationID: UUID
     let projectPath: String
     var remote: ChatRemoteEndpoint? = nil
@@ -199,6 +203,7 @@ struct WorkspacePane: View, Equatable {
                     Button("Nuevo navegador", systemImage: "globe") { sessions.open(.browser, for: conversationID) }
                     Button("Simulador de iOS", systemImage: "iphone") { sessions.open(.simulator, for: conversationID) }
                     Button("Git", systemImage: "arrow.triangle.branch") { sessions.open(.git, for: conversationID) }
+                    Button("Diagrama del plan", systemImage: "flowchart") { sessions.open(.flow, for: conversationID) }
                 } label: {
                     Image(systemName: "plus").font(.system(size: 12, weight: .medium))
                 } primaryAction: {
@@ -228,6 +233,8 @@ struct WorkspacePane: View, Equatable {
                         SimulatorPanel(session: sessions.simulator) { paths in sessions.attach?(conversationID, paths) }
                     case .git:
                         GitPanel(session: sessions.git(for: projectPath)) { text in sessions.sendToAgent?(conversationID, text, [], true) }
+                    case .flow:
+                        FlowPanel(store: store, conversationID: conversationID)
                     }
                 } else {
                     emptyState
@@ -249,6 +256,7 @@ struct WorkspacePane: View, Equatable {
                 Button("Navegador") { sessions.open(.browser, for: conversationID) }
                 Button("Simulador") { sessions.open(.simulator, for: conversationID) }
                 Button("Git") { sessions.open(.git, for: conversationID) }
+                Button("Flujo") { sessions.open(.flow, for: conversationID) }
             }
             .controlSize(.small)
         }
@@ -268,6 +276,7 @@ private struct WorkspaceTabTitle: View {
             case .browser: Text("Nueva pestaña")
             case .simulator: Text("Simulador")
             case .git: Text("Git")
+            case .flow: Text("Flujo")
             }
         }
     }

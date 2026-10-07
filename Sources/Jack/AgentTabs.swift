@@ -219,7 +219,7 @@ struct AgentTabStrip: View, Equatable {
 /// Switches for the terminal, browser, simulator and file panes. They observe the agent's tabs,
 /// so the highlighted tool follows the tab selected in the pane.
 struct WorkspaceToggles: View, Equatable {
-    static let width: CGFloat = 154
+    static let width: CGFloat = 182
     @ObservedObject var sessions: WorkspaceSessions
     let conversationID: UUID?
     let paneVisible: Bool
@@ -238,6 +238,7 @@ struct WorkspaceToggles: View, Equatable {
             StripIconButton(symbol: "globe", active: current == .browser, help: "Navegador (⇧⌘B)") { onToggle(.browser) }
             StripIconButton(symbol: "iphone", active: current == .simulator, help: "Simulador de iOS (⇧⌘I)") { onToggle(.simulator) }
             StripIconButton(symbol: "arrow.triangle.branch", active: current == .git, help: "Git (⇧⌘G)") { onToggle(.git) }
+            StripIconButton(symbol: "flowchart", active: current == .flow, help: "Diagrama del plan") { onToggle(.flow) }
             StripIconButton(symbol: "sidebar.right", active: explorerVisible, help: "Archivos del proyecto (⇧⌘E)", action: onToggleExplorer)
         }
         .disabled(conversationID == nil)
@@ -280,6 +281,7 @@ struct WorkspaceToolbarButtons: View {
             toggle("Navegador", "globe", on: current == .browser, help: "Navegador (⇧⌘B)") { onToggle(.browser) }
             toggle("Simulador", "iphone", on: current == .simulator, help: "Simulador de iOS (⇧⌘I)") { onToggle(.simulator) }
             toggle("Git", "arrow.triangle.branch", on: current == .git, help: "Git (⇧⌘G)") { onToggle(.git) }
+            toggle("Flujo", "flowchart", on: current == .flow, help: "Diagrama del plan") { onToggle(.flow) }
             toggle("Archivos", "sidebar.right", on: explorerVisible, help: "Archivos del proyecto (⇧⌘E)", action: onToggleExplorer)
         }
         .disabled(conversationID == nil)
