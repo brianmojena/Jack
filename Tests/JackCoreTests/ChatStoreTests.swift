@@ -231,6 +231,28 @@ final class ChatStoreTests: XCTestCase {
         store.setUnread(background, true)
         XCTAssertEqual(store.conversations.first { $0.id == background }?.hasUnread, true)
     }
+    @MainActor func testPinningIsLimitedToFiveAndPendingPersists() throws {
+        let (store, archive, folder, _) = fixture()
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        var ids: [UUID] = []
+        for _ in 0..<6 {
+            store.create(projectPath: NSTemporaryDirectory(), provider: .codex)
+            ids.append(try XCTUnwrap(store.selectedID))
+        }
+        for id in ids.prefix(5) { XCTAssertTrue(store.setPinned(id, true)) }
+        XCTAssertFalse(store.setPinned(ids[5], true), "a sixth pin is refused")
+        XCTAssertNil(store.conversations.first { $0.id == ids[5] }?.pinnedAt)
+        XCTAssertNotNil(store.errorMessage)
+        store.setPinned(ids[0], false)
+        XCTAssertTrue(store.setPinned(ids[5], true), "unpinning frees a slot")
+        store.setPending(ids[1], true)
+        archive.flush()
+        let index = try archive.loadIndex()
+        XCTAssertEqual(index.first { $0.id == ids[1] }?.isPending, true)
+        XCTAssertNotNil(index.first { $0.id == ids[5] }?.pinnedAt)
+        store.setPending(ids[1], false)
+        XCTAssertNil(store.conversations.first { $0.id == ids[1] }?.isPending)
+    }
     @MainActor func testTwoActiveAgentsAndQueuedThirdStartsAfterCompletion() async throws {
         let (store, _, folder, drivers) = fixture()
         defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }

@@ -88,6 +88,10 @@ public struct ChatConversation: Identifiable, Codable, Equatable {
     public var preview: String? = nil
     /// The last turn finished while the conversation was not selected.
     public var hasUnread: Bool? = nil
+    /// When the user pinned it to the top of the sidebar; at most `ChatStore.maxPinned` chats are pinned.
+    public var pinnedAt: Date? = nil
+    /// Marked by the user as something to come back to: the sidebar shows a bright dot.
+    public var isPending: Bool? = nil
     /// The agent that delegated this one through Jack, if any.
     public var parentID: UUID? = nil
     /// Folders outside the project the agent may also read and edit.

@@ -13,6 +13,8 @@ struct SidebarRowModel: Identifiable, Equatable {
     let unread: Bool
     let updatedAt: Date
     let canEdit: Bool
+    var pinnedAt: Date? = nil
+    var pending = false
     /// The agent that delegated this one, if any.
     var parentID: UUID? = nil
     /// Shown when the row is listed away from its parent ("Necesita atención", another space).
@@ -25,12 +27,18 @@ struct SidebarRowModel: Identifiable, Equatable {
 /// Sidebar grouping, shared with keyboard navigation so ⌥⌘↑/↓ follow what is on screen.
 struct SidebarSections {
     typealias Space = (path: String, name: String, rows: [SidebarRowModel])
+    /// Pinned chats, oldest pin first, shown above everything else.
+    let pinned: [SidebarRowModel]
     let attention: [SidebarRowModel]
     let projects: [Space]
 
     init(rows: [SidebarRowModel], projectPaths: [UUID: String]) {
-        attention = rows.filter(\.needsAttention)
-        let grouped = Dictionary(grouping: rows.filter { !$0.needsAttention }) { projectPaths[$0.id] ?? "" }
+        pinned = Array(rows.filter { $0.pinnedAt != nil }.sorted { ($0.pinnedAt ?? .distantPast) < ($1.pinnedAt ?? .distantPast) }
+            .prefix(ChatStore.maxPinned))
+        let pinnedIDs = Set(pinned.map(\.id))
+        let rest = rows.filter { !pinnedIDs.contains($0.id) }
+        attention = rest.filter(\.needsAttention)
+        let grouped = Dictionary(grouping: rest.filter { !$0.needsAttention }) { projectPaths[$0.id] ?? "" }
         projects = grouped.map { path, rows in
             (path: path, name: URL(fileURLWithPath: path).lastPathComponent, rows: Self.nested(rows))
         }
@@ -54,7 +62,7 @@ struct SidebarSections {
 
     /// Agents in on-screen order, skipping folded spaces.
     func visibleIDs(collapsed: Set<String>) -> [UUID] {
-        attention.map(\.id) + projects.filter { !collapsed.contains($0.path) }.flatMap { $0.rows.map(\.id) }
+        pinned.map(\.id) + attention.map(\.id) + projects.filter { !collapsed.contains($0.path) }.flatMap { $0.rows.map(\.id) }
     }
 
     static func collapsed(_ value: String) -> Set<String> {
@@ -71,6 +79,8 @@ struct JackSidebar: View {
     let onRename: (UUID) -> Void
     let onDelete: (UUID) -> Void
     let onSetUnread: (UUID, Bool) -> Void
+    let onSetPinned: (UUID, Bool) -> Void
+    let onSetPending: (UUID, Bool) -> Void
     /// Claude Code conversations: continue the session in a terminal, or reread it after using one.
     let onContinueInTerminal: (UUID) -> Void
     let onReloadFromClaude: (UUID) -> Void
@@ -128,6 +138,16 @@ struct JackSidebar: View {
         TimelineView(.everyMinute) { context in
             let sections = SidebarSections(rows: filtered, projectPaths: projectPaths)
             List(selection: Binding(get: { selectedID }, set: { id in if let id { onSelect(id) } })) {
+                if !sections.pinned.isEmpty {
+                    Section {
+                        ForEach(sections.pinned) { row in nativeRow(row, showProject: true, now: context.date) }
+                    } header: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "pin.fill").font(.system(size: 9))
+                            Text("Fijados")
+                        }
+                    }
+                }
                 if !sections.attention.isEmpty {
                     Section {
                         ForEach(sections.attention) { row in nativeRow(row, showProject: true, now: context.date) }
@@ -241,6 +261,10 @@ struct JackSidebar: View {
         let sections = SidebarSections(rows: filtered, projectPaths: projectPaths)
         return ScrollView {
             LazyVStack(alignment: .leading, spacing: 1) {
+                if !sections.pinned.isEmpty {
+                    sectionLabel("Fijados", count: sections.pinned.count)
+                    ForEach(sections.pinned) { row in rowView(row, showProject: true, now: now) }
+                }
                 if !sections.attention.isEmpty {
                     sectionLabel("Necesita atención", count: sections.attention.count, tint: JackPalette.amber)
                     ForEach(sections.attention) { row in rowView(row, showProject: true, now: now) }
@@ -307,6 +331,13 @@ struct JackSidebar: View {
         Button(row.unread ? "Marcar como leído" : "Marcar como no leído", systemImage: row.unread ? "envelope.open" : "envelope.badge") {
             onSetUnread(row.id, !row.unread)
         }
+        Button(row.pending ? "Quitar de pendientes" : "Marcar como pendiente", systemImage: row.pending ? "circle.slash" : "circle.fill") {
+            onSetPending(row.id, !row.pending)
+        }
+        Button(row.pinnedAt == nil ? "Fijar arriba" : "Quitar de fijados", systemImage: row.pinnedAt == nil ? "pin" : "pin.slash") {
+            onSetPinned(row.id, row.pinnedAt == nil)
+        }
+        .disabled(row.pinnedAt == nil && rows.filter { $0.pinnedAt != nil }.count >= ChatStore.maxPinned)
         if let path = projectPaths[row.id] {
             Button("Mostrar space en Finder", systemImage: "folder") {
                 NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
@@ -456,7 +487,17 @@ struct SidebarRow: View, Equatable {
                     .foregroundStyle(selected || row.unread ? Color.primary : JackPalette.secondaryText)
                     .lineLimit(1)
                 if row.provider.isBeta { BetaBadge() }
+                if row.pending {
+                    Circle().fill(JackPalette.pending).frame(width: 8, height: 8)
+                        .shadow(color: JackPalette.pending.opacity(0.9), radius: 3)
+                        .help("Pendiente")
+                        .accessibilityLabel("Pendiente")
+                }
                 Spacer(minLength: 4)
+                if row.pinnedAt != nil {
+                    Image(systemName: "pin.fill").font(.system(size: 8.5)).foregroundStyle(JackPalette.faint)
+                        .rotationEffect(.degrees(45)).accessibilityLabel("Fijado")
+                }
                 Text(age).font(.system(size: 10.5).monospacedDigit()).foregroundStyle(JackPalette.faint).fixedSize()
             }
             if showsActivity || showProject || row.parentTitle != nil {

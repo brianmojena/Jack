@@ -619,6 +619,32 @@ import Foundation
         }
     }
 
+    /// Chats that can be pinned at once.
+    public static let maxPinned = 5
+
+    /// Pins a chat to the top of the sidebar. Returns false when five are already pinned.
+    @discardableResult
+    public func setPinned(_ id: UUID, _ pinned: Bool) -> Bool {
+        guard let index = conversations.firstIndex(where: { $0.id == id }), (conversations[index].pinnedAt != nil) != pinned else { return true }
+        if pinned {
+            guard conversations.filter({ $0.pinnedAt != nil }).count < Self.maxPinned else {
+                errorMessage = "Solo puedes fijar \(Self.maxPinned) chats. Quita uno para fijar otro."
+                return false
+            }
+            conversations[index].pinnedAt = Date()
+        } else {
+            conversations[index].pinnedAt = nil
+        }
+        save(id)
+        return true
+    }
+
+    public func setPending(_ id: UUID, _ pending: Bool) {
+        guard let index = conversations.firstIndex(where: { $0.id == id }), (conversations[index].isPending == true) != pending else { return }
+        conversations[index].isPending = pending ? true : nil
+        save(id)
+    }
+
     public func setUnread(_ id: UUID, _ unread: Bool) {
         guard let index = conversations.firstIndex(where: { $0.id == id }), (conversations[index].hasUnread == true) != unread else { return }
         conversations[index].hasUnread = unread ? true : nil

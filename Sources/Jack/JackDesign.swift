@@ -25,6 +25,8 @@ enum JackPalette {
     static let green = Color(nsColor: .systemGreen)
     static let blue = Color(nsColor: .systemBlue)
     static let purple = Color(nsColor: .systemPurple)
+    /// Neon magenta for chats marked as pending: no other status uses it, so it stands out in the list.
+    static let pending = Color(red: 1.0, green: 0.07, blue: 0.72)
     static let added = Color(nsColor: adaptive(light: NSColor.systemGreen.withAlphaComponent(0.16), dark: rgb(0x1F4D2B)))
     static let removed = Color(nsColor: adaptive(light: NSColor.systemRed.withAlphaComponent(0.14), dark: rgb(0x5C2324)))
 

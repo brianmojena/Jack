@@ -193,6 +193,8 @@ struct MainWindowView: View {
             onRename: { id in store.conversations.first { $0.id == id }.map(beginRename) },
             onDelete: { id in deletingConversation = store.conversations.first { $0.id == id } },
             onSetUnread: store.setUnread,
+            onSetPinned: { id, pinned in store.setPinned(id, pinned) },
+            onSetPending: store.setPending,
             onContinueInTerminal: continueInTerminal,
             onReloadFromClaude: reloadFromClaude,
             onOpenInPane: openInPane,
@@ -556,6 +558,8 @@ struct MainWindowView: View {
                 unread: conversation.hasUnread == true,
                 updatedAt: conversation.updatedAt,
                 canEdit: !status.isActive,
+                pinnedAt: conversation.pinnedAt,
+                pending: conversation.isPending == true,
                 parentID: conversation.parentID,
                 parentTitle: conversation.parentID.flatMap { titles[$0] }
             )
