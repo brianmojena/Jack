@@ -64,6 +64,7 @@ private struct GeneralSettings: View {
                      : "Image Playground no está disponible en este Mac: activa Apple Intelligence en Ajustes del Sistema.")
                     .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
             }
+            if !store.lightModeEnabled { JackRemoteSettings(store: store) }
             Section {
                 Toggle("Modo ligero", isOn: $simulatorLightMode)
                 Picker("Apagar si no lo miras durante", selection: $simulatorIdleMinutes) {
@@ -124,6 +125,61 @@ private extension GeneralSettings {
             store.importClaudeSessions(sessions)
             importingClaude = false
         } onCancel: { importingClaude = false }
+    }
+}
+
+/// Normal mode only: lets Pixel on the iPhone drive Jack's agents.
+private struct JackRemoteSettings: View {
+    let store: ChatStore
+    @ObservedObject private var server: JackRemoteServer
+    @AppStorage("jackRemoteEnabled") private var enabled = false
+    @State private var copied = false
+
+    init(store: ChatStore) {
+        self.store = store
+        _server = ObservedObject(wrappedValue: store.remote)
+    }
+
+    var body: some View {
+        Section {
+            Toggle("Controlar Jack desde Pixel", isOn: $enabled)
+                .onChange(of: enabled) { _, value in store.applyRemote(enabled: value) }
+            if enabled {
+                LabeledContent("Estado") { Text(statusText).foregroundStyle(statusColor) }
+                LabeledContent("Código de vinculación") {
+                    Text(server.pairingCode).font(.system(.body, design: .monospaced)).textSelection(.enabled)
+                }
+                HStack {
+                    Button(copied ? "Copiado" : "Copiar código") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(server.pairingCode, forType: .string)
+                        copied = true
+                        Task { try? await Task.sleep(for: .seconds(2)); copied = false }
+                    }
+                    Button("Generar otro código") { server.regenerateCode() }
+                }
+            }
+        } header: {
+            Text("Jack Remote")
+        } footer: {
+            Text("Pixel en tu iPhone ve tus agentes, lee lo que hacen, les escribe y responde a sus permisos. Funciona en tu red local o por Tailscale mientras Jack está abierto. Quien tenga el código puede hacer que tus agentes ejecuten comandos en este Mac: no lo compartas. Generar otro código desvincula todos los dispositivos. No está disponible en el modo ligero.")
+                .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
+        }
+        .onAppear { if enabled { store.applyRemote(enabled: true) } }
+    }
+
+    private var statusText: String {
+        switch server.status {
+        case .off: "Apagado"
+        case .starting: "Iniciando…"
+        case .ready: server.clientCount == 0 ? "Esperando a Pixel" : server.clientCount == 1 ? "1 dispositivo conectado" : "\(server.clientCount) dispositivos conectados"
+        case .failed(let message): "Error: \(message)"
+        }
+    }
+
+    private var statusColor: Color {
+        if case .failed = server.status { return .red }
+        return JackPalette.muted
     }
 }
 

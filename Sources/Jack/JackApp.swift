@@ -24,7 +24,10 @@ struct JackApp: App {
                     appDelegate.batterySaver = batterySaver
                     store.imageGenerationSupported = ImagePlaygroundSupport.isAvailable
                 }
-                .onChange(of: lightMode, initial: true) { _, enabled in store.setLightMode(enabled) }
+                .onChange(of: lightMode, initial: true) { _, enabled in
+                    store.setLightMode(enabled)
+                    store.applyRemote(enabled: UserDefaults.standard.bool(forKey: "jackRemoteEnabled"))
+                }
                 .task(id: lightMode) {
                     guard !lightMode else { return }
                     await store.refreshUsage()

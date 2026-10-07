@@ -64,6 +64,8 @@ import Foundation
     /// Orchestrators blocked in wait_for_agents; they don't take a concurrency slot from their sub-agents.
     private var delegatedWaits: [UUID: Int] = [:]
     public lazy var bridge = AgentBridge(store: self)
+    /// Jack Remote for Pixel; created on first use, and never in Light mode.
+    var remoteServer: JackRemoteServer?
     private var notebookWorkspace: NotebookWorkspace?
     public var notebooks: NotebookWorkspace {
         if let notebookWorkspace { return notebookWorkspace }
@@ -971,6 +973,7 @@ import Foundation
         for id in Array(locateTasks.keys) { cancelLocating(id) }
         asides.cancelAll()
         notebookWorkspace?.stop()
+        remoteServer?.stop()
         if lightModeEnabled { progressMonitor?.stop(); serverMonitor?.stop() }
         StellarRuntime.shutdown()
         for id in Array(pending.keys) { flush(id) }
@@ -1073,7 +1076,7 @@ import Foundation
     func endDelegatedWait(_ id: UUID) {
         if let count = delegatedWaits[id], count > 1 { delegatedWaits[id] = count - 1 } else { delegatedWaits.removeValue(forKey: id) }
     }
-    private func transcript(of id: UUID) -> [ChatMessage] {
+    public func transcript(of id: UUID) -> [ChatMessage] {
         if loaded.contains(id) { return conversations.first { $0.id == id }?.messages ?? [] }
         return (try? archive.load(id))?.messages ?? []
     }

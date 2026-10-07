@@ -10,6 +10,7 @@
 		02B83CB51FECD80B94438A2F /* ChatArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = 094C42C6DC4B76FE4E66E40D /* ChatArchive.swift */; };
 		051E30A12B62E96A652522D3 /* FileExplorer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 138D59F70F9CA07105FD1933 /* FileExplorer.swift */; };
 		0BD576E2B4A206561BD3BED4 /* MainWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7BD885E59F4C6849E846404 /* MainWindowView.swift */; };
+		0D007B95A841A3699ECD9CEE /* JackRemoteServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E6A931D3216E15958A00AFD /* JackRemoteServer.swift */; };
 		0D341C6641105DD295680C11 /* ChatTranscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41D9B14CA52330C9B3508766 /* ChatTranscript.swift */; };
 		125DC2F3E2AC2F34CBF5DA1A /* PaneLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = D509AEAE925B54594B2E191B /* PaneLayout.swift */; };
 		13E5587D2DFD397AFB57C9B5 /* ProgressTasks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BD8FE80738952666BEDFBA7 /* ProgressTasks.swift */; };
@@ -83,6 +84,7 @@
 		D77C400731E1A4E8AB577ABD /* ServerScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6085927C746749BAD3504F03 /* ServerScanner.swift */; };
 		D96D2234A324FE3A3E06BAD7 /* StartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C1361476010EC1B422C026 /* StartView.swift */; };
 		D9BC01980D4186E943774370 /* ChatCommandViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1DA779938E07CE10645928A /* ChatCommandViews.swift */; };
+		DC0F7DC79D21E0C22DDD82F0 /* JackRemoteProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCABA0283CE71A5F4ED877AC /* JackRemoteProtocol.swift */; };
 		DF87C7D5B4F7163DBFBADFD0 /* NewAgentSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8816FF36883C8E65FD124DC7 /* NewAgentSheet.swift */; };
 		E60ACFDAC8A34BDB557D96DC /* UnixSocketTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09291DE01EDF91BE9972B424 /* UnixSocketTransport.swift */; };
 		E824B6F7F7B32A392DC14117 /* ChatModelChoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAA06A062E9665524A768902 /* ChatModelChoice.swift */; };
@@ -193,6 +195,7 @@
 		8816FF36883C8E65FD124DC7 /* NewAgentSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewAgentSheet.swift; sourceTree = "<group>"; };
 		8A45A93DAF44DBBC83A60C50 /* ExecutableResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExecutableResolver.swift; sourceTree = "<group>"; };
 		8CCF40FF45B214513A23886B /* NotebookDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotebookDocument.swift; sourceTree = "<group>"; };
+		8E6A931D3216E15958A00AFD /* JackRemoteServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JackRemoteServer.swift; sourceTree = "<group>"; };
 		8ED82B9B70891B0200DA37ED /* ProjectIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectIndex.swift; sourceTree = "<group>"; };
 		8F6561788FB990BD803A0FB9 /* ProgressViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressViews.swift; sourceTree = "<group>"; };
 		96265CFED9209661366D40C0 /* AgentPanes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPanes.swift; sourceTree = "<group>"; };
@@ -218,6 +221,7 @@
 		C77FC7E95D4EE8768DC19D3F /* ChatImages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatImages.swift; sourceTree = "<group>"; };
 		CA9AEFCAF5C3EB12827473A9 /* ClaudeSessions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeSessions.swift; sourceTree = "<group>"; };
 		CC084525C4D6CE0EBEF1CF88 /* JackApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JackApp.swift; sourceTree = "<group>"; };
+		CCABA0283CE71A5F4ED877AC /* JackRemoteProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JackRemoteProtocol.swift; sourceTree = "<group>"; };
 		CDDD94D4D38FF19A730E48F5 /* LightNewAgentSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LightNewAgentSheet.swift; sourceTree = "<group>"; };
 		D270EF82D7E479169076203B /* BrowserAddress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserAddress.swift; sourceTree = "<group>"; };
 		D509AEAE925B54594B2E191B /* PaneLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaneLayout.swift; sourceTree = "<group>"; };
@@ -288,6 +292,8 @@
 				8A45A93DAF44DBBC83A60C50 /* ExecutableResolver.swift */,
 				BD49B26FBE95D7FD23912D74 /* Git.swift */,
 				3A74557C47C15953992E8937 /* JackLog.swift */,
+				CCABA0283CE71A5F4ED877AC /* JackRemoteProtocol.swift */,
+				8E6A931D3216E15958A00AFD /* JackRemoteServer.swift */,
 				52312515048B37AD7AAEE21C /* JupyterKernel.swift */,
 				F40A187CE25E794DFACFD965 /* LightTranscript.swift */,
 				4B2043D2FAB41EAAEF81CEBB /* MarkdownBlock.swift */,
@@ -599,6 +605,8 @@
 				6EB861C0B842D3CECBD7F800 /* ExecutableResolver.swift in Sources */,
 				9E0D42BCAC6096551B207E07 /* Git.swift in Sources */,
 				CE4A748AA81B0389D7907972 /* JackLog.swift in Sources */,
+				DC0F7DC79D21E0C22DDD82F0 /* JackRemoteProtocol.swift in Sources */,
+				0D007B95A841A3699ECD9CEE /* JackRemoteServer.swift in Sources */,
 				2A74F5CBFD0102E18EA266C5 /* JupyterKernel.swift in Sources */,
 				FF821D60F33C1127B7DDD634 /* LightTranscript.swift in Sources */,
 				5E5C961DBFFE5529E2DFCF03 /* MarkdownBlock.swift in Sources */,
