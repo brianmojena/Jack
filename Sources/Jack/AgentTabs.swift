@@ -8,12 +8,13 @@ struct StripTab<Icon: View, Title: View>: View {
     let onClose: () -> Void
     @ViewBuilder let icon: Icon
     @ViewBuilder let title: Title
+    var width: CGFloat? = nil
     @State private var hovering = false
     @Environment(\.interfaceStyle) private var style
 
     var body: some View {
         HStack(spacing: 7) {
-            icon
+            icon.fixedSize()
             title
                 .font(.system(size: 12))
                 .foregroundStyle(selected ? Color.primary : JackPalette.muted)
@@ -26,12 +27,13 @@ struct StripTab<Icon: View, Title: View>: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .fixedSize()
             .foregroundStyle(JackPalette.muted)
             .opacity(selected || hovering ? 1 : 0)
             .help("Cerrar pestaña")
         }
         .padding(.leading, 11).padding(.trailing, 6)
-        .frame(minWidth: 120, idealWidth: 180, maxWidth: 200, maxHeight: .infinity)
+        .frame(minWidth: width ?? 120, idealWidth: width ?? 180, maxWidth: width ?? 200, maxHeight: .infinity)
         .background { if selected { selectionBackground } }
         .overlay(alignment: .top) { if selected && style == .basic { Rectangle().fill(JackPalette.accent).frame(height: 1.5) } }
         .overlay(alignment: .trailing) { if style == .basic { Rectangle().fill(JackPalette.hairline).frame(width: 1) } }
@@ -81,6 +83,106 @@ struct AgentTabModel: Identifiable, Equatable {
     let unread: Bool
 }
 
+/// Both appearances use the actual viewport width, rather than changing sizing at a tab count.
+/// Tabs first compress together; below a readable width they scroll and expose a tab menu.
+private struct AdaptiveAgentTabs: View {
+    let tabs: [AgentTabModel]
+    let selectedID: UUID?
+    let onSelect: (UUID) -> Void
+    let onClose: (UUID) -> Void
+    @Environment(\.interfaceStyle) private var style
+
+    var body: some View {
+        GeometryReader { geometry in
+            let ice = style == .ice
+            let spacing: CGFloat = ice ? 2 : 0
+            let inset: CGFloat = ice ? 6 : 0
+            let gaps = CGFloat(max(0, tabs.count - 1)) * spacing
+            let overflows = CGFloat(tabs.count) * 72 + gaps + inset > geometry.size.width
+            let viewport = max(0, geometry.size.width - (overflows ? 28 : 0))
+            let width = max(72, min(200, (viewport - gaps - inset) / CGFloat(max(1, tabs.count))))
+
+            if geometry.size.width < 100 {
+                // With both side panes open, the traffic lights and tools can leave room
+                // for only the selected agent's logo. Keep every tab reachable via the menu.
+                tabMenu(compact: true)
+                    .frame(width: max(0, geometry.size.width), height: geometry.size.height)
+            } else {
+                HStack(spacing: 0) {
+                    ScrollViewReader { proxy in
+                        ScrollView(.horizontal) {
+                            HStack(spacing: spacing) {
+                                ForEach(tabs) { tab in
+                                    Group {
+                                        if ice {
+                                            IceTab(tab: tab, selected: tab.id == selectedID,
+                                                   onSelect: { onSelect(tab.id) }, onClose: { onClose(tab.id) })
+                                                .frame(width: width)
+                                        } else {
+                                            StripTab(selected: tab.id == selectedID,
+                                                     onSelect: { onSelect(tab.id) }, onClose: { onClose(tab.id) }, icon: {
+                                                if tab.status == .idle && !tab.unread {
+                                                    ProviderMark(provider: tab.provider, size: 12)
+                                                } else {
+                                                    StatusDot(status: tab.status, unread: tab.unread)
+                                                }
+                                            }, title: {
+                                                Text(tab.title)
+                                            }, width: width)
+                                        }
+                                    }
+                                    .id(tab.id)
+                                    .help(tab.title)
+                                }
+                            }
+                            .padding(ice ? 3 : 0)
+                            .jackGlass(in: Capsule(), basic: .clear)
+                            .frame(height: geometry.size.height)
+                        }
+                        .scrollIndicators(.never)
+                        .frame(width: viewport)
+                        .onChange(of: selectedID, initial: true) { _, id in
+                            if let id { proxy.scrollTo(id) }
+                        }
+                        .onChange(of: geometry.size.width) { _, _ in
+                            if let selectedID { proxy.scrollTo(selectedID) }
+                        }
+                        .onChange(of: tabs.map(\.id)) { _, _ in
+                            if let selectedID { proxy.scrollTo(selectedID) }
+                        }
+                    }
+                    if overflows {
+                        tabMenu(compact: false).frame(width: 28)
+                    }
+                }
+            }
+        }
+        .background(WindowDragArea())
+    }
+
+    private func tabMenu(compact: Bool) -> some View {
+        Menu {
+            ForEach(tabs) { tab in
+                Button { onSelect(tab.id) } label: {
+                    if tab.id == selectedID { Label(tab.title, systemImage: "checkmark") }
+                    else { Text(tab.title) }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                if compact, let selected = tabs.first(where: { $0.id == selectedID }) {
+                    ProviderMark(provider: selected.provider, size: 12)
+                }
+                Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold))
+            }
+            .frame(maxWidth: .infinity).frame(height: 26)
+        }
+        .menuStyle(.borderlessButton).menuIndicator(.hidden)
+        .help("Todas las pestañas (\(tabs.count))")
+        .accessibilityLabel("Todas las pestañas")
+    }
+}
+
 /// Open agents along the top of the chat, plus the switches for the side panes.
 struct AgentTabStrip: View, Equatable {
     let tabs: [AgentTabModel]
@@ -103,32 +205,8 @@ struct AgentTabStrip: View, Equatable {
                 StripIconButton(symbol: "sidebar.left", help: "Mostrar la barra lateral (⌃⌘S)", action: onShowSidebar)
                     .padding(.trailing, 6)
             }
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal) {
-                    HStack(spacing: 0) {
-                        ForEach(tabs) { tab in
-                            StripTab(selected: tab.id == selectedID, onSelect: { onSelect(tab.id) }, onClose: { onClose(tab.id) }) {
-                                if tab.status == .idle && !tab.unread {
-                                    ProviderMark(provider: tab.provider, size: 12)
-                                } else {
-                                    StatusDot(status: tab.status, unread: tab.unread)
-                                }
-                            } title: {
-                                Text(tab.title)
-                            }
-                            .id(tab.id)
-                            .help(tab.title)
-                        }
-                    }
-                }
-                .scrollIndicators(.never)
-                .fixedSize(horizontal: tabs.count < 3, vertical: false)
-                .onChange(of: selectedID) { _, id in
-                    if let id { proxy.scrollTo(id) }
-                }
-            }
+            AdaptiveAgentTabs(tabs: tabs, selectedID: selectedID, onSelect: onSelect, onClose: onClose)
             StripIconButton(symbol: "plus", help: "Nuevo agente (⌘N)", action: onNew).padding(.horizontal, 4)
-            WindowDragArea()
             // The pane switches sit on top of this space; see `WorkspaceToggles`.
             Color.clear.frame(width: WorkspaceToggles.width)
         }
@@ -226,24 +304,8 @@ struct IceAgentTabs: View, Equatable {
     }
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.horizontal) {
-                HStack(spacing: 2) {
-                    ForEach(tabs) { tab in
-                        IceTab(tab: tab, selected: tab.id == selectedID, onSelect: { onSelect(tab.id) }, onClose: { onClose(tab.id) })
-                            .id(tab.id)
-                    }
-                }
-                .padding(3)
-                .jackGlass(in: Capsule(), basic: .clear)
-            }
-            .scrollIndicators(.never)
-            .scrollClipDisabled()
-            .fixedSize(horizontal: tabs.count < 5, vertical: false)
-            .onChange(of: selectedID) { _, id in
-                if let id { withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(id) } }
-            }
-        }
+        AdaptiveAgentTabs(tabs: tabs, selectedID: selectedID, onSelect: onSelect, onClose: onClose)
+        .frame(height: 32)
         .padding(.horizontal, 16).padding(.vertical, 8)
         .frame(maxWidth: .infinity)
     }
@@ -267,11 +329,11 @@ private struct IceTab: View {
                 .font(.system(size: 12, weight: selected ? .medium : .regular))
                 .foregroundStyle(selected ? Color.primary : Color.secondary)
                 .lineLimit(1).truncationMode(.tail)
-                .frame(maxWidth: 160, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
             Button(action: onClose) {
                 Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).frame(width: 14, height: 14).contentShape(Circle())
             }
-            .buttonStyle(.plain).foregroundStyle(.secondary)
+            .buttonStyle(.plain).fixedSize().foregroundStyle(.secondary)
             .opacity(selected || hovering ? 1 : 0)
             .help("Cerrar pestaña")
         }

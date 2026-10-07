@@ -4,7 +4,7 @@ Chat nativo y compacto para gestionar varios agentes de desarrollo en macOS. Int
 
 ## Versionado
 
-La versión actual es **0.3.19**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
+La versión actual es **0.3.20**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
 
 ## Construir
 
@@ -26,6 +26,8 @@ Pulsa **Nuevo agente** o **⌘N** y escribe directamente en el chat. La carpeta 
 Cambia de modelo desde el selector en la esquina inferior izquierda del cuadro de mensaje, y ajusta el esfuerzo en el menú contiguo. Codex usa su catálogo local de modelos; Claude ofrece Fable, Opus, Sonnet y Haiku, con esfuerzo de Bajo a Máximo (Haiku no admite esfuerzo); OpenCode muestra los modelos de tus proveedores conectados, agrupados por proveedor, y permite actualizar el catálogo. **Otro modelo…** permite introducir uno nuevo. Los últimos ocho modelos se recuerdan por proveedor. El cambio se aplica al siguiente mensaje y conserva el historial y la sesión; está disponible cuando el agente termina o se detiene. El selector no realiza llamadas de inferencia. OpenCode ofrece las variantes de esfuerzo que admite cada modelo; Automático utiliza su configuración habitual. El menú de modo permite elegir Normal, Plan o Auto en Codex; Manual, Plan, Auto, Aceptar ediciones o Sin preguntas en Claude; y los modos primarios configurados en OpenCode, como Build y Plan. Auto en Codex ejecuta dentro del sandbox del proyecto y deniega las operaciones que requerirían aprobación; Auto en Claude depende de la disponibilidad que indique su CLI. Las preguntas de planificación de Codex se responden dentro del chat.
 
 El panel **Git** (⇧⌘G) muestra el estado del proyecto, los cambios preparados y pendientes, sus diffs y el historial. Permite preparar archivos, hacer commits, gestionar ramas y sincronizar con el remoto; también puedes pedir al agente que revise los cambios y haga el commit desde el propio panel.
+
+Las pestañas de agentes aprovechan el ancho de la barra superior en Basic e Ice y se comprimen juntas al abrir más chats o estrechar la ventana. Cuando no caben, puedes desplazarlas horizontalmente o elegir cualquiera desde **Todas las pestañas** (⌄). La pestaña seleccionada se mantiene visible al cambiar de agente, abrir o cerrar pestañas y redimensionar.
 
 ### Claude Code
 

@@ -1,4 +1,13 @@
-# Validación del chat — 5 de octubre de 2026
+# Validación de pestañas — 7 de octubre de 2026
+
+Jack 0.3.20 compila en Release con firma ad hoc verificada. Las vistas reales de pestañas de Basic e Ice se probaron en un proceso aislado con NSHostingView, sin mostrar ventanas ni abrir Jack. Solo se sustituyeron las dependencias del panel de herramientas; las pestañas y el sistema de diseño se compilaron desde los archivos de la aplicación.
+
+- Pasaron 84 distribuciones: 1, 2, 3, 4, 6, 12 y 24 pestañas, con tres anchuras y la barra lateral visible u oculta, en ambos estilos.
+- Se verificó que las pestañas que caben no se recortan, que el ancho se comprime de forma uniforme y que cambiar a la primera o la última mantiene visible la selección.
+- Pasaron 48 redimensionados con muchas pestañas abiertas. Cuando los controles dejan menos de 100 puntos disponibles, el selector compacto conserva el acceso a todas las pestañas.
+- Se inspeccionaron capturas de las vistas aisladas. Las verificaciones no incluyen interacción con la ventana del usuario ni inferencias de los proveedores.
+
+## Validación del chat — 5 de octubre de 2026
 
 La versión vigente usa SwiftUI/AppKit sin SwiftTerm ni dependencias externas de Swift. El proyecto genera una app para arm64, orientada al MacBook Air M1 del usuario.
 
