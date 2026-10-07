@@ -79,14 +79,71 @@ final class ChatDriversTests: XCTestCase {
 
     func testOpenCodePermissionIsScopedToCurrentSessionAndCanBeAnswered() {
         var approvals: [String: PendingApproval] = [:]
-        let unrelated = OpenCodeProtocol.events(["payload": ["type": "permission.asked", "properties": ["id": "permission-other", "sessionID": "session-other", "title": "Run command"]]], sessionID: "session-current", approvals: &approvals)
+        let otherProps: [String: Any] = ["id": "permission-other", "sessionID": "session-other", "permission": "bash", "patterns": ["echo hi"], "metadata": [:] as [String: Any], "always": [] as [String]]
+        let unrelated = OpenCodeProtocol.events(["payload": ["type": "permission.asked", "properties": otherProps]], sessionID: "session-current", approvals: &approvals)
         XCTAssertTrue(unrelated.isEmpty)
         XCTAssertTrue(approvals.isEmpty)
 
-        let current = OpenCodeProtocol.events(["payload": ["type": "permission.asked", "properties": ["id": "permission-current", "sessionID": "session-current", "title": "Run command", "metadata": ["command": "git status"]]]], sessionID: "session-current", approvals: &approvals)
+        let currentProps: [String: Any] = ["id": "permission-current", "sessionID": "session-current", "permission": "bash", "patterns": ["git status"], "metadata": ["command": "git status"], "always": ["bash git status"]]
+        let current = OpenCodeProtocol.events(["payload": ["type": "permission.asked", "properties": currentProps]], sessionID: "session-current", approvals: &approvals)
         guard case .approval(let approval) = current.first else { return XCTFail("Expected current-session permission") }
         XCTAssertEqual(approval.id, "opencode:permission-current")
         XCTAssertEqual(approvals[approval.id]?.payload["sessionID"] as? String, "session-current")
+        XCTAssertEqual(approval.title, "Ejecutar un comando")
+        XCTAssertEqual(approval.tool, "bash")
+        XCTAssertEqual(approval.choices.map(\.id), ["always"])
+    }
+
+    func testOpenCodeQuestionAskedSurfacesApprovalWithQuestions() {
+        var approvals: [String: PendingApproval] = [:]
+        let otherQuestion: [String: Any] = ["question": "Q?", "header": "H", "options": [["label": "A", "description": "d"]]]
+        let unrelated = OpenCodeProtocol.events(["payload": ["type": "question.asked", "properties": ["id": "que-other", "sessionID": "session-other", "questions": [otherQuestion]]]], sessionID: "session-current", approvals: &approvals)
+        XCTAssertTrue(unrelated.isEmpty)
+        XCTAssertTrue(approvals.isEmpty)
+
+        let red: [String: Any] = ["label": "Red", "description": "Red color"]
+        let blue: [String: Any] = ["label": "Blue", "description": "Blue color"]
+        let colorQuestion: [String: Any] = ["question": "Which color?", "header": "Color", "options": [red, blue], "multiple": false]
+        let event = OpenCodeProtocol.events(["payload": ["type": "question.asked", "properties": ["id": "que-1", "sessionID": "session-current", "questions": [colorQuestion]]]], sessionID: "session-current", approvals: &approvals)
+        guard case .approval(let approval) = event.first else { return XCTFail("Expected question approval") }
+        XCTAssertEqual(approval.id, "opencode:que-1")
+        XCTAssertEqual(approval.questions.count, 1)
+        XCTAssertEqual(approval.questions[0].question, "Which color?")
+        XCTAssertEqual(approval.questions[0].options?.map(\.label), ["Red", "Blue"])
+        XCTAssertEqual(approvals[approval.id]?.payload["questionID"] as? String, "que-1")
+
+        let replied = OpenCodeProtocol.events(["payload": ["type": "question.replied", "properties": ["sessionID": "session-current", "requestID": "que-1"]]], sessionID: "session-current", approvals: &approvals)
+        guard case .approvalResolved(let resolvedID) = replied.first else { return XCTFail("Expected approval resolution") }
+        XCTAssertEqual(resolvedID, "opencode:que-1")
+    }
+
+    func testOpenCodeTodoUpdatedEmitsLiveTaskList() {
+        var approvals: [String: PendingApproval] = [:]
+        let todo1: [String: Any] = ["content": "setup", "status": "in_progress", "priority": "high"]
+        let todo2: [String: Any] = ["content": "test", "status": "pending", "priority": "medium"]
+        let todoProps: [String: Any] = ["sessionID": "s1", "todos": [todo1, todo2]]
+        let events = OpenCodeProtocol.events(["payload": ["type": "todo.updated", "properties": todoProps]], sessionID: "s1", approvals: &approvals)
+        guard case .tool(let id, let title, let detail, let status) = events.first else { return XCTFail("Expected todo tool event") }
+        XCTAssertEqual(title, "todowrite")
+        XCTAssertEqual(status, "running")
+        XCTAssertTrue(detail.contains("setup"))
+        XCTAssertTrue(id.hasPrefix("todo:"))
+    }
+
+    func testOpenCodeToolKeepsRawNameAndMapsErrorToFailed() {
+        var approvals: [String: PendingApproval] = [:]
+        let completed: [String: Any] = ["id": "prt-1", "sessionID": "s1", "messageID": "m1", "type": "tool", "tool": "todowrite",
+            "state": ["status": "completed", "input": ["todos": [] as [Any]], "output": "[]", "title": "2 todos"] as [String: Any]]
+        let events = OpenCodeProtocol.events(["payload": ["type": "message.part.updated", "properties": ["sessionID": "s1", "part": completed]]], sessionID: "s1", approvals: &approvals)
+        guard case .tool(_, let title, _, let status) = events.first else { return XCTFail("Expected tool event") }
+        XCTAssertEqual(title, "todowrite")
+        XCTAssertEqual(status, "completed")
+
+        let failed: [String: Any] = ["id": "prt-2", "sessionID": "s1", "messageID": "m1", "type": "tool", "tool": "bash",
+            "state": ["status": "error", "input": ["command": "exit 1"], "error": "boom"] as [String: Any]]
+        let failedEvents = OpenCodeProtocol.events(["payload": ["type": "message.part.updated", "properties": ["sessionID": "s1", "part": failed]]], sessionID: "s1", approvals: &approvals)
+        guard case .tool(_, _, _, let failedStatus) = failedEvents.first else { return XCTFail("Expected failed tool event") }
+        XCTAssertEqual(failedStatus, "failed")
     }
 
     func testOpenCodeStreamsTextDeltasAndSessionCompletion() {

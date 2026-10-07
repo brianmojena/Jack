@@ -71,21 +71,24 @@ struct AgentTask: Equatable {
     /// The list as the latest calls left it; only recent messages are read, so it costs little while streaming.
     static func list(in messages: [ChatMessage]) -> [AgentTask] {
         var tasks: [AgentTask] = []
-        for message in messages.suffix(600) where message.role == "tool" && (message.text.hasPrefix("Task") || message.text == "TodoWrite") {
+        for message in messages.suffix(600) where message.role == "tool" {
+            // Claude uses TaskCreate/TaskUpdate/TodoWrite; OpenCode reports `todowrite` in lowercase.
+            let name = message.text.lowercased()
+            guard name.hasPrefix("task") || name == "todowrite" || name == "todo" else { continue }
             let (input, rest) = ToolPresentation.splitLeadingJSON(message.detail)
-            switch message.text {
-            case "TaskCreate":
+            switch name {
+            case "taskcreate":
                 guard let subject = input["subject"] as? String else { continue }
                 let number = rest.range(of: #"#(\d+)"#, options: .regularExpression).map { String(rest[$0].dropFirst()) } ?? "\(tasks.count + 1)"
                 tasks.removeAll { $0.id == number }
                 tasks.append(AgentTask(id: number, subject: subject, status: "pending"))
-            case "TaskUpdate":
+            case "taskupdate":
                 guard let id = (input["taskId"] as? String) ?? (input["taskId"] as? Int).map(String.init),
                       let index = tasks.firstIndex(where: { $0.id == id }) else { continue }
                 if let status = input["status"] as? String {
                     if status == "deleted" { tasks.remove(at: index) } else { tasks[index].status = status }
                 }
-            case "TodoWrite":
+            case "todowrite", "todo":
                 guard let todos = input["todos"] as? [[String: Any]] else { continue }
                 tasks = todos.enumerated().compactMap { index, todo in
                     (todo["content"] as? String).map { AgentTask(id: "\(index + 1)", subject: $0, status: todo["status"] as? String ?? "pending") }
