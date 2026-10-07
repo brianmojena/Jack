@@ -191,6 +191,35 @@ public enum JackRemoteKeychain {
             parent: conversation.parentID?.uuidString)
     }
 
+    /// Model, effort and mode of an agent with the options each offers. Bypass is never offered:
+    /// a remote device must not be able to turn every permission request off.
+    fileprivate func config(of conversation: ChatConversation) -> JackRemote.Config {
+        guard let store else {
+            return JackRemote.Config(model: conversation.model, effort: conversation.effort, mode: conversation.mode ?? "",
+                                     models: [], efforts: [], modes: [], canChangeModel: false, canChangeMode: false)
+        }
+        let provider = conversation.provider
+        return JackRemote.Config(
+            model: conversation.model, effort: conversation.effort, mode: conversation.mode ?? "",
+            models: store.modelChoices(for: provider).map { JackRemote.Choice(id: $0.id, title: $0.title) },
+            efforts: provider == .opencode ? [] : store.supportedEfforts(provider: provider, model: conversation.model),
+            modes: ChatRunMode.choices(for: provider).map { JackRemote.Choice(id: $0.id, title: $0.title) },
+            canChangeModel: provider != .opencode && !store.isBusy(conversation.id),
+            canChangeMode: store.changesModeLive(conversation.id))
+    }
+
+    /// What each provider offers for a new agent.
+    fileprivate func providerOptions() -> [JackRemote.ProviderOptions] {
+        guard let store else { return [] }
+        return ChatProvider.allCases.filter { $0 != .opencode }.map { provider in
+            JackRemote.ProviderOptions(
+                id: provider.rawValue, title: provider.title, defaultModel: provider.defaultModel,
+                models: store.modelChoices(for: provider).map { JackRemote.Choice(id: $0.id, title: $0.title) },
+                modes: ChatRunMode.choices(for: provider).map { JackRemote.Choice(id: $0.id, title: $0.title) })
+        } + [JackRemote.ProviderOptions(id: ChatProvider.opencode.rawValue, title: ChatProvider.opencode.title,
+                                         defaultModel: "", models: [], modes: [])]
+    }
+
     /// Folders of the agents Jack already has: the only ones a remote device may start a new agent in.
     fileprivate func knownProjects() -> [String] {
         var seen = Set<String>()
@@ -247,6 +276,7 @@ public extension ChatStore {
         var summary: JackRemote.AgentSummary?
         var approvals: [JackRemote.Approval] = []
         var waiting: [String] = []
+        var config: JackRemote.Config?
     }
 
     private let connection: NWConnection
@@ -259,6 +289,7 @@ public extension ChatStore {
     private var watchingList = false
     private var lastAgents: [JackRemote.AgentSummary]?
     private var lastProjects: [String] = []
+    private var lastProviders: [JackRemote.ProviderOptions] = []
     private var opened: [UUID: Sent] = [:]
 
     init(connection: NWConnection, server: JackRemoteServer) {
@@ -386,7 +417,38 @@ public extension ChatStore {
             send(.init(type: .ok, id: request.id))
         case .create:
             create(request, store)
+        case .configure:
+            configure(request, store)
+        case .rename:
+            guard let id = agentID(request, store, reply: true) else { return }
+            let title = (request.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty else { return fail(request, "Escribe un nombre.") }
+            store.rename(id, title: title)
+            send(.init(type: .ok, id: request.id))
         }
+    }
+
+    private func configure(_ request: JackRemote.Request, _ store: ChatStore) {
+        guard let id = agentID(request, store, reply: true),
+              let conversation = store.conversations.first(where: { $0.id == id }) else { return }
+        if request.model != nil || request.effort != nil {
+            guard conversation.provider != .opencode else { return fail(request, "El modelo de OpenCode se cambia en Jack.") }
+            guard !store.isBusy(id) else { return fail(request, "Cambia el modelo cuando el agente termine.") }
+            let model = request.model ?? conversation.model
+            guard store.modelChoices(for: conversation.provider).contains(where: { $0.id == model }) else { return fail(request, "Modelo desconocido.") }
+            let efforts = store.supportedEfforts(provider: conversation.provider, model: model)
+            if let effort = request.effort, !efforts.contains(effort) { return fail(request, "Ese esfuerzo no existe en este modelo.") }
+            store.updateSettings(id: id, model: model, effort: request.effort ?? conversation.effort)
+        }
+        if let mode = request.mode {
+            let supported = ChatRunMode.choices(for: conversation.provider)
+            guard supported.contains(where: { $0.id == mode }) else { return fail(request, "Ese modo no existe en este agente.") }
+            store.updateMode(id: id, mode: mode, supported: supported)
+            guard store.conversations.first(where: { $0.id == id })?.mode == mode else {
+                return fail(request, "El agente no admite cambiar de modo ahora.")
+            }
+        }
+        send(.init(type: .ok, id: request.id))
     }
 
     private func create(_ request: JackRemote.Request, _ store: ChatStore) {
@@ -395,7 +457,15 @@ public extension ChatStore {
         guard let provider = request.provider.flatMap(ChatProvider.init(rawValue:)) else { return fail(request, "Proveedor desconocido.") }
         // Only folders Jack already works in: a remote device never reaches the rest of the disk.
         guard let project = request.project, server.knownProjects().contains(project) else { return fail(request, "Esa carpeta no es de ningún agente de Jack.") }
-        guard let id = store.create(projectPath: project, provider: provider, select: false) else { return fail(request, "No se pudo crear el agente.") }
+        if let model = request.model, !store.modelChoices(for: provider).contains(where: { $0.id == model }) {
+            return fail(request, "Modelo desconocido.")
+        }
+        if let mode = request.mode, !ChatRunMode.choices(for: provider).contains(where: { $0.id == mode }) {
+            return fail(request, "Ese modo no existe en este proveedor.")
+        }
+        guard let id = store.create(projectPath: project, provider: provider, model: request.model,
+                                    effort: request.effort ?? "high", select: false) else { return fail(request, "No se pudo crear el agente.") }
+        if let mode = request.mode { store.updateMode(id: id, mode: mode, supported: ChatRunMode.choices(for: provider)) }
         store.send(text, to: id)
         send(.init(type: .ok, id: request.id, agent: id.uuidString))
     }
@@ -424,10 +494,12 @@ public extension ChatStore {
     private func pushList(_ store: ChatStore) {
         let agents = store.conversations.map(server.summary(of:))
         let projects = server.knownProjects()
-        guard agents != lastAgents || projects != lastProjects else { return }
+        let providers = server.providerOptions()
+        guard agents != lastAgents || projects != lastProjects || providers != lastProviders else { return }
         lastAgents = agents
         lastProjects = projects
-        send(.init(type: .agents, agents: agents, projects: projects))
+        lastProviders = providers
+        send(.init(type: .agents, agents: agents, projects: projects, providers: providers))
     }
 
     private func pushAgent(_ id: UUID, _ store: ChatStore) {
@@ -459,9 +531,11 @@ public extension ChatStore {
 
         let approvals = (store.approvals[id] ?? []).map(JackRemoteServer.wire)
         let waiting = (store.waiting[id] ?? []).map(\.text)
-        if summary != sent.summary || approvals != sent.approvals || waiting != sent.waiting {
-            send(.init(type: .state, agent: id.uuidString, summary: summary, approvals: approvals, waiting: waiting))
+        let config = server.config(of: conversation)
+        if summary != sent.summary || approvals != sent.approvals || waiting != sent.waiting || config != sent.config {
+            send(.init(type: .state, agent: id.uuidString, summary: summary, approvals: approvals, waiting: waiting, config: config))
         }
+        sent.config = config
         sent.summary = summary
         sent.approvals = approvals
         sent.waiting = waiting

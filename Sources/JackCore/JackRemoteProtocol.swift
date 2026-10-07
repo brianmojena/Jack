@@ -70,6 +70,10 @@ public enum JackRemote {
             /// Stops pushing an agent.
             case close
             case send, stop, respond, answer, create
+            /// Changes an agent's model, effort or permission mode (`model`, `effort`, `mode`).
+            case configure
+            /// Renames an agent (`text`).
+            case rename
         }
         public var id: String
         public var type: Kind
@@ -88,14 +92,20 @@ public enum JackRemote {
         /// Provider raw value for `create` (`codex`, `claude`, `opencode`, `stellar`).
         public var provider: String?
         public var interrupting: Bool?
+        /// Model id for `configure`, or for `create` instead of the provider's default.
+        public var model: String?
+        public var effort: String?
+        /// Permission mode id for `configure` or `create`.
+        public var mode: String?
 
         public init(id: String = UUID().uuidString, type: Kind, agent: String? = nil, text: String? = nil,
                     approval: String? = nil, choice: String? = nil, reason: String? = nil,
                     answers: [String: String]? = nil, project: String? = nil, provider: String? = nil,
-                    interrupting: Bool? = nil) {
+                    interrupting: Bool? = nil, model: String? = nil, effort: String? = nil, mode: String? = nil) {
             self.id = id; self.type = type; self.agent = agent; self.text = text; self.approval = approval
             self.choice = choice; self.reason = reason; self.answers = answers; self.project = project
             self.provider = provider; self.interrupting = interrupting
+            self.model = model; self.effort = effort; self.mode = mode
         }
     }
 
@@ -130,14 +140,51 @@ public enum JackRemote {
         public var approvals: [Approval]?
         /// Messages the user wrote that wait until the agent reads them.
         public var waiting: [String]?
+        /// What the agent runs with now and what it can be switched to.
+        public var config: Config?
+        /// What each provider offers for a new agent, sent with `agents`.
+        public var providers: [ProviderOptions]?
 
         public init(type: Kind, id: String? = nil, agent: String? = nil, text: String? = nil, name: String? = nil,
                     host: String? = nil, version: Int? = nil, agents: [AgentSummary]? = nil, projects: [String]? = nil,
                     messages: [Message]? = nil, summary: AgentSummary? = nil, approvals: [Approval]? = nil,
-                    waiting: [String]? = nil) {
+                    waiting: [String]? = nil, config: Config? = nil, providers: [ProviderOptions]? = nil) {
             self.type = type; self.id = id; self.agent = agent; self.text = text; self.name = name; self.host = host
             self.version = version; self.agents = agents; self.projects = projects; self.messages = messages
             self.summary = summary; self.approvals = approvals; self.waiting = waiting
+            self.config = config; self.providers = providers
+        }
+    }
+
+    /// Model, effort and permission mode of an agent, with the options each has.
+    public struct Config: Codable, Equatable, Sendable {
+        public var model: String
+        public var effort: String
+        /// Current permission mode id; empty when the provider has none.
+        public var mode: String
+        public var models: [Choice]
+        public var efforts: [String]
+        public var modes: [Choice]
+        /// Model, effort and permission mode can only change while the agent is idle (a kept-alive agent
+        /// also takes a new mode in the middle of a turn).
+        public var canChangeModel: Bool
+        public var canChangeMode: Bool
+        public init(model: String, effort: String, mode: String, models: [Choice], efforts: [String], modes: [Choice],
+                    canChangeModel: Bool, canChangeMode: Bool) {
+            self.model = model; self.effort = effort; self.mode = mode; self.models = models; self.efforts = efforts
+            self.modes = modes; self.canChangeModel = canChangeModel; self.canChangeMode = canChangeMode
+        }
+    }
+
+    /// What a provider offers when creating an agent.
+    public struct ProviderOptions: Codable, Equatable, Sendable, Identifiable {
+        public var id: String
+        public var title: String
+        public var defaultModel: String
+        public var models: [Choice]
+        public var modes: [Choice]
+        public init(id: String, title: String, defaultModel: String, models: [Choice], modes: [Choice]) {
+            self.id = id; self.title = title; self.defaultModel = defaultModel; self.models = models; self.modes = modes
         }
     }
 

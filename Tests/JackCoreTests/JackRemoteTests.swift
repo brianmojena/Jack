@@ -189,6 +189,57 @@ final class JackRemoteTests: XCTestCase {
         XCTAssertEqual(drivers[0].answers.first?.1, "allow")
     }
 
+    @MainActor func testPixelChangesModelAndModeButNeverBypass() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("jack-remote-tests-" + UUID().uuidString)
+        let store = ChatStore(archive: ChatArchive(directory: folder), preferences: nil, driverFactory: { _ in RemoteDriver() })
+        let server = JackRemoteServer(store: store, port: 0, advertises: false, pairingCode: code)
+        defer { server.stop(); store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        let agent = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .claude))
+        server.start()
+        try await until { server.status == .ready }
+        let client = RemoteClient(port: try XCTUnwrap(server.listeningPort), code: code)
+        let connected = await client.connect()
+        XCTAssertTrue(connected)
+        defer { client.close() }
+
+        client.send(.init(id: "1", type: .list))
+        let list = await client.next { $0.type == .agents }
+        XCTAssertEqual(Set(list?.providers?.map(\.id) ?? []), ["claude", "codex", "opencode", "stellar"])
+        let claude = list?.providers?.first { $0.id == "claude" }
+        XCTAssertTrue(claude?.models.contains { $0.id == "opus" } == true)
+        XCTAssertFalse(claude?.modes.contains { $0.id == ChatRunMode.bypass.id } == true, "Bypass is never offered remotely")
+
+        client.send(.init(id: "2", type: .open, agent: agent.uuidString))
+        let state = await client.next { $0.type == .state }
+        XCTAssertEqual(state?.config?.model, "sonnet")
+        XCTAssertEqual(state?.config?.canChangeModel, true)
+        XCTAssertFalse(state?.config?.modes.contains { $0.id == ChatRunMode.bypass.id } == true)
+
+        client.send(.init(id: "3", type: .configure, agent: agent.uuidString, model: "opus", effort: "max", mode: "plan"))
+        let changed = await client.next { $0.type == .ok && $0.id == "3" }
+        XCTAssertNotNil(changed)
+        let conversation = try XCTUnwrap(store.conversations.first { $0.id == agent })
+        XCTAssertEqual(conversation.model, "opus")
+        XCTAssertEqual(conversation.effort, "max")
+        XCTAssertEqual(conversation.mode, "plan")
+        let updated = await client.next { $0.type == .state && $0.config?.mode == "plan" }
+        XCTAssertEqual(updated?.config?.model, "opus")
+
+        client.send(.init(id: "4", type: .configure, agent: agent.uuidString, mode: ChatRunMode.bypass.id))
+        let refused = await client.next { $0.type == .error && $0.id == "4" }
+        XCTAssertNotNil(refused, "A remote device cannot switch every permission off")
+        XCTAssertEqual(store.conversations.first { $0.id == agent }?.mode, "plan")
+
+        client.send(.init(id: "5", type: .configure, agent: agent.uuidString, model: "no-existe"))
+        let unknown = await client.next { $0.type == .error && $0.id == "5" }
+        XCTAssertNotNil(unknown)
+
+        client.send(.init(id: "6", type: .rename, agent: agent.uuidString, text: "Renombrado"))
+        let renamed = await client.next { $0.type == .ok && $0.id == "6" }
+        XCTAssertNotNil(renamed)
+        XCTAssertEqual(store.conversations.first { $0.id == agent }?.title, "Renombrado")
+    }
+
     @MainActor func testCreateOnlyInKnownFolders() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("jack-remote-tests-" + UUID().uuidString)
         var drivers: [RemoteDriver] = []
