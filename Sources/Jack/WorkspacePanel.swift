@@ -5,13 +5,14 @@ import SwiftUI
 import WebKit
 
 enum WorkspaceTool: String, CaseIterable, Identifiable {
-    case terminal, browser, simulator
+    case terminal, browser, simulator, git
     var id: String { rawValue }
     var title: String {
         switch self {
         case .terminal: "Terminal"
         case .browser: "Navegador"
         case .simulator: "Simulador"
+        case .git: "Git"
         }
     }
     var symbol: String {
@@ -19,6 +20,7 @@ enum WorkspaceTool: String, CaseIterable, Identifiable {
         case .terminal: "apple.terminal"
         case .browser: "globe"
         case .simulator: "iphone"
+        case .git: "arrow.triangle.branch"
         }
     }
 }
@@ -38,6 +40,7 @@ struct WorkspaceTab: Identifiable, Equatable {
     private var terminals: [UUID: TerminalSession] = [:]
     private var browsers: [UUID: BrowserSession] = [:]
     private var explorers: [String: FileTreeModel] = [:]
+    private var gits: [String: GitSession] = [:]
     /// Shared by every agent: there is one set of simulators on the Mac.
     var simulator: SimulatorSession {
         if let simulatorSession { return simulatorSession }
@@ -48,8 +51,8 @@ struct WorkspaceTab: Identifiable, Equatable {
     private var simulatorSession: SimulatorSession?
     /// Adds files, such as a simulator screenshot, to an agent's next message.
     var attach: ((UUID, [String]) -> Void)?
-    /// A message about elements picked in the browser: sent to the agent now, or left in its composer.
-    var sendFromBrowser: ((_ conversation: UUID, _ text: String, _ files: [String], _ now: Bool) -> Void)?
+    /// A message for an agent, such as one about elements picked in the browser: sent now, or left in its composer.
+    var sendToAgent: ((_ conversation: UUID, _ text: String, _ files: [String], _ now: Bool) -> Void)?
 
     var terminalCount: Int { tabs.values.reduce(0) { $0 + $1.filter { $0.kind == .terminal }.count } }
 
@@ -63,8 +66,8 @@ struct WorkspaceTab: Identifiable, Equatable {
     @discardableResult
     func open(_ kind: WorkspaceTool, for conversation: UUID) -> WorkspaceTab {
         let list = tabs(for: conversation)
-        // One simulator tab per agent is enough: they all show the same device.
-        if kind == .simulator, let existing = list.first(where: { $0.kind == .simulator }) {
+        // One simulator or Git tab per agent is enough: they show the same device and the same project.
+        if kind == .simulator || kind == .git, let existing = list.first(where: { $0.kind == kind }) {
             selection[conversation] = existing.id
             return existing
         }
@@ -120,6 +123,14 @@ struct WorkspaceTab: Identifiable, Equatable {
         let tab = tabs(for: conversation).last { $0.kind == .browser } ?? open(.browser, for: conversation)
         select(tab.id, for: conversation)
         browser(tab.id).open(url)
+    }
+
+    /// The project's git state, shared by every agent in the same folder.
+    func git(for path: String) -> GitSession {
+        if let session = gits[path] { return session }
+        let session = GitSession(directory: path)
+        gits[path] = session
+        return session
     }
 
     func explorer(for path: String) -> FileTreeModel {
@@ -186,6 +197,7 @@ struct WorkspacePane: View, Equatable {
                     Button("Nuevo terminal", systemImage: "apple.terminal") { sessions.open(.terminal, for: conversationID) }
                     Button("Nuevo navegador", systemImage: "globe") { sessions.open(.browser, for: conversationID) }
                     Button("Simulador de iOS", systemImage: "iphone") { sessions.open(.simulator, for: conversationID) }
+                    Button("Git", systemImage: "arrow.triangle.branch") { sessions.open(.git, for: conversationID) }
                 } label: {
                     Image(systemName: "plus").font(.system(size: 12, weight: .medium))
                 } primaryAction: {
@@ -209,10 +221,12 @@ struct WorkspacePane: View, Equatable {
                         TerminalPanel(session: sessions.terminal(selected.id, conversation: conversationID, directory: projectPath))
                     case .browser:
                         BrowserPanel(session: sessions.browser(selected.id)) { text, files, now in
-                            sessions.sendFromBrowser?(conversationID, text, files, now)
+                            sessions.sendToAgent?(conversationID, text, files, now)
                         }
                     case .simulator:
                         SimulatorPanel(session: sessions.simulator) { paths in sessions.attach?(conversationID, paths) }
+                    case .git:
+                        GitPanel(session: sessions.git(for: projectPath)) { text in sessions.sendToAgent?(conversationID, text, [], true) }
                     }
                 } else {
                     emptyState
@@ -233,6 +247,7 @@ struct WorkspacePane: View, Equatable {
                 Button("Terminal") { sessions.open(.terminal, for: conversationID) }
                 Button("Navegador") { sessions.open(.browser, for: conversationID) }
                 Button("Simulador") { sessions.open(.simulator, for: conversationID) }
+                Button("Git") { sessions.open(.git, for: conversationID) }
             }
             .controlSize(.small)
         }
@@ -251,6 +266,7 @@ private struct WorkspaceTabTitle: View {
             case .terminal: Text("Terminal \(tab.number)")
             case .browser: Text("Nueva pestaña")
             case .simulator: Text("Simulador")
+            case .git: Text("Git")
             }
         }
     }

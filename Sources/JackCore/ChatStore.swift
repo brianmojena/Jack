@@ -170,8 +170,9 @@ import Foundation
         if select { evictInactiveTranscripts() }
         return conversation.id
     }
-    /// Creates an agent for `message` without a folder: its model chooses the project, then the agent
-    /// moves to that space and starts. `projects` are the folders to choose from, most recently used first.
+    /// Creates an agent for `message` without a folder: Jack resolves known projects, then its model
+    /// chooses when necessary. The agent moves to that space and starts.
+    /// `projects` are the folders to choose from, most recently used first.
     @discardableResult
     public func createLocating(_ message: String, provider: ChatProvider, model: String? = nil, effort: String = "high", projects: [String]) -> UUID? {
         let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -196,7 +197,12 @@ import Foundation
     private func place(_ id: UUID) {
         guard locateTasks[id] == nil, let conversation = conversations.first(where: { $0.id == id }) else { return }
         let request = Self.request(of: conversation)
-        let projects = knownProjects.isEmpty ? Array(Set(conversations.map(\.projectPath))) : knownProjects
+        // Always include Jack's current projects, even if the disk index is stale.
+        var seen = Set<String>()
+        let openProjects = conversations.sorted { $0.updatedAt > $1.updatedAt }.map(\.projectPath)
+            .filter { $0 != ProjectLocator.unplacedFolder && seen.insert($0).inserted }
+        let projects = openProjects + knownProjects.filter { $0 != ProjectLocator.unplacedFolder && seen.insert($0).inserted }
+        let knownPath = ProjectLocator.knownPath(in: request, projects: projects, openProjects: openProjects)
         let locate = locateProject, deadline = locateDeadline
         locating.insert(id)
         statuses[id] = .running
@@ -204,11 +210,15 @@ import Foundation
             var path: String?, failure: String?
             do {
                 // Racing a timer: cancelling either way also ends the model's process.
-                path = try await withThrowingTaskGroup(of: String?.self) { group in
-                    group.addTask { try await locate(request, conversation.provider, conversation.model, projects) }
-                    group.addTask { try await Task.sleep(for: deadline); throw CommandDeadlineExceeded() }
-                    defer { group.cancelAll() }
-                    return try await group.next() ?? nil
+                if let knownPath {
+                    path = knownPath
+                } else {
+                    path = try await withThrowingTaskGroup(of: String?.self) { group in
+                        group.addTask { try await locate(request, conversation.provider, conversation.model, projects) }
+                        group.addTask { try await Task.sleep(for: deadline); throw CommandDeadlineExceeded() }
+                        defer { group.cancelAll() }
+                        return try await group.next() ?? nil
+                    }
                 }
             } catch is CommandDeadlineExceeded {
                 failure = "el modelo tardó más de \(deadline.components.seconds) s en responder."
@@ -218,6 +228,11 @@ import Foundation
             self.locating.remove(id)
             self.loadTranscript(id)
             guard let index = self.conversations.firstIndex(where: { $0.id == id }) else { self.statuses[id] = nil; return }
+            // A clarification typed while searching must choose the folder too.
+            if Self.request(of: self.conversations[index]) != request {
+                self.place(id)
+                return
+            }
             guard let path else {
                 self.statuses[id] = .idle
                 let reason = failure.map { "No pude elegir la carpeta del proyecto: \($0)" } ?? "No sé en qué proyecto trabajar."
@@ -225,9 +240,16 @@ import Foundation
                 self.save(id)
                 return
             }
-            self.conversations[index].projectPath = path
+            var isDirectory: ObjCBool = false
+            guard path.hasPrefix("/"), FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else {
+                self.statuses[id] = .idle
+                self.conversations[index].messages.append(ChatMessage(role: "jack", text: "La carpeta del proyecto ya no está disponible. Dime su nombre o su ruta para continuar."))
+                self.save(id)
+                return
+            }
+            self.conversations[index].projectPath = ProjectLocator.existingPath(path, projects: projects)
             self.conversations[index].updatedAt = Date()
-            self.preferences?.set(path, forKey: "lastProjectPath")
+            self.preferences?.set(self.conversations[index].projectPath, forKey: "lastProjectPath")
             self.save(id)
             // Messages written while the model chose the folder go too.
             self.statuses[id] = .queued

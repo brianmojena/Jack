@@ -52,6 +52,24 @@ final class ProjectFinderTests: XCTestCase {
         XCTAssertEqual(ProjectFinder.resolve("trabaja en \(folder.path), por favor", projects: projects).match?.path, folder.path)
     }
 
+    func testLocatorPrefersOpenProjectButKeepsOpenNamesakesAmbiguous() {
+        let current = "/Users/me/Trabajo/Jack", old = "/Users/me/Old/Jack"
+        XCTAssertEqual(ProjectLocator.knownPath(in: "ve a Jack", projects: [old, current], openProjects: [current]), current)
+        XCTAssertNil(ProjectLocator.knownPath(in: "ve a Jack", projects: [old, current], openProjects: [current, old]))
+        XCTAssertEqual(ProjectLocator.knownPath(in: "en Financia App revisa", projects: projects, openProjects: [current]), "/Users/me/Trabajo/financia-app")
+        XCTAssertNil(ProjectLocator.knownPath(in: "arregla el login", projects: projects, openProjects: [current]))
+    }
+
+    func testLocatorReusesOpenProjectWhenTheUserWritesASymlink() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("jack-alias-\(UUID().uuidString)")
+        let project = root.appendingPathComponent("Jack")
+        let alias = root.appendingPathComponent("alias")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: project)
+        defer { try? FileManager.default.removeItem(at: root) }
+        XCTAssertEqual(ProjectLocator.knownPath(in: "trabaja en \(alias.path)", projects: [], openProjects: [project.path]), project.path)
+    }
+
     func testScanStopsAtProjectRoots() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("jack-scan-\(UUID().uuidString)")
         let manager = FileManager.default

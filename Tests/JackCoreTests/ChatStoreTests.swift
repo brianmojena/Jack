@@ -45,6 +45,67 @@ final class ChatStoreTests: XCTestCase {
         XCTAssertFalse(store.isUnplaced(id))
         XCTAssertEqual(drivers().count, 1, "the agent starts once placed")
     }
+    @MainActor func testAutomaticAgentJoinsExistingProjectWithoutAskingTheModel() async throws {
+        let (store, archive, folder, drivers) = fixture()
+        let project = folder.appendingPathComponent("Jack")
+        let other = folder.appendingPathComponent("old/Jack")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        let existing = try XCTUnwrap(store.create(projectPath: project.path, provider: .claude))
+        store.locateProject = { _, _, _, _ in XCTFail("An open project resolves without a model call"); return nil }
+
+        // The indexed namesake comes first; Jack must still reuse the open project's path.
+        let id = try XCTUnwrap(store.createLocating("ve a Jack y arregla el login", provider: .codex, projects: [other.path]))
+        await settle()
+        XCTAssertNotEqual(id, existing)
+        XCTAssertEqual(store.selectedID, id)
+        XCTAssertEqual(store.selectedConversation?.projectPath, project.path)
+        XCTAssertEqual(store.conversations.first { $0.id == existing }?.projectPath, project.path)
+        XCTAssertEqual(store.conversations.count, 2, "The existing conversation is preserved")
+        XCTAssertFalse(store.isUnplaced(id))
+        XCTAssertEqual(drivers().count, 1)
+        archive.flush()
+        XCTAssertEqual(try archive.load(id)?.projectPath, project.path)
+    }
+
+    @MainActor func testProjectNamedWhileSearchingAutomaticallyJoinsItsExistingSpace() async throws {
+        let (store, _, folder, drivers) = fixture()
+        let project = folder.appendingPathComponent("Jack")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        store.create(projectPath: project.path, provider: .claude)
+        var choice: CheckedContinuation<String?, Never>?
+        var searches = 0
+        store.locateProject = { _, _, _, _ in
+            searches += 1
+            return await withCheckedContinuation { choice = $0 }
+        }
+        let id = try XCTUnwrap(store.createLocating("arregla el login", provider: .codex, projects: []))
+        await settle()
+        XCTAssertTrue(store.locating.contains(id))
+        store.send("ve a Jack", to: id)
+        choice?.resume(returning: nil)
+        await settle()
+        XCTAssertEqual(searches, 1, "The clarification resolves directly to the open project")
+        XCTAssertEqual(store.selectedConversation?.projectPath, project.path)
+        XCTAssertEqual(store.selectedConversation?.messages.filter { $0.role == "user" }.map(\.text), ["arregla el login", "ve a Jack"])
+        XCTAssertFalse(store.selectedConversation?.messages.contains { $0.role == "jack" } == true)
+        XCTAssertEqual(drivers().count, 1, "Both messages start the same agent")
+    }
+
+    @MainActor func testAutomaticAgentRejectsFolderThatNoLongerExists() async throws {
+        let (store, _, folder, drivers) = fixture()
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        store.locateProject = { _, _, _, _ in folder.appendingPathComponent("missing").path }
+        let id = try XCTUnwrap(store.createLocating("arregla el login", provider: .codex, projects: []))
+        await settle()
+        XCTAssertTrue(store.isUnplaced(id))
+        XCTAssertEqual(store.statuses[id], .idle)
+        XCTAssertTrue(drivers().isEmpty)
+        XCTAssertTrue(store.selectedConversation?.messages.last?.text.contains("ya no está disponible") == true)
+    }
+
     @MainActor func testStoppingWhileChoosingTheFolderCancelsTheSearch() async throws {
         let (store, _, folder, drivers) = fixture()
         defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }

@@ -14,6 +14,7 @@ struct JackActions {
     var toggleTerminal: () -> Void
     var toggleBrowser: () -> Void
     var toggleSimulator: () -> Void
+    var toggleGit: () -> Void
     var toggleExplorer: () -> Void
     var toggleSidebar: () -> Void
     var closeTab: () -> Void
@@ -34,7 +35,7 @@ struct JackCommands: Commands {
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
-            Button("Nuevo agente…") { actions?.newAgent() }
+            Button("Nuevo agente") { actions?.newAgent() }
                 .keyboardShortcut("n", modifiers: .command)
                 .disabled(actions == nil)
             Button("Retomar sesión de Claude Code…") { actions?.resumeClaudeSession() }
@@ -107,6 +108,9 @@ struct JackCommands: Commands {
                 .disabled(actions?.hasSelection != true)
             Button("Mostrar u ocultar simulador de iOS") { actions?.toggleSimulator() }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
+                .disabled(actions?.hasSelection != true)
+            Button("Mostrar u ocultar Git") { actions?.toggleGit() }
+                .keyboardShortcut("g", modifiers: [.command, .shift])
                 .disabled(actions?.hasSelection != true)
         }
     }

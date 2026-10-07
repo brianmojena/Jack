@@ -9,6 +9,25 @@ public enum ProjectLocator {
             .appendingPathComponent("Jack/Sin proyecto", isDirectory: true).path
     }
 
+    /// Reuses the exact path of an existing Jack project, including when the user
+    /// writes an alias or a symlink. An open project wins over an indexed namesake.
+    static func knownPath(in request: String, projects: [String], openProjects: [String]) -> String? {
+        if let path = ProjectFinder.explicitPath(in: request) {
+            return existingPath(path, projects: openProjects + projects)
+        }
+        if let match = ProjectFinder.resolve(request, projects: openProjects).match {
+            return match.path
+        }
+        return ProjectFinder.resolve(request, projects: projects).match?.path
+    }
+
+    static func existingPath(_ path: String, projects: [String]) -> String {
+        let canonical = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
+        return projects.first {
+            URL(fileURLWithPath: $0).resolvingSymlinksInPath().standardizedFileURL.path == canonical
+        } ?? URL(fileURLWithPath: path).standardizedFileURL.path
+    }
+
     /// The folder `request` is about, or nil when the model cannot tell.
     @MainActor
     public static func locate(_ request: String, provider: ChatProvider, model: String, projects: [String]) async throws -> String? {

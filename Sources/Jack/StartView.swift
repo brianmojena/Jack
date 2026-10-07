@@ -1,214 +1,173 @@
-import AppKit
 import JackCore
 import SwiftUI
 
-/// What Jack shows when no agent is open: pick a project and an agent, then write the first task.
+/// A draft chat: no conversation is created until the user sends its first message.
 struct StartView: View {
-    let spaces: [String]
-    let agentCount: Int
-    let attentionCount: Int
-    /// Creates the agent; an empty message just opens it. An empty path lets the agent's model choose the folder.
-    let onStart: (_ projectPath: String, _ provider: ChatProvider, _ message: String) -> Void
-    let onMoreOptions: (_ projectPath: String?, _ provider: ChatProvider) -> Void
+    @ObservedObject var store: ChatStore
+    let onStart: (NewAgentRequest) -> Void
     var onResumeClaude: (() -> Void)? = nil
 
     @AppStorage("lastNewAgentProvider") private var providerValue = ChatProvider.codex.rawValue
-    @ObservedObject private var index = ProjectIndex.shared
-    /// A folder the user picked; without one, the agent's model chooses it from the request.
-    @State private var chosenProject: String?
+    @AppStorage("transcriptMonospaced") private var monospaced = true
+    @Environment(\.interfaceStyle) private var interfaceStyle
+    @State private var model = ""
+    @State private var effort = "high"
     @State private var message = ""
+    @State private var customModel = ""
+    @State private var showingCustomModel = false
     @FocusState private var focused: Bool
 
     private var provider: ChatProvider { ChatProvider(rawValue: providerValue) ?? .codex }
-    private var project: String? { chosenProject }
+    private var providerBinding: Binding<ChatProvider> {
+        Binding(get: { provider }, set: { providerValue = $0.rawValue })
+    }
+    private var choices: [ChatModelChoice] { store.modelChoices(for: provider) }
+    private var selectedModel: String {
+        if !model.isEmpty { return model }
+        if provider == .stellar { return (store.localModels.first { $0.tools } ?? store.localModels.first)?.id ?? "" }
+        return provider.defaultModel
+    }
+    private var modelTitle: String { choices.first { $0.id == selectedModel }?.title ?? (selectedModel.isEmpty ? "Predeterminado" : selectedModel) }
+    private var efforts: [String] { store.supportedEfforts(provider: provider, model: selectedModel) }
     private var hasMessage: Bool { !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var canSend: Bool { hasMessage && (provider != .stellar || !selectedModel.isEmpty) }
+    private var ice: Bool { interfaceStyle == .ice }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("jack").font(.mono(30, weight: .bold))
-                Text(subtitle).font(.system(size: 13)).foregroundStyle(JackPalette.muted)
+        VStack(spacing: 0) {
+            Spacer()
+            VStack(spacing: 8) {
+                Text("¿En qué te ayudo?").font(.system(size: 24, weight: .medium))
+                Text("Dime qué quieres hacer. Encontraré el proyecto por ti.")
+                    .font(.system(size: 13)).foregroundStyle(JackPalette.muted)
             }
-
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text("›").font(.mono(15, weight: .bold)).foregroundStyle(JackPalette.accent)
-                    TextField(chosenProject.map { "¿Qué hacemos en \(name(of: $0))?" } ?? "Pide algo y el agente buscará el proyecto: «arregla el login de Jack»",
-                              text: $message, axis: .vertical)
-                        .textFieldStyle(.plain)
-                        .font(.mono(13.5))
-                        .lineLimit(1...8)
-                        .focused($focused)
-                        .onSubmit(start)
-                }
-                .padding(.horizontal, 14).padding(.top, 13).padding(.bottom, 10)
-
-                HStack(spacing: 6) {
-                    projectMenu
-                    ForEach(ChatProvider.allCases) { option in
-                        Button { providerValue = option.rawValue } label: {
-                            HStack(spacing: 5) {
-                                ProviderMark(provider: option, size: 11)
-                                Text(option.title).font(.system(size: 11.5, weight: .medium))
-                                if option.isBeta { BetaBadge() }
-                            }
-                            .padding(.horizontal, 8).frame(height: 24)
-                            .background(option == provider ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                            .foregroundStyle(option == provider ? Color.primary : JackPalette.muted)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .help("Usar \(option.title)")
-                    }
-                    Spacer(minLength: 6)
-                    if provider == .claude, let onResumeClaude {
-                        Button(action: onResumeClaude) {
-                            Image(systemName: "clock.arrow.circlepath").font(.system(size: 11.5))
-                                .frame(width: 24, height: 24).contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain).foregroundStyle(JackPalette.muted)
-                        .help("Retomar una sesión de Claude Code de la terminal (⇧⌘R)")
-                    }
-                    Button { onMoreOptions(project, provider) } label: {
-                        Image(systemName: "slider.horizontal.3").font(.system(size: 11.5))
-                            .frame(width: 24, height: 24).contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain).foregroundStyle(JackPalette.muted)
-                    .help("Modelo, esfuerzo y más opciones")
-                    Button(action: start) {
-                        Image(systemName: "arrow.up").font(.system(size: 11, weight: .bold))
-                            .frame(width: 24, height: 24)
-                            .background(project == nil && !hasMessage ? JackPalette.panelStrong : JackPalette.accent, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                            .foregroundStyle(project == nil && !hasMessage ? JackPalette.muted : .white)
-                    }
-                    .buttonStyle(.plain)
-                    .help(message.isEmpty ? "Abrir el agente" : "Crear el agente y enviar")
-                }
-                .padding(.horizontal, 8).padding(.bottom, 8)
-            }
-            .jackGlass(in: RoundedRectangle(cornerRadius: 10, style: .continuous), basic: JackPalette.panel)
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(focused ? JackPalette.accent.opacity(0.5) : JackPalette.hairline))
-
-            if !spaces.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("PROYECTOS RECIENTES").font(.system(size: 10, weight: .semibold)).tracking(0.6).foregroundStyle(JackPalette.muted)
-                        .padding(.bottom, 4)
-                    ForEach(spaces.prefix(5), id: \.self) { path in
-                        Button {
-                            chosenProject = chosenProject == path ? nil : path
-                            focused = true
-                        } label: {
-                            HStack(spacing: 10) {
-                                Image(systemName: path == project ? "folder.fill" : "folder")
-                                    .font(.system(size: 12)).foregroundStyle(path == project ? JackPalette.accent : JackPalette.muted)
-                                    .frame(width: 16)
-                                Text(name(of: path)).font(.system(size: 12.5, weight: .medium))
-                                Text((path as NSString).abbreviatingWithTildeInPath)
-                                    .font(.mono(11)).foregroundStyle(JackPalette.faint)
-                                    .lineLimit(1).truncationMode(.middle)
-                                Spacer(minLength: 0)
-                            }
-                            .padding(.horizontal, 10).frame(height: 28)
-                            .background(path == project ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-
-            HStack(spacing: 18) {
-                shortcut("↩", "Empezar")
-                shortcut("⌘N", "Nuevo agente")
-                shortcut("⇧⌘A", "Atención")
-                shortcut("⌘F", "Buscar")
-            }
+            .padding(24)
+            Spacer()
+            composer
         }
-        .frame(maxWidth: 600, alignment: .leading)
-        .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .jackSurface(.canvas)
         .onAppear {
             focused = true
-            index.refreshIfStale()
+            ProjectIndex.shared.refreshIfStale()
+        }
+        .onChange(of: providerValue) { _, _ in model = ""; effort = "high"; focused = true }
+        .onChange(of: selectedModel) { _, _ in
+            if !efforts.isEmpty && !efforts.contains(effort) { effort = efforts.contains("high") ? "high" : efforts.last! }
         }
     }
 
-    private var projectMenu: some View {
-        Menu {
-            Button { chosenProject = nil } label: {
-                if chosenProject == nil { Label("Automático", systemImage: "checkmark") } else { Text("Automático") }
-            }
-            Divider()
-            ForEach(spaces.prefix(8), id: \.self) { path in
-                Button(name(of: path)) { chosenProject = path }
-            }
-            let others = index.ordered(recent: []).filter { !spaces.contains($0) }
-            if !others.isEmpty {
-                Menu("Todos los proyectos") {
-                    ForEach(others.sorted { name(of: $0).localizedStandardCompare(name(of: $1)) == .orderedAscending }, id: \.self) { path in
-                        Button(name(of: path)) { chosenProject = path }
+    private var composer: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ZStack(alignment: .topLeading) {
+                if message.isEmpty {
+                    Text("Escribe a \(provider.title)…")
+                        .font(.system(size: monospaced ? 12.5 : 13, design: monospaced ? .monospaced : .default))
+                        .foregroundStyle(JackPalette.faint).padding(.horizontal, 5)
+                        .allowsHitTesting(false)
+                }
+                TextEditor(text: $message)
+                    .font(.system(size: monospaced ? 12.5 : 13, design: monospaced ? .monospaced : .default))
+                    .scrollContentBackground(.hidden)
+                    .writingToolsBehavior(.disabled)
+                    .focused($focused)
+                    .accessibilityLabel("Mensaje")
+                    .help("Enter para enviar · Shift+Enter para un salto de línea")
+                    .onKeyPress(keys: [.return], phases: .down) { press in
+                        guard !press.modifiers.contains(.shift) else { return .ignored }
+                        start()
+                        return .handled
                     }
+            }
+            .frame(minHeight: 18, maxHeight: 200)
+            .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 8) {
+                NewAgentProviderButton(provider: providerBinding, localModels: store.localModels)
+                modelPicker
+                if !efforts.isEmpty {
+                    Menu {
+                        ForEach(efforts, id: \.self) { option in
+                            Button { effort = option } label: {
+                                if effort == option { Label(ChatModelChoice.effortTitle(option), systemImage: "checkmark") }
+                                else { Text(ChatModelChoice.effortTitle(option)) }
+                            }
+                        }
+                    } label: { Text(ChatModelChoice.effortTitle(effort)) }
+                    .menuStyle(.borderlessButton).fixedSize().help("Esfuerzo de razonamiento")
+                }
+                Spacer(minLength: 8)
+                if provider == .claude, let onResumeClaude {
+                    Button(action: onResumeClaude) {
+                        Image(systemName: "clock.arrow.circlepath").frame(width: 24, height: 24)
+                    }
+                    .buttonStyle(.plain).help("Retomar una sesión de Claude Code (⇧⌘R)")
+                }
+                Button(action: start) {
+                    Image(systemName: "arrow.up").font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(canSend ? .white : JackPalette.faint)
+                        .frame(width: 24, height: 24)
+                        .background(canSend ? JackPalette.accent : JackPalette.panelStrong,
+                                    in: RoundedRectangle(cornerRadius: ice ? 12 : 6, style: .continuous))
+                }
+                .buttonStyle(.plain).disabled(!canSend)
+                .help("Enviar (Enter)").accessibilityLabel("Enviar")
+            }
+            .font(.system(size: 11, weight: .medium)).foregroundStyle(JackPalette.muted)
+        }
+        .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 8)
+        .jackGlass(in: RoundedRectangle(cornerRadius: ice ? 18 : 8, style: .continuous), basic: JackPalette.panel)
+        .overlay {
+            if !ice {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(focused ? JackPalette.accent.opacity(0.45) : JackPalette.hairline, lineWidth: 1)
+            }
+        }
+        .frame(maxWidth: MainWindowView.columnWidth).frame(maxWidth: .infinity)
+        .padding(.horizontal, 22).padding(.top, 6).padding(.bottom, 12)
+    }
+
+    private var modelPicker: some View {
+        Menu {
+            ForEach(choices) { choice in
+                Button { model = choice.id } label: {
+                    if choice.id == selectedModel { Label(choice.title, systemImage: "checkmark") }
+                    else { Text(choice.title) }
                 }
             }
-            Divider()
-            Button("Elegir carpeta…", action: chooseProject)
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: chosenProject != nil ? "folder" : "wand.and.stars")
-                    .font(.system(size: 11))
-                Text(project.map(name(of:)) ?? "Automático").font(.system(size: 11.5, weight: .medium)).lineLimit(1)
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
+            if provider == .stellar {
+                Divider()
+                if store.localModels.isEmpty { Text("Sin modelos locales") }
+                Button("Actualizar modelos locales") { Task { await store.refreshLocalModels() } }
             }
-            .padding(.horizontal, 8).frame(height: 24)
-            .background(JackPalette.panelStrong, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            Divider()
+            Button("Otro modelo…") { customModel = selectedModel; showingCustomModel = true }
+        } label: { Text(modelTitle).lineLimit(1).truncationMode(.middle).frame(maxWidth: 150, alignment: .leading) }
+        .menuStyle(.borderlessButton).fixedSize().help("Modelo")
+        .popover(isPresented: $showingCustomModel) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Modelo · \(provider.title)").font(.headline)
+                TextField(provider == .opencode ? "proveedor/modelo" : "Identificador del modelo", text: $customModel)
+                    .textFieldStyle(.roundedBorder).onSubmit(applyCustomModel)
+                HStack {
+                    Button("Cancelar") { showingCustomModel = false }.keyboardShortcut(.cancelAction)
+                    Spacer()
+                    Button("Usar modelo", action: applyCustomModel).keyboardShortcut(.defaultAction)
+                }
+            }
+            .padding(18).frame(width: 330)
         }
-        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-        .help(projectHelp)
     }
 
-    private var projectHelp: String {
-        if let chosenProject { return (chosenProject as NSString).abbreviatingWithTildeInPath }
-        return "Automático: el agente elige la carpeta del proyecto a partir de tu mensaje"
-    }
-
-    private var subtitle: String {
-        if attentionCount > 0 {
-            return attentionCount == 1 ? "Un agente espera tu permiso en la barra lateral." : "\(attentionCount) agentes esperan tu permiso en la barra lateral."
-        }
-        return "Di qué quieres; el agente busca la carpeta del proyecto y se pone a ello."
-    }
-
-    private func name(of path: String) -> String { URL(fileURLWithPath: path).lastPathComponent }
-
-    private func start() {
-        guard project != nil || hasMessage else { focused = true; return }
-        let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
-        message = ""
-        chosenProject = nil
-        onStart(project ?? "", provider, text)
-    }
-
-    private func chooseProject() {
-        let panel = NSOpenPanel()
-        panel.title = "Seleccionar carpeta del proyecto"
-        panel.prompt = "Usar carpeta"
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        chosenProject = url.path
+    private func applyCustomModel() {
+        model = customModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        showingCustomModel = false
         focused = true
     }
 
-    private func shortcut(_ keys: String, _ title: String) -> some View {
-        HStack(spacing: 5) {
-            Text(keys)
-                .font(.system(size: 11, weight: .medium, design: .rounded))
-                .padding(.horizontal, 5).padding(.vertical, 2)
-                .background(JackPalette.panelStrong, in: RoundedRectangle(cornerRadius: 4))
-            Text(title).font(.system(size: 11))
-        }
-        .foregroundStyle(JackPalette.muted)
+    private func start() {
+        guard canSend else { focused = true; return }
+        onStart(NewAgentRequest(provider: provider, model: selectedModel, effort: effort,
+                                firstMessage: message.trimmingCharacters(in: .whitespacesAndNewlines)))
     }
 }

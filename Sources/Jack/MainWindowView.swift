@@ -27,9 +27,7 @@ struct MainWindowView: View {
     @AppStorage("openTabs") private var openTabsValue = ""
     @AppStorage("transcriptMonospaced") private var monospaced = true
     @AppStorage(InterfaceStyle.key) private var interfaceStyle = InterfaceStyle.basic
-    @State private var showingNewConversation = false
-    @State private var pendingProvider: ChatProvider?
-    @State private var pendingSpace: String?
+    @State private var newChatID = UUID()
     @State private var searchRequest = 0
     /// The composer being typed in: the main chat's or a pane's.
     @FocusState private var focusedComposer: UUID?
@@ -89,7 +87,7 @@ struct MainWindowView: View {
         }
         .onAppear {
             workspace.attach = { id, paths in attach(paths, to: id) }
-            workspace.sendFromBrowser = { id, text, files, now in sendFromBrowser(text, files: files, to: id, now: now) }
+            workspace.sendToAgent = { id, text, files, now in sendToAgent(text, files: files, to: id, now: now) }
             if drafts.isEmpty { drafts = memory.drafts }
             if attachments.isEmpty { attachments = memory.attachments }
         }
@@ -104,22 +102,7 @@ struct MainWindowView: View {
             let found = await ClaudeImportSheet.find(.quarter, excluding: importedClaudeSessions)
             if found.isEmpty { claudeImportOffered = true } else { firstImport = found }
         }
-        .onChange(of: showingNewConversation) { _, showing in if showing { Task { await store.refreshLocalModels() } } }
         .focusedSceneValue(\.jackActions, actions)
-        .sheet(isPresented: $showingNewConversation) {
-            NewAgentSheet(
-                spaces: recentSpaces,
-                initialSpace: pendingSpace,
-                initialProvider: pendingProvider,
-                modelChoices: store.modelChoices(for:),
-                localModels: store.localModels
-            ) { request in
-                createAgent(request)
-                showingNewConversation = false
-            } onCancel: {
-                showingNewConversation = false
-            }
-        }
         .sheet(isPresented: Binding(get: { firstImport != nil }, set: { if !$0 { firstImport = nil; claudeImportOffered = true } })) {
             ClaudeImportSheet(initial: firstImport, imported: importedClaudeSessions) { sessions in
                 store.importClaudeSessions(sessions)
@@ -205,7 +188,7 @@ struct MainWindowView: View {
             rows: sidebarRows,
             projectPaths: Dictionary(uniqueKeysWithValues: store.conversations.map { ($0.id, $0.projectPath) }),
             selectedID: store.selectedID,
-            onNewConversation: { space in openNewConversation(space: space) },
+            onNewConversation: { _ in openNewConversation() },
             onSelect: store.select,
             onRename: { id in store.conversations.first { $0.id == id }.map(beginRename) },
             onDelete: { id in deletingConversation = store.conversations.first { $0.id == id } },
@@ -471,15 +454,8 @@ struct MainWindowView: View {
         } else {
             VStack(spacing: 0) {
                 if let error = store.errorMessage, !error.isEmpty { errorBanner(error) }
-                StartView(
-                    spaces: recentSpaces,
-                    agentCount: store.conversations.count,
-                    attentionCount: store.statuses.values.filter { $0 == .waiting }.count
-                ) { path, provider, message in
-                    createAgent(NewAgentRequest(projectPath: path, provider: provider, model: "", effort: "high", firstMessage: message))
-                } onMoreOptions: { path, provider in
-                    openNewConversation(provider: provider, space: path)
-                } onResumeClaude: { showingSessionPicker = true }
+                StartView(store: store, onStart: createAgent, onResumeClaude: { showingSessionPicker = true })
+                    .id(newChatID)
                 .jackEdgeBar(.top) { iceTabs }
             }
         }
@@ -1028,7 +1004,7 @@ struct MainWindowView: View {
 
     /// A message about elements picked in the browser. When the agent cannot take it now, or the user
     /// wants to keep writing, it waits in the agent's composer with the pictures attached.
-    private func sendFromBrowser(_ text: String, files: [String], to id: UUID, now: Bool) {
+    private func sendToAgent(_ text: String, files: [String], to id: UUID, now: Bool) {
         if now, store.canSend(to: id) {
             store.errorMessage = nil
             store.send(text, attachments: files, to: id)
@@ -1094,26 +1070,19 @@ struct MainWindowView: View {
         }
     }
 
-    private func openNewConversation(provider: ChatProvider? = nil, space: String? = nil) {
-        pendingProvider = provider
-        pendingSpace = space
-        showingNewConversation = true
+    private func openNewConversation() {
+        newChatID = UUID()
+        store.selectedID = nil
+        store.errorMessage = nil
+        Task { await store.refreshLocalModels() }
     }
 
     private func createAgent(_ request: NewAgentRequest) {
-        if request.projectPath.isEmpty {
-            // Automatic: the agent's model chooses the folder and the agent moves to that space.
-            store.createLocating(request.firstMessage, provider: request.provider, model: request.model.isEmpty ? nil : request.model,
-                                 effort: request.effort, projects: ProjectIndex.shared.ordered(recent: recentSpaces))
-            return
-        }
-        let previous = store.selectedID
-        store.create(projectPath: request.projectPath, provider: request.provider, model: request.model.isEmpty ? nil : request.model, effort: request.effort)
-        guard store.selectedID != previous, let id = store.selectedID else { return }
-        if request.firstMessage.isEmpty {
-            focusedComposer = store.selectedID
-        } else if let conversation = store.conversations.first(where: { $0.id == id }) {
-            send(request.firstMessage, in: conversation)
+        store.errorMessage = nil
+        if let id = store.createLocating(request.firstMessage, provider: request.provider,
+                                        model: request.model.isEmpty ? nil : request.model, effort: request.effort,
+                                        projects: ProjectIndex.shared.ordered(recent: recentSpaces)) {
+            focusedComposer = id
         }
     }
 
@@ -1152,6 +1121,7 @@ struct MainWindowView: View {
             toggleTerminal: { toggleWorkspace(.terminal) },
             toggleBrowser: { toggleWorkspace(.browser) },
             toggleSimulator: { toggleWorkspace(.simulator) },
+            toggleGit: { toggleWorkspace(.git) },
             toggleExplorer: toggleExplorer,
             toggleSidebar: toggleSidebar,
             // ⌘W in a pane's composer closes that pane, not the main chat's tab.
