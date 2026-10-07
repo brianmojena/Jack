@@ -31,6 +31,8 @@ targets:
     sources:
       - Sources/Jack
       - Resources/Assets.xcassets
+      - path: Resources/AppIcon.icon
+        buildPhase: resources
     dependencies:
       - target: JackCore
       - package: SwiftTerm

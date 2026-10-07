@@ -1,0 +1,87 @@
+{
+  "fill": {
+    "linear-gradient": [
+      "srgb:0.16471,0.18824,0.25882,1.00000",
+      "srgb:0.05490,0.06275,0.08627,1.00000"
+    ]
+  },
+  "groups": [
+    {
+      "name": "03 — Agente activo",
+      "layers": [
+        {
+          "name": "Nodo naranja",
+          "image-name": "03-active.svg",
+          "fill": {
+            "linear-gradient": [
+              "srgb:1.00000,0.69412,0.36078,1.00000",
+              "srgb:1.00000,0.35294,0.12157,1.00000"
+            ]
+          },
+          "glass": true
+        }
+      ],
+      "lighting": "individual",
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.4
+      },
+      "specular": true,
+      "translucency": {
+        "enabled": false,
+        "value": 0.5
+      }
+    },
+    {
+      "name": "02 — Núcleo y brazos frontales",
+      "layers": [
+        {
+          "name": "Jack",
+          "image-name": "02-front.svg",
+          "fill": {
+            "solid": "srgb:0.96078,0.97255,1.00000,1.00000"
+          },
+          "glass": true
+        }
+      ],
+      "lighting": "individual",
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.4
+      },
+      "specular": true,
+      "translucency": {
+        "enabled": false,
+        "value": 0.5
+      }
+    },
+    {
+      "name": "01 — Brazos traseros",
+      "layers": [
+        {
+          "name": "Red de agentes",
+          "image-name": "01-back.svg",
+          "fill": {
+            "solid": "srgb:0.48235,0.51765,0.60000,1.00000"
+          },
+          "glass": true
+        }
+      ],
+      "lighting": "individual",
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.35
+      },
+      "specular": true,
+      "translucency": {
+        "enabled": true,
+        "value": 0.15
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": [
+      "macOS"
+    ]
+  }
+}

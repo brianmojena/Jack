@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>Jack — brazos traseros</title>
+  <g transform="translate(512 512) scale(1.24271845) translate(-512 -512)" fill="#7B8499" stroke="#7B8499" stroke-width="34" stroke-linecap="round">
+    <path d="M512 512V290 M512 512L704 623 M512 512L320 623" fill="none"/>
+    <g stroke="none">
+      <circle cx="512" cy="290" r="44"/>
+      <circle cx="704" cy="623" r="44"/>
+      <circle cx="320" cy="623" r="44"/>
+    </g>
+  </g>
+</svg>

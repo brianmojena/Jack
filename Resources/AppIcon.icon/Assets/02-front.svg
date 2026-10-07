@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>Jack — núcleo y brazos frontales</title>
+  <g transform="translate(512 512) scale(1.24271845) translate(-512 -512)" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="46" stroke-linecap="round">
+    <path d="M512 512L718 393 M512 512L306 393 M512 512V740" fill="none"/>
+    <g stroke="none">
+      <circle cx="512" cy="512" r="66"/>
+      <circle cx="718" cy="393" r="60"/>
+      <circle cx="306" cy="393" r="60"/>
+    </g>
+  </g>
+</svg>

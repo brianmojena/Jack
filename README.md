@@ -4,7 +4,7 @@ Chat nativo y compacto para gestionar varios agentes de desarrollo en macOS. Int
 
 ## Versionado
 
-La versión actual es **0.3.18**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
+La versión actual es **0.3.19**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
 
 ## Construir
 
@@ -16,6 +16,8 @@ swift test
 ```
 
 La aplicación queda en `build/Build/Products/Release/Jack.app`. Es una compilación local con firma ad hoc.
+
+El icono de la aplicación está en `Resources/AppIcon.icon`, en el formato por capas de Icon Composer. Conserva el logo original de Jack, con los brazos traseros, el núcleo frontal y el nodo naranja en capas SVG independientes. Xcode compila el icono Liquid Glass y genera también el icono compatible con versiones anteriores de macOS. `Resources/Logo/jack-icon.svg` conserva el diseño original como referencia.
 
 ## Uso
 
