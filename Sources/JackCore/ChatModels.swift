@@ -137,6 +137,9 @@ public struct ChatRunMode: Identifiable, Equatable {
     public var id: String
     public var title: String
     public init(id: String, title: String) { self.id = id; self.title = title }
+    /// Claude Code's `bypassPermissions`: runs every tool without asking. Offered only by the Normal
+    /// window, after a confirmation, and never part of the Shift+Tab cycle.
+    public static let bypass = ChatRunMode(id: "bypassPermissions", title: "Bypass")
     public static func choices(for provider: ChatProvider) -> [ChatRunMode] {
         switch provider {
         case .codex: return [.init(id: "default", title: "Normal"), .init(id: "plan", title: "Plan"), .init(id: "auto", title: "Auto")]

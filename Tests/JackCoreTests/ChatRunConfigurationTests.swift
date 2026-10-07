@@ -35,6 +35,13 @@ final class ChatRunConfigurationTests: XCTestCase {
         conversation.mode = "plan"
         XCTAssertEqual(ChatRunConfiguration.claudeSettings(conversation).prefix(2), ["--permission-mode", "plan"])
     }
+    func testBypassIsOnlyAnExplicitClaudeModeAndStaysSelectable() {
+        XCTAssertFalse(ChatRunMode.choices(for: .claude).contains(ChatRunMode.bypass), "only the Normal window adds it")
+        var conversation = ChatConversation(projectPath: "/tmp", provider: .claude)
+        XCTAssertTrue(ChatRunConfiguration.claudeSettings(conversation).contains("--allow-dangerously-skip-permissions"))
+        conversation.mode = ChatRunMode.bypass.id
+        XCTAssertEqual(ChatRunConfiguration.claudeSettings(conversation).prefix(2), ["--permission-mode", "bypassPermissions"])
+    }
     func testClaudeEffortIsOnlySentToModelsThatSupportIt() {
         var conversation = ChatConversation(projectPath: "/tmp", provider: .claude, model: "opus", effort: "xhigh")
         XCTAssertEqual(ChatRunConfiguration.claudeSettings(conversation).suffix(2), ["--effort", "xhigh"])

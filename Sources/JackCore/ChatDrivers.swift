@@ -1506,7 +1506,8 @@ enum ChatRunConfiguration {
         // Remote agents cannot use local folders: only their remote working directory applies.
         // `--add-dir` is variadic, so each one is followed by another flag.
         let directories = conversation.remote == nil ? (conversation.additionalDirectories + conversation.attachmentDirectories).flatMap { ["--add-dir", $0] } : []
-        return directories + ["--permission-mode", conversation.mode ?? "manual", "--model", nonempty(conversation.model)] + effort
+        // Makes bypassPermissions selectable while the session runs; it does not turn it on by itself.
+        return directories + ["--permission-mode", conversation.mode ?? "manual", "--allow-dangerously-skip-permissions", "--model", nonempty(conversation.model)] + effort
     }
     /// The launch settings a running Claude Code process cannot change. Mode and model change live, and the
     /// folders of one message's attachments are left out so attaching a file does not restart the session.

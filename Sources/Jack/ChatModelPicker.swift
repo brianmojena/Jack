@@ -2,6 +2,9 @@ import JackCore
 import SwiftUI
 
 struct ChatModelPicker: View {
+    /// The Normal window offers Claude Code's bypass mode; Light does not.
+    var allowsBypass = false
+    @State private var confirmingBypass = false
     @ObservedObject var store: ChatStore
     let conversation: ChatConversation
     let busy: Bool
@@ -24,7 +27,8 @@ struct ChatModelPicker: View {
         return selected?.efforts ?? store.supportedEfforts(provider: conversation.provider, model: conversation.model)
     }
     private var modes: [ChatRunMode] {
-        conversation.provider == .opencode ? openCodeModes : ChatRunMode.choices(for: conversation.provider)
+        let base = conversation.provider == .opencode ? openCodeModes : ChatRunMode.choices(for: conversation.provider)
+        return allowsBypass && conversation.provider == .claude ? base + [ChatRunMode.bypass] : base
     }
     private var modeTitle: String {
         modes.first { $0.id == conversation.mode }?.title ?? (conversation.mode ?? (conversation.provider == .opencode ? "Predeterminado" : conversation.provider == .claude ? "Manual" : "Normal"))
@@ -37,12 +41,13 @@ struct ChatModelPicker: View {
         case "plan": return JackPalette.blue
         case "acceptEdits": return JackPalette.purple
         case "auto", "dontAsk": return JackPalette.amber
+        case ChatRunMode.bypass.id: return JackPalette.red
         default: return JackPalette.muted
         }
     }
     private var modeHelp: String {
         switch conversation.provider {
-        case .claude: return "Modo de permisos · ⇧⇥ para cambiar, también mientras trabaja"
+        case .claude: return "Modo de permisos · ⇧⇥ para cambiar, también mientras trabaja. Bypass no pide ningún permiso"
         case .stellar: return "Manual pide permiso para editar y ejecutar; Aceptar ediciones solo para comandos; Auto no pregunta dentro del proyecto"
         case .codex where conversation.mode == "auto": return "Auto ejecuta dentro del proyecto; las acciones que requieren permiso se deniegan"
         default: return "Modo de trabajo para el próximo mensaje"
@@ -138,7 +143,8 @@ struct ChatModelPicker: View {
                 }
                 ForEach(modes) { mode in
                     Button {
-                        store.updateMode(id: conversation.id, mode: mode.id, supported: modes)
+                        if mode.id == ChatRunMode.bypass.id, conversation.mode != mode.id { confirmingBypass = true }
+                        else { store.updateMode(id: conversation.id, mode: mode.id, supported: modes) }
                     } label: {
                         if mode.id == conversation.mode { Label(mode.title, systemImage: "checkmark") }
                         else { Text(mode.title) }
@@ -151,6 +157,14 @@ struct ChatModelPicker: View {
             .menuStyle(.borderlessButton).fixedSize()
             .help(modeHelp)
             .disabled(busy && !store.changesModeLive(conversation.id))
+            .confirmationDialog("¿Activar el modo Bypass?", isPresented: $confirmingBypass, titleVisibility: .visible) {
+                Button("Activar Bypass", role: .destructive) {
+                    store.updateMode(id: conversation.id, mode: ChatRunMode.bypass.id, supported: modes)
+                }
+                Button("Cancelar", role: .cancel) {}
+            } message: {
+                Text("Claude Code ejecutará comandos y editará archivos sin pedir ninguna confirmación. Úsalo solo en proyectos y máquinas de confianza.")
+            }
         }
         .foregroundStyle(JackPalette.accent)
         .onChange(of: conversation.id) { _, _ in custom = false }
