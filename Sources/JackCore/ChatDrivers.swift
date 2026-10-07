@@ -1079,12 +1079,39 @@ private final class OpenCodeChatDriver: ProcessChatDriver {
     }
 
     override func respond(approvalID: String, allow: Bool) async throws {
+        try await respond(approvalID: approvalID, choice: allow ? "allow" : "deny", message: nil)
+    }
+
+    override func respond(approvalID: String, choice: String, message: String?) async throws {
         guard let separator = approvalID.firstIndex(of: ":"), let root = baseURL else { throw ChatDriverError.invalidApproval(approvalID) }
         let permission = String(approvalID[approvalID.index(after: separator)...])
-        guard pendingApprovals.removeValue(forKey: approvalID) != nil, let session = sessionID else { throw ChatDriverError.invalidApproval(approvalID) }
-        // OpenCode consumes a structured, one-time permission decision on its session API.
-        try await requestNoContent(root, path: "/permission/\(pathComponent(permission))/reply", method: "POST", body: ["reply": allow ? "once" : "reject"], password: serverPassword)
-        _ = session
+        guard pendingApprovals.removeValue(forKey: approvalID) != nil else { throw ChatDriverError.invalidApproval(approvalID) }
+        let reply: String
+        switch choice {
+        case "deny": reply = "reject"
+        case "always": reply = "always"
+        default: reply = "once"
+        }
+        var body: [String: Any] = ["reply": reply]
+        if choice == "deny", let text = message?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+            body["message"] = text
+        }
+        try await requestNoContent(root, path: "/permission/\(pathComponent(permission))/reply", method: "POST", body: body, password: serverPassword)
+    }
+
+    override func answer(approvalID: String, answers: [String: String]) async throws {
+        guard let root = baseURL, let pending = pendingApprovals[approvalID],
+              let questionID = pending.payload["questionID"] as? String,
+              let ordered = pending.payload["orderedIDs"] as? [String], !ordered.isEmpty,
+              ordered.allSatisfy({ !(answers[$0] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
+            throw ChatDriverError.invalidApproval(approvalID)
+        }
+        let replies: [[String]] = ordered.map { id in
+            (answers[id] ?? "").split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        }
+        guard replies.allSatisfy({ !$0.isEmpty }) else { throw ChatDriverError.invalidApproval(approvalID) }
+        try await requestNoContent(root, path: "/question/\(pathComponent(questionID))/reply", method: "POST", body: ["answers": replies], password: serverPassword)
+        pendingApprovals.removeValue(forKey: approvalID)
     }
 
     override func resolve(_ pending: PendingApproval, allow: Bool) async throws {
@@ -1092,6 +1119,17 @@ private final class OpenCodeChatDriver: ProcessChatDriver {
     }
 
     override func stop() {
+        // Ask the session to stop first so its tools settle; the process ends below.
+        if let root = baseURL, let session = sessionID, let password = serverPassword {
+            let path = "/session/\(pathComponent(session))/abort"
+            Task {
+                var request = URLRequest(url: root.appendingPathComponent(path))
+                request.httpMethod = "POST"
+                request.timeoutInterval = 5
+                addAuthorization(to: &request, password: password)
+                _ = try? await URLSession.shared.data(for: request)
+            }
+        }
         serverGeneration = nil; baseURL = nil; sessionID = nil; serverPassword = nil
         streamTask?.cancel(); streamTask = nil
         super.stop()
@@ -1141,7 +1179,10 @@ private final class OpenCodeChatDriver: ProcessChatDriver {
                 if type == "session.status", properties["sessionID"] as? String == sessionID, (properties["status"] as? [String: Any])?["type"] as? String == "busy" { hasActivity = true }
                 let events = OpenCodeProtocol.events(object, sessionID: sessionID, approvals: &pendingApprovals, messageRoles: messageRoles, partTypes: partTypes, contextLimits: contextLimits)
                 for event in events {
-                    if case .text = event { hasActivity = true }
+                    switch event {
+                    case .text, .tool, .approval: hasActivity = true
+                    default: break
+                    }
                     if case .completed = event {
                         guard hasActivity else { continue }
                         emit(event, generation: generation, to: onEvent); connected.finish(); return
@@ -1226,14 +1267,56 @@ enum OpenCodeProtocol {
             let context: [ChatEvent] = used > 0 ? [.context(used: used, window: contextLimits[model])] : []
             return context + [.tokens(ChatTokenUsage(input: value["input"] as? Int ?? 0, output: value["output"] as? Int ?? 0, cached: cache["read"] as? Int ?? 0, reasoning: value["reasoning"] as? Int ?? 0, costUSD: info["cost"] as? Double))]
         }
-        if type == "permission.replied", let id = properties["requestID"] as? String { return [.approvalResolved("opencode:\(id)")] }
+        if type == "permission.replied" || type == "permission.v2.replied",
+           let id = (properties["requestID"] as? String) ?? (properties["id"] as? String) { return [.approvalResolved("opencode:\(id)")] }
+        if type == "question.replied" || type == "question.v2.replied",
+           let id = (properties["requestID"] as? String) ?? (properties["id"] as? String) { return [.approvalResolved("opencode:\(id)")] }
+        if type == "question.rejected" || type == "question.v2.rejected",
+           let id = (properties["requestID"] as? String) ?? (properties["id"] as? String) { return [.approvalResolved("opencode:\(id)")] }
+        if type == "question.asked" || type == "question.v2.asked" {
+            guard let questionID = (properties["id"] as? String) ?? (properties["requestID"] as? String),
+                  let list = properties["questions"] as? [[String: Any]], !list.isEmpty else { return [] }
+            let session = eventSession ?? sessionID ?? ""
+            let id = "opencode:\(questionID)"
+            let questions = list.compactMap { question -> ChatInputQuestion? in
+                guard let text = question["question"] as? String, !text.isEmpty else { return nil }
+                let options = (question["options"] as? [[String: Any]])?.compactMap { option in
+                    (option["label"] as? String).map { ChatInputOption(label: $0, description: option["description"] as? String ?? "") }
+                }
+                return ChatInputQuestion(id: text,
+                                         header: question["header"] as? String ?? "",
+                                         question: text,
+                                         options: options,
+                                         multiSelect: question["multiple"] as? Bool)
+            }
+            guard !questions.isEmpty else { return [] }
+            approvals[id] = PendingApproval(payload: ["questionID": questionID,
+                                                       "sessionID": session,
+                                                       "orderedIDs": questions.map(\.id)], provider: "opencode")
+            var approval = ChatApproval(id: id, title: "OpenCode tiene preguntas", detail: "")
+            approval.questions = questions
+            return [.approval(approval)]
+        }
+        if type == "todo.updated", let todos = properties["todos"] as? [[String: Any]], !todos.isEmpty {
+            let session = eventSession ?? sessionID ?? ""
+            guard !session.isEmpty else { return [] }
+            // Same shape as a Todowrite call so the task list above the composer picks it up live.
+            let detail = (try? JSONSerialization.data(withJSONObject: ["todos": todos], options: [.sortedKeys]))
+                .flatMap { String(data: $0, encoding: .utf8) } ?? ""
+            return [.tool(id: "todo:\(session)", title: "todowrite", detail: detail, status: "running")]
+        }
         if type == "session.status", let status = properties["status"] as? [String: Any], status["type"] as? String == "retry" { return [.tool(id: "retry:\(sessionID ?? "")", title: "Reintentando conexión", detail: boundedJSON(status), status: "running")] }
-        if (type == "permission.asked" || type == "permission.updated"), let permissionID = (properties["id"] as? String) ?? (properties["permission"] as? [String: Any])?["id"] as? String {
+        if type == "permission.asked" || type == "permission.updated" || type == "permission.v2.asked",
+           let permissionID = (properties["id"] as? String) ?? (properties["permission"] as? [String: Any])?["id"] as? String {
             let session = eventSession ?? sessionID ?? ""
             let id = "opencode:\(permissionID)"
             approvals[id] = PendingApproval(payload: ["permissionID": permissionID, "sessionID": session], provider: "opencode")
-            let title = properties["title"] as? String ?? "OpenCode requests permission"
-            return [.approval(ChatApproval(id: id, title: title, detail: boundedJSON(properties["metadata"] ?? properties["patterns"] ?? [:])))]
+            var approval = ChatApproval(id: id,
+                                        title: permissionTitle(properties: properties),
+                                        detail: boundedJSON(properties["metadata"] ?? properties["patterns"] ?? properties["resources"] ?? [:]))
+            approval.tool = (properties["permission"] as? String) ?? (properties["action"] as? String)
+            approval.choices = alwaysChoice(properties).map { [$0] } ?? []
+            return [.approval(approval)]
         }
         if type == "message.part.updated" || type == "message.part.delta" {
             let part = properties["part"] as? [String: Any] ?? properties
@@ -1248,16 +1331,69 @@ enum OpenCodeProtocol {
             if part["type"] as? String == "tool" {
                 let state = part["state"] as? [String: Any] ?? [:]
                 let detail = [boundedJSON(state["input"] ?? [:]), state["output"] as? String ?? state["error"] as? String ?? ""].joined(separator: "\n")
-                // MCP tools report an empty title, and Jack's own tools are recognized by name.
+                // The raw tool name stays as the title so the transcript recognizes
+                // each tool (todowrite, question, bash…); the human summary in
+                // `state.title` (e.g. "2 todos") would break that grouping.
                 let tool = part["tool"] as? String
-                let stateTitle = (state["title"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-                let title = tool?.hasPrefix("jack_") == true ? tool! : stateTitle ?? tool ?? "Herramienta"
-                return [.tool(id: id, title: title, detail: detail, status: state["status"] as? String ?? "running")]
+                let title = tool ?? (state["title"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Herramienta"
+                let rawStatus = state["status"] as? String ?? "running"
+                let status = rawStatus == "error" ? "failed" : rawStatus
+                return [.tool(id: id, title: title, detail: detail, status: status)]
+            }
+            if part["type"] as? String == "subtask" {
+                let description = part["description"] as? String ?? ""
+                let prompt = part["prompt"] as? String ?? ""
+                let detail = [description, prompt].filter { !$0.isEmpty }.joined(separator: "\n")
+                return [.tool(id: id, title: "task", detail: detail, status: "completed")]
+            }
+            if part["type"] as? String == "agent" {
+                let name = part["name"] as? String ?? "subagente"
+                return [.tool(id: id, title: "agent", detail: name, status: "completed")]
+            }
+            if part["type"] as? String == "patch" {
+                let files = (part["files"] as? [String] ?? []).joined(separator: "\n")
+                return [.tool(id: id, title: "edit", detail: files, status: "completed")]
             }
         }
         if type == "session.idle", (properties["sessionID"] as? String) == sessionID { return [.completed] }
-        if type == "session.error", (properties["sessionID"] as? String) == sessionID { return [.failure(boundedJSON(properties["error"] ?? "OpenCode reported an error."))] }
+        if type == "session.error", (properties["sessionID"] as? String) == sessionID {
+            // Stopping the turn aborts the session; that is the stop the user asked for.
+            let raw = properties["error"]
+            let text = boundedJSON(raw ?? "OpenCode reported an error.")
+            if text.localizedCaseInsensitiveContains("abort") { return [.completed] }
+            return [.failure(text)]
+        }
         return []
+    }
+
+    /// What a permission request asks for, as the approval card shows it.
+    static func permissionTitle(properties: [String: Any]) -> String {
+        let permission = (properties["permission"] as? String) ?? (properties["action"] as? String) ?? ""
+        let metadata = properties["metadata"] as? [String: Any] ?? [:]
+        let patterns = properties["patterns"] as? [String] ?? properties["resources"] as? [String] ?? []
+        let file = ((metadata["file_path"] ?? metadata["filePath"] ?? metadata["path"]) as? String ?? patterns.first)
+            .map { URL(fileURLWithPath: $0).lastPathComponent }
+        switch permission {
+        case "bash", "shell", "exec": return "Ejecutar un comando"
+        case "read": return file.map { "Leer \($0)" } ?? "Leer un archivo"
+        case "edit", "write", "patch", "apply_patch": return file.map { "Editar \($0)" } ?? "Editar un archivo"
+        case "webfetch": return (metadata["url"] as? String).flatMap { URL(string: $0)?.host }.map { "Abrir \($0)" } ?? "Abrir una página web"
+        case "websearch": return "Buscar en la web"
+        case "task": return "Lanzar un subagente"
+        case "question": return "Hacer una pregunta"
+        case "external_directory": return patterns.first.map { "Acceder a \(URL(fileURLWithPath: $0).lastPathComponent)" } ?? "Acceder a una carpeta externa"
+        case "doom_loop": return "Continuar trabajando"
+        default:
+            if permission.isEmpty { return properties["title"] as? String ?? "OpenCode necesita tu permiso" }
+            return "Usar \(permission)"
+        }
+    }
+
+    /// The "don't ask again" answer OpenCode offers with a request.
+    static func alwaysChoice(_ properties: [String: Any]) -> ChatApprovalChoice? {
+        let patterns = (properties["always"] as? [String] ?? []) + (properties["save"] as? [String] ?? [])
+        guard !patterns.isEmpty else { return nil }
+        return ChatApprovalChoice(id: "always", title: "Permitir siempre \(patterns.joined(separator: ", "))")
     }
 }
 

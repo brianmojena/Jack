@@ -234,7 +234,7 @@ struct ToolPresentation {
             kind = .mcp
         } else if ["taskcreate", "taskupdate", "tasklist", "taskget", "todowrite"].contains(lower) {
             kind = .todo
-        } else if lower == "askuserquestion" {
+        } else if lower == "askuserquestion" || lower == "question" {
             kind = .question
         } else if lower == "exitplanmode" || lower == "enterplanmode" {
             kind = .plan
