@@ -26,6 +26,7 @@ struct JackApp: App {
                     store.imageGenerationSupported = ImagePlaygroundSupport.isAvailable
                 }
                 .onChange(of: lightMode, initial: true) { _, enabled in
+                    if enabled { appDelegate.workspace.suspendTerminalInterface() }
                     store.setLightMode(enabled)
                     store.applyRemote(enabled: UserDefaults.standard.bool(forKey: "jackRemoteEnabled"))
                 }

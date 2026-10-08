@@ -85,15 +85,15 @@ private struct GeneralSettings: View {
                     .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
             }
             Section {
-                Picker("Interfaz", selection: $interfaceStyle) {
-                    ForEach(InterfaceStyle.allCases) { Text($0.title).tag($0) }
+                Picker("Interfaz", selection: Binding(get: { store.lightModeEnabled && interfaceStyle == .terminal ? .basic : interfaceStyle }, set: { interfaceStyle = $0 })) {
+                    ForEach(InterfaceStyle.allCases.filter { !store.lightModeEnabled || $0 != .terminal }) { Text($0.title).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 Toggle("Conversación con letra monoespaciada", isOn: $transcriptMonospaced)
             } header: {
                 Text("Apariencia")
             } footer: {
-                Text("Basic es la interfaz densa de siempre. Ice usa la estructura nativa de macOS con Liquid Glass: barra lateral flotante, barra de herramientas del sistema y el editor flotando sobre la conversación.")
+                Text("Basic es la interfaz densa de siempre. Ice usa la estructura nativa de macOS con Liquid Glass: barra lateral flotante, barra de herramientas del sistema y el editor flotando sobre la conversación." + (store.lightModeEnabled ? "" : " Terminal organiza Claude Code y shells nativos por proyecto, con pestañas y paneles divididos."))
                     .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
             }
             Section {

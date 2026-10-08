@@ -47,6 +47,7 @@
 		5D953693E66E01A72D9DB935 /* BatterySaver.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE20CBCE09336DFA3CA28709 /* BatterySaver.swift */; };
 		5E5C961DBFFE5529E2DFCF03 /* MarkdownBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B2043D2FAB41EAAEF81CEBB /* MarkdownBlock.swift */; };
 		65138D0E8C01F36F52CF9E9E /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 32B0BA461A610CE350B86967 /* AppIcon.icon */; };
+		6710432588B24B1A6CB97E59 /* TerminalInterfaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3130A5E80CADC1AE5B40976C /* TerminalInterfaceView.swift */; };
 		6A89D2DA42A687D07F5F2C3F /* SimulatorPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A3D7246F7BBDA7A8018807 /* SimulatorPanel.swift */; };
 		6EB861C0B842D3CECBD7F800 /* ExecutableResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A45A93DAF44DBBC83A60C50 /* ExecutableResolver.swift */; };
 		7115EB2F2F1B010FA082BF0D /* FlowPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17C8EF45B0037C8560493285 /* FlowPanel.swift */; };
@@ -55,6 +56,7 @@
 		7CF0D92236427584C6ED9239 /* PaneSplit.swift in Sources */ = {isa = PBXBuildFile; fileRef = BECA119E22381166808B5690 /* PaneSplit.swift */; };
 		7E295FDBE4DB448AD14EB38C /* BrowserAddress.swift in Sources */ = {isa = PBXBuildFile; fileRef = D270EF82D7E479169076203B /* BrowserAddress.swift */; };
 		827E3C32A16440805AD8B9D8 /* JackSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A513FA72943E495D585C29AB /* JackSidebar.swift */; };
+		83D2E3F9BB19AF6FF2568D4D /* TerminalWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D9700E178543DADE35E275A /* TerminalWorkspace.swift */; };
 		83E9506F9D13A06999E90C0E /* LightNewAgentSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDDD94D4D38FF19A730E48F5 /* LightNewAgentSheet.swift */; };
 		88169CA35E507941B634D8BC /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CC159ECABCA798A6D404BD8 /* Models.swift */; };
 		8CFA9AFD04527815E8EC6FC0 /* ClaudeSessionPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3789D85F443A38492640A492 /* ClaudeSessionPicker.swift */; };
@@ -171,6 +173,7 @@
 		21FADA6FCE0D89345442C744 /* SSHKeySetup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHKeySetup.swift; sourceTree = "<group>"; };
 		23A3C12F03AEFEE7243BF5C8 /* FlowDiagram.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowDiagram.swift; sourceTree = "<group>"; };
 		2C9731344B7463E74671F52C /* StellarCode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StellarCode.swift; sourceTree = "<group>"; };
+		3130A5E80CADC1AE5B40976C /* TerminalInterfaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalInterfaceView.swift; sourceTree = "<group>"; };
 		32B0BA461A610CE350B86967 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		35E06A7FE63EA77BDC8FA29C /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		3621003C5F85DF2D65EFC584 /* AgentTabs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTabs.swift; sourceTree = "<group>"; };
@@ -197,6 +200,7 @@
 		6B8F35219BDD3B6F10A58137 /* JackCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JackCommands.swift; sourceTree = "<group>"; };
 		6D47B1B2C9E68EC321647E2E /* PlanFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanFlow.swift; sourceTree = "<group>"; };
 		7099A2B3636CAE85AFECF7D0 /* GitPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitPanel.swift; sourceTree = "<group>"; };
+		7D9700E178543DADE35E275A /* TerminalWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalWorkspace.swift; sourceTree = "<group>"; };
 		83D024EB758956F78F8FDB4B /* ProjectFinder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectFinder.swift; sourceTree = "<group>"; };
 		85DCC6EA3147FF905D955068 /* NotebookTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotebookTools.swift; sourceTree = "<group>"; };
 		875A37D4366920CAC1ACC600 /* LightWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LightWindowView.swift; sourceTree = "<group>"; };
@@ -328,6 +332,7 @@
 				21FADA6FCE0D89345442C744 /* SSHKeySetup.swift */,
 				DD2509598C4FC1C9E886108E /* SSHTransport.swift */,
 				2C9731344B7463E74671F52C /* StellarCode.swift */,
+				7D9700E178543DADE35E275A /* TerminalWorkspace.swift */,
 				09291DE01EDF91BE9972B424 /* UnixSocketTransport.swift */,
 				F92F2637817F350152A1A81C /* UpdateChecker.swift */,
 			);
@@ -415,6 +420,7 @@
 				A3A3D7246F7BBDA7A8018807 /* SimulatorPanel.swift */,
 				50C1361476010EC1B422C026 /* StartView.swift */,
 				A093DD8DC6081C7E5DB0FA3D /* StatusBar.swift */,
+				3130A5E80CADC1AE5B40976C /* TerminalInterfaceView.swift */,
 				B1E7A7878DA866A5D263950D /* UpdateViews.swift */,
 				3DCC822661DED49C89F2189E /* WaitingMessagesView.swift */,
 				49EB006FB5D21FFC9B93D8CF /* WindowChrome.swift */,
@@ -597,6 +603,7 @@
 				6A89D2DA42A687D07F5F2C3F /* SimulatorPanel.swift in Sources */,
 				D96D2234A324FE3A3E06BAD7 /* StartView.swift in Sources */,
 				19F535BFB4481EB3F8D01D87 /* StatusBar.swift in Sources */,
+				6710432588B24B1A6CB97E59 /* TerminalInterfaceView.swift in Sources */,
 				978EF068AE97ED7910AE84DB /* UpdateViews.swift in Sources */,
 				AF626BAEB5B26D0504A10C56 /* WaitingMessagesView.swift in Sources */,
 				7441A1CC448183A8E8566D6D /* WindowChrome.swift in Sources */,
@@ -649,6 +656,7 @@
 				C119C546D022B81ABA72AAF1 /* SessionStore.swift in Sources */,
 				C0A2D15690CE9014A9C2E443 /* Simulators.swift in Sources */,
 				F68F4CEAD8E711BE50639E5C /* StellarCode.swift in Sources */,
+				83D2E3F9BB19AF6FF2568D4D /* TerminalWorkspace.swift in Sources */,
 				E60ACFDAC8A34BDB557D96DC /* UnixSocketTransport.swift in Sources */,
 				02FB26A412E092684DB37B1A /* UpdateChecker.swift in Sources */,
 			);

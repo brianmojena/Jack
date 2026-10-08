@@ -64,6 +64,21 @@ struct ContextPanel: View {
                 Divider()
                 breakdown(tokens)
             }
+            if conversation.provider == .claude, !store.lightModeEnabled {
+                Divider()
+                Text("Para una tarea distinta, empieza sin el historial anterior. La conversación actual queda guardada.")
+                    .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let used = usage?.used, used >= 100_000 {
+                    Text("El contexto supera 100 000 tokens. Aunque quede espacio, enviarlo en cada paso aumenta el consumo.")
+                        .font(.system(size: 11)).foregroundStyle(JackPalette.amber)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Button("Nueva tarea sin contexto") {
+                    if store.startFreshTask(from: conversation.id) != nil { dismiss() }
+                }
+                .disabled(busy || store.isUnplaced(conversation.id))
+            }
             if canCompact {
                 Divider()
                 HStack(alignment: .center, spacing: 10) {

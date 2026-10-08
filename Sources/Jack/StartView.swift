@@ -13,6 +13,7 @@ struct StartView: View {
     @Environment(\.interfaceStyle) private var interfaceStyle
     @State private var model = ""
     @State private var effort = "high"
+    @State private var initializedEffort = false
     @State private var message = ""
     @State private var customModel = ""
     @State private var showingCustomModel = false
@@ -62,10 +63,11 @@ struct StartView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .jackSurface(.canvas)
         .onAppear {
+            if !initializedEffort { effort = store.defaultEffort(for: provider); initializedEffort = true }
             focused = true
             ProjectIndex.shared.refreshIfStale()
         }
-        .onChange(of: providerValue) { _, _ in model = ""; effort = "high"; focused = true }
+        .onChange(of: providerValue) { _, _ in model = ""; effort = store.defaultEffort(for: provider); focused = true }
         .onChange(of: selectedModel) { _, _ in
             if !efforts.isEmpty && !efforts.contains(effort) { effort = efforts.contains("high") ? "high" : efforts.last! }
         }

@@ -42,6 +42,21 @@ final class ChatRunConfigurationTests: XCTestCase {
         conversation.mode = ChatRunMode.bypass.id
         XCTAssertEqual(ChatRunConfiguration.claudeSettings(conversation).prefix(2), ["--permission-mode", "bypassPermissions"])
     }
+    @MainActor func testNormalDisablesSuggestionsWhileLightKeepsExistingLaunch() {
+        var chat = ChatConversation(projectPath: "/tmp", provider: .claude)
+        for parent in [nil, UUID()] as [UUID?] {
+            chat.parentID = parent
+            let normal = ChatRunConfiguration.claudeRemoteArgs(conversation: chat, delegation: nil)
+            let i = normal.firstIndex(of: "--prompt-suggestions")!
+            XCTAssertEqual(normal[i + 1], "false")
+            XCTAssertEqual(ChatRunConfiguration.claudeSuggestionEnvironment(chat, lightMode: false)["CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION"], "false")
+            let light = ChatRunConfiguration.claudeRemoteArgs(conversation: chat, delegation: nil, lightMode: true)
+            XCTAssertTrue(light.contains("--prompt-suggestions"))
+            XCTAssertFalse(light.contains("false"))
+            XCTAssertEqual(ChatRunConfiguration.claudeSuggestionEnvironment(chat, lightMode: true)["CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION"], parent == nil ? "true" : nil)
+        }
+    }
+
     func testClaudeEffortIsOnlySentToModelsThatSupportIt() {
         var conversation = ChatConversation(projectPath: "/tmp", provider: .claude, model: "opus", effort: "xhigh")
         XCTAssertEqual(ChatRunConfiguration.claudeSettings(conversation).suffix(2), ["--effort", "xhigh"])

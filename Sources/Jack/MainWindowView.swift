@@ -68,7 +68,13 @@ struct MainWindowView: View {
 
     var body: some View {
         Group {
-            if interfaceStyle == .ice { iceLayout } else { basicLayout }
+            if interfaceStyle == .terminal, !store.lightModeEnabled {
+                TerminalInterfaceView(workspace: workspace.terminalInterface(), store: store,
+                                      enterBatterySaver: enterBatterySaver)
+            } else {
+                Group { if interfaceStyle == .ice { iceLayout } else { basicLayout } }
+                    .focusedSceneValue(\.jackActions, actions)
+            }
         }
         .environment(\.interfaceStyle, interfaceStyle)
         .frame(minWidth: 900, minHeight: 600)
@@ -119,7 +125,7 @@ struct MainWindowView: View {
             if attachments.isEmpty { attachments = memory.attachments }
         }
         .onChange(of: store.lightModeEnabled) { _, light in
-            if light { workspace.cancelAutomaticGitCommits() }
+            if light { workspace.cancelAutomaticGitCommits(); workspace.suspendTerminalInterface() }
         }
         .onDisappear {
             workspace.cancelAutomaticGitCommits()
@@ -127,13 +133,12 @@ struct MainWindowView: View {
             memory.attachments = attachments
         }
         // Stellar Code's local models, so its cards and pickers know what is available.
-        .task { await store.refreshLocalModels() }
+        .task { if interfaceStyle != .terminal { await store.refreshLocalModels() } }
         .task {
-            guard !claudeImportOffered else { return }
+            guard interfaceStyle != .terminal, !claudeImportOffered else { return }
             let found = await ClaudeImportSheet.find(.quarter, excluding: importedClaudeSessions)
             if found.isEmpty { claudeImportOffered = true } else { firstImport = found }
         }
-        .focusedSceneValue(\.jackActions, actions)
         .sheet(isPresented: Binding(get: { firstImport != nil }, set: { if !$0 { firstImport = nil; claudeImportOffered = true } })) {
             ClaudeImportSheet(initial: firstImport, imported: importedClaudeSessions) { sessions in
                 store.importClaudeSessions(sessions)
@@ -824,7 +829,7 @@ struct MainWindowView: View {
                         .frame(width: 24, height: 24).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain).foregroundStyle(JackPalette.muted)
-                .help("Preguntar al margen sin interrumpir al agente ni entrar en su historial (⌥↩)")
+                .help(conversation.provider == .claude ? "Preguntar con Haiku y un extracto reciente, sin interrumpir al agente (⌥↩)" : "Preguntar al margen sin interrumpir al agente ni entrar en su historial (⌥↩)")
                 .accessibilityLabel("Preguntar al margen")
                 Button {
                     attach(AttachmentDrop.choose(from: conversation.projectPath), to: conversation.id)

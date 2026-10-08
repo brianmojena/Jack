@@ -42,6 +42,66 @@ final class ChatStoreTests: XCTestCase {
         return (store, archive, folder, { drivers })
     }
 
+    @MainActor func testTerminalClaimsRejectBusySessionsAndPreventConcurrentChatWrites() async throws {
+        let session = UUID()
+        let (store, _, folder, drivers) = fixture(sessionIDToEmit: session.uuidString)
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        let id = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .claude))
+        store.send("first turn", to: id)
+        await settle()
+        XCTAssertFalse(store.claimClaudeSessionForTerminal(session), "A running agent cannot be handed to a terminal")
+        drivers().first?.finish()
+        await settle()
+        XCTAssertTrue(store.claimClaudeSessionForTerminal(session))
+        XCTAssertFalse(store.claimClaudeSessionForTerminal(session), "Only one owner may resume the CLI session")
+        let count = store.conversations.first { $0.id == id }?.messages.count
+        store.send("must stay out of history", to: id)
+        XCTAssertEqual(store.conversations.first { $0.id == id }?.messages.count, count)
+        XCTAssertTrue(store.errorMessage?.contains("Terminal") == true)
+        store.releaseClaudeSessionFromTerminal(session)
+        store.errorMessage = nil
+        store.send("next turn", to: id)
+        await settle()
+        XCTAssertEqual(drivers().last?.lastPrompt, "next turn")
+        drivers().last?.finish()
+        await settle()
+        store.setLightMode(true)
+        XCTAssertFalse(store.claimClaudeSessionForTerminal(UUID()), "Light cannot create terminal ownership")
+    }
+
+    @MainActor func testClaudeDefaultsAndFreshTaskPreserveOldSessionWithoutInference() throws {
+        let (initialStore, archive, folder, _) = fixture()
+        initialStore.shutdown()
+        var source = ChatConversation(projectPath: NSTemporaryDirectory(), provider: .claude, model: "sonnet", effort: "low",
+                                      sessionID: "old-session", messages: [ChatMessage(role: "user", text: "old history")])
+        source.jackContext = JackContextSettings()
+        source.jackContext?.seed = "old summary"
+        source.jackContext?.pinned = ["old instruction"]
+        archive.save(index: [source], conversation: source); archive.flush()
+        var driverCount = 0
+        let store = ChatStore(archive: archive, preferences: nil, driverFactory: { _ in driverCount += 1; return ControlledDriver() })
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        let fresh = try XCTUnwrap(store.startFreshTask(from: source.id))
+        let result = try XCTUnwrap(store.conversations.first { $0.id == fresh })
+        XCTAssertNil(result.sessionID)
+        XCTAssertNil(result.jackContext)
+        XCTAssertNil(result.parentID)
+        XCTAssertTrue(result.messages.isEmpty)
+        XCTAssertEqual(result.model, "sonnet")
+        XCTAssertEqual(result.effort, "low")
+        XCTAssertEqual(store.conversations.first { $0.id == source.id }?.sessionID, "old-session")
+        XCTAssertEqual(try archive.load(source.id)?.messages.first?.text, "old history")
+        XCTAssertEqual(driverCount, 0)
+        XCTAssertEqual(store.defaultEffort(for: .claude), "medium")
+        let id = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .claude))
+        XCTAssertEqual(store.conversations.first { $0.id == id }?.effort, "medium")
+        store.setLightMode(true)
+        XCTAssertEqual(store.defaultEffort(for: .claude), "high")
+        XCTAssertNil(store.startFreshTask(from: source.id))
+        let light = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .claude))
+        XCTAssertEqual(store.conversations.first { $0.id == light }?.effort, "high")
+    }
+
     @MainActor func testStellarSlashCompactRunsRealCompactionAndKeepsTranscript() async throws {
         let (store, _, folder, drivers) = fixture()
         defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }

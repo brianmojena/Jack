@@ -24,6 +24,7 @@ struct JackActions {
     var enterBatterySaver: () -> Void
     var hasSelection: Bool
     var agentCount: Int
+    var terminalOnly = false
 }
 
 extension FocusedValues {
@@ -77,7 +78,7 @@ struct JackCommands: Commands {
                 .disabled(actions == nil || lightMode)
             Button("Mostrar u ocultar archivos") { actions?.toggleExplorer() }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
-                .disabled(actions?.hasSelection != true)
+                .disabled(actions?.hasSelection != true || actions?.terminalOnly == true)
             Button("Modo ahorro de batería") { actions?.enterBatterySaver() }
                 .keyboardShortcut("b", modifiers: [.command, .control])
                 .disabled(actions == nil)
@@ -92,7 +93,7 @@ struct JackCommands: Commands {
                 .disabled((actions?.agentCount ?? 0) == 0)
             Button("Siguiente que necesita atención") { actions?.nextAttention() }
                 .keyboardShortcut("a", modifiers: [.command, .shift])
-                .disabled((actions?.agentCount ?? 0) == 0)
+                .disabled((actions?.agentCount ?? 0) == 0 || actions?.terminalOnly == true)
             Divider()
             ForEach(1...9, id: \.self) { index in
                 Button("Agente \(index)") { actions?.selectIndex(index - 1) }
@@ -108,7 +109,7 @@ struct JackCommands: Commands {
                 .disabled(actions == nil)
             Button("Marcar como leído / no leído") { actions?.toggleUnread() }
                 .keyboardShortcut("u", modifiers: [.command, .shift])
-                .disabled(actions?.hasSelection != true)
+                .disabled(actions?.hasSelection != true || actions?.terminalOnly == true)
             Divider()
             Button("Panel anterior") { actions?.cyclePane(-1) }
                 .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
@@ -120,18 +121,18 @@ struct JackCommands: Commands {
                 .keyboardShortcut("w", modifiers: [.command, .option])
                 .disabled((actions?.paneCount ?? 0) == 0)
             Divider()
-            Button("Mostrar u ocultar terminal") { actions?.toggleTerminal() }
+            Button(actions?.terminalOnly == true ? "Nueva terminal libre" : "Mostrar u ocultar terminal") { actions?.toggleTerminal() }
                 .keyboardShortcut("`", modifiers: .control)
                 .disabled(actions?.hasSelection != true || lightMode)
             Button("Mostrar u ocultar navegador") { actions?.toggleBrowser() }
                 .keyboardShortcut("b", modifiers: [.command, .shift])
-                .disabled(actions?.hasSelection != true || lightMode)
+                .disabled(actions?.hasSelection != true || lightMode || actions?.terminalOnly == true)
             Button("Mostrar u ocultar simulador de iOS") { actions?.toggleSimulator() }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
-                .disabled(actions?.hasSelection != true || lightMode)
+                .disabled(actions?.hasSelection != true || lightMode || actions?.terminalOnly == true)
             Button("Mostrar u ocultar Git") { actions?.toggleGit() }
                 .keyboardShortcut("g", modifiers: [.command, .shift])
-                .disabled(actions?.hasSelection != true || lightMode)
+                .disabled(actions?.hasSelection != true || lightMode || actions?.terminalOnly == true)
         }
     }
 }

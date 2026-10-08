@@ -173,7 +173,8 @@ final class SSHTransportTests: XCTestCase {
         conversation.parentID = UUID()
         let launch = try XCTUnwrap(ChatRunConfiguration.claudeRemoteLaunch(conversation: conversation, delegation: nil, remotePort: 18791))
         XCTAssertEqual(launch.localDirectory, NSTemporaryDirectory())
-        XCTAssertFalse(try XCTUnwrap(launch.sshArguments.last).contains("CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION"))
+        XCTAssertTrue(try XCTUnwrap(launch.sshArguments.last).contains("CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION="))
+        XCTAssertEqual(ChatRunConfiguration.claudeSuggestionEnvironment(conversation, lightMode: false)["CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION"], "false")
     }
 
     @MainActor func testLocalSettingsStillSendAddDir() {

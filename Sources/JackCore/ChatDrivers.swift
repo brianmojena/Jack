@@ -974,14 +974,13 @@ private final class ClaudeChatDriver: ProcessChatDriver {
         guard let executable = ExecutableResolver.resolve("claude", override: UserDefaults.standard.string(forKey: "providerExecutablePath.claude")) else { throw ChatDriverError.executableMissing("claude") }
         let delegationArgs = (delegation.map(ChatRunConfiguration.claudeDelegation) ?? [])
             + (ChatRunConfiguration.agentInstructions(delegating: delegation?.delegates == true, images: delegation?.images == true, notebooks: delegation?.notebooks == true).map { ["--append-system-prompt", $0] } ?? [])
-        let signature = [executable] + ChatRunConfiguration.claudeLaunchSignature(conversation) + delegationArgs
+        let signature = [executable] + ChatRunConfiguration.claudeLaunchSignature(conversation) + [energySaving ? "light" : "normal"] + delegationArgs
         // Restarting would end background subagents; new settings wait until they finish.
         if let child, signature == launch || decoder.backgroundTaskCount > 0 { return child }
         closeSession()
         // The SDK's permission channel, which also enables AskUserQuestion and plan approval.
-        let args = ChatRunConfiguration.claudeRemoteArgs(conversation: conversation, delegation: delegation)
-        // Claude Code turns prompt suggestions off when it is not interactive unless asked to; delegated agents have no one to suggest to.
-        var environment: [String: String] = conversation.parentID == nil ? ["CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "true"] : [:]
+        let args = ChatRunConfiguration.claudeRemoteArgs(conversation: conversation, delegation: delegation, lightMode: energySaving)
+        var environment = ChatRunConfiguration.claudeSuggestionEnvironment(conversation, lightMode: energySaving)
         // wait_for_agents may hold a call open for up to 15 minutes.
         if delegation != nil { environment["MCP_TOOL_TIMEOUT"] = "960000" }
         environment.merge(ProgressFiles.environment(for: conversation.id)) { _, new in new }
@@ -1009,7 +1008,7 @@ private final class ClaudeChatDriver: ProcessChatDriver {
             }
         }
         if delegation == nil { remoteTunnelPort = nil }
-        guard let launch = ChatRunConfiguration.claudeRemoteLaunch(conversation: conversation, delegation: delegation, remotePort: remoteTunnelPort ?? 0) else {
+        guard let launch = ChatRunConfiguration.claudeRemoteLaunch(conversation: conversation, delegation: delegation, remotePort: remoteTunnelPort ?? 0, lightMode: energySaving) else {
             throw ChatDriverError.process("La configuración remota es inválida o Jack no puede exponerle sus herramientas (se necesita una URL local).")
         }
         let signature = [ssh] + ChatRunConfiguration.claudeLaunchSignature(conversation) + launch.sshArguments
@@ -1756,7 +1755,7 @@ enum ChatRunConfiguration {
         /// Delegation rewritten to the remote side of the tunnel, for `--mcp-config` and instructions.
         var delegation: ChatDelegation?
     }
-    @MainActor static func claudeRemoteLaunch(conversation: ChatConversation, delegation: ChatDelegation?, remotePort: UInt16) -> ClaudeRemoteLaunch? {
+    @MainActor static func claudeRemoteLaunch(conversation: ChatConversation, delegation: ChatDelegation?, remotePort: UInt16, lightMode: Bool = false) -> ClaudeRemoteLaunch? {
         guard let endpoint = conversation.remote, endpoint.isValid, endpoint.isResolved else { return nil }
         var remoteDelegation: ChatDelegation? = nil
         var tunnel: (remotePort: UInt16, localPort: UInt16)? = nil
@@ -1768,25 +1767,28 @@ enum ChatRunConfiguration {
             remoteDelegation = rewritten
             tunnel = (remotePort: remotePort, localPort: localPort)
         }
-        var remoteEnv: [String: String] = [:]
-        if conversation.parentID == nil { remoteEnv["CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION"] = "true" }
+        var remoteEnv = claudeSuggestionEnvironment(conversation, lightMode: lightMode)
         if delegation != nil { remoteEnv["MCP_TOOL_TIMEOUT"] = "960000" }
         let sshArguments = SSHTransport.arguments(
             endpoint: endpoint, tunnel: tunnel, remoteEnv: remoteEnv,
-            remoteExecutable: "claude", remoteArgs: claudeRemoteArgs(conversation: conversation, delegation: remoteDelegation),
+            remoteExecutable: "claude", remoteArgs: claudeRemoteArgs(conversation: conversation, delegation: remoteDelegation, lightMode: lightMode),
             remoteDirectory: endpoint.remotePath)
         var isDirectory: ObjCBool = false
         let localDirectory = FileManager.default.fileExists(atPath: conversation.projectPath, isDirectory: &isDirectory) && isDirectory.boolValue
             ? conversation.projectPath : NSTemporaryDirectory()
         return ClaudeRemoteLaunch(sshArguments: sshArguments, localDirectory: localDirectory, delegation: remoteDelegation)
     }
+    static func claudeSuggestionEnvironment(_ conversation: ChatConversation, lightMode: Bool) -> [String: String] {
+        if lightMode { return conversation.parentID == nil ? ["CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "true"] : [:] }
+        return ["CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "false"]
+    }
     /// The `claude` argv itself, shared by local and remote launches.
     /// Remote launches skip the progress helper (it is not installed remotely)
     /// and local `--add-dir` folders (they do not exist on the other machine).
-    @MainActor static func claudeRemoteArgs(conversation: ChatConversation, delegation: ChatDelegation?) -> [String] {
+    @MainActor static func claudeRemoteArgs(conversation: ChatConversation, delegation: ChatDelegation?, lightMode: Bool = false) -> [String] {
         var args = ["--print", "--verbose", "--output-format", "stream-json", "--input-format", "stream-json", "--include-partial-messages", "--permission-prompt-tool", "stdio",
                     // Echoes each message when the agent reads it, so a queued message moves into the chat at that moment.
-                    "--replay-user-messages", "--prompt-suggestions"]
+                    "--replay-user-messages"] + (lightMode ? ["--prompt-suggestions"] : ["--prompt-suggestions", "false"])
             + claudeSettings(conversation)
         if let saved = conversation.sessionID, !saved.isEmpty { args += ["--resume", saved] }
         args += (delegation.map(claudeDelegation) ?? [])

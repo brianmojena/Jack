@@ -177,3 +177,21 @@ Escribe `!` en el cuadro de mensaje para ver sugerencias; Tab completa, Enter en
 Crea una plantilla con `!comandos crear mi-comando instrucciones {{args}}` y úsala con `!mi-comando argumentos`. Repetir el nombre actualiza su plantilla; `!comandos eliminar mi-comando` la elimina. Las plantillas son globales a Jack y se guardan en `Chats/commands.json`; inicialmente se incluyen `!revisar-pr`, `!documentar` y `!preparar-release`.
 
 La compactación y los resúmenes consumen uso del modelo. El objetivo de tokens no es un límite exacto: Jack estima el tamaño del resumen a partir de bytes UTF-8, y las instrucciones y herramientas del proveedor también ocupan contexto. Autocompact requiere datos de contexto del proveedor; si faltan, no dispara por estimaciones. Una compactación cancelada o fallida mantiene la sesión anterior y muestra el mensaje pendiente para reenviarlo. Los checkpoints se conservan localmente en `Chats/Checkpoints`.
+
+### Reducir consumo de Claude en Normal
+
+Las sesiones nuevas de Claude empiezan con esfuerzo **medio**; puedes cambiarlo en el selector. Las sesiones existentes conservan su esfuerzo. Normal desactiva las sugerencias automáticas de Claude, también para agentes remotos y subagentes.
+
+Para cambiar de tarea, pulsa el logo del proveedor en el compositor y elige **Nueva tarea sin contexto**. Se abre una sesión vacía en el mismo proyecto con el modelo y esfuerzo actuales, conservando la conversación anterior. No se copian historial, resúmenes ni instrucciones fijadas con `!fijar`. Para continuar la misma tarea puedes seguir usando **Compactar**, que genera un resumen mediante el proveedor y también consume cuota.
+
+Las preguntas al margen de Claude en Normal (`⌥Enter`) usan **Haiku** en una consulta independiente sin herramientas, con hasta 12 000 caracteres de mensajes recientes visibles. No incluyen salidas de herramientas ni razonamiento; pueden faltar decisiones antiguas. La pregunta admite hasta 8000 caracteres. Si Haiku falla, se muestra el error sin volver a consultar al modelo principal. Light conserva su comportamiento anterior.
+
+### Interfaz Terminal (Normal)
+
+En **Ajustes → General → Apariencia → Interfaz**, elige **Terminal**. Inspirada en la organización de [Orca ADE](https://www.onorca.dev/), mantiene la barra lateral por proyectos y ofrece pestañas y una división de dos terminales. Al abrirla por primera vez, aparecen las sesiones locales de Claude ya guardadas en los chats de Jack, sin arrancar procesos. Puedes crear una terminal de Claude Code o un shell libre en una carpeta, renombrarlos, buscar y retomarlos desde la sidebar. `⌘N` abre Claude en el proyecto seleccionado; `⌘W` cierra la terminal con confirmación si sigue abierta; **Control + acento grave** crea un shell libre; `⌥⌘↑/↓` cambia de terminal.
+
+Claude Code se ejecuta de forma interactiva en un PTY de SwiftTerm, directamente con su ejecutable configurado: sin `--print`, driver de chat, historial reenviado, instrucciones añadidas ni servidor MCP de Jack. Empieza con esfuerzo medio y sugerencias desactivadas; el modelo y la autenticación los gestiona el propio CLI. Los permisos y las preguntas se contestan dentro de su interfaz nativa. Otros agentes pueden ejecutarse manualmente en un shell libre.
+
+Jack guarda únicamente nombres, carpetas, selección e identificadores de sesión. Claude conserva sus propios registros y se reanuda cuando existe su transcript. Al reiniciar la app, las entradas se restauran sin ejecutar comandos automáticamente; pulsa **Abrir Claude Code** o **Abrir terminal** para continuar. El scrollback de los shells libres no se guarda. Las terminales permanecen abiertas al cambiar de pestaña o de interfaz en Normal. Una sesión transferida no puede recibir mensajes en el chat al mismo tiempo: termina el proceso de su terminal para devolverla al chat. No se transfieren agentes con trabajo pendiente. Las terminales de esta interfaz se terminan al activar Light o salir de Jack; Light mantiene su interfaz anterior.
+
+La interfaz Terminal no proporciona los paneles de navegador, simulador ni Git del chat. Puedes usar esas herramientas en Basic/Ice o ejecutar sus comandos desde el shell. Usar el CLI directamente elimina la integración de chat, pero no garantiza un porcentaje de ahorro: Claude sigue contando modelo, contexto, herramientas y respuestas contra la cuota.

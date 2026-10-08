@@ -252,13 +252,36 @@ import Foundation
             existing.note = update.note; existing.isCached = true; usage[update.provider] = existing
         } else { usage[update.provider] = update }
     }
+    public func defaultEffort(for provider: ChatProvider) -> String {
+        provider == .claude && !lightModeEnabled ? "medium" : "high"
+    }
+
+    /// Starts an unrelated task without inheriting history, summaries or pinned instructions.
+    /// The previous conversation and its transcript remain available.
     @discardableResult
-    public func create(projectPath: String, provider: ChatProvider, model: String? = nil, effort: String = "high", parentID: UUID? = nil, title: String? = nil, select: Bool = true, remote: ChatRemoteEndpoint? = nil) -> UUID? {
+    public func startFreshTask(from id: UUID) -> UUID? {
+        guard !stopped, !lightModeEnabled,
+              runs[id] == nil, !queue.contains(where: { $0.0 == id }),
+              compactions[id] == nil, handoffs[id] == nil,
+              let source = conversations.first(where: { $0.id == id }), source.provider == .claude,
+              !isUnplaced(id) else { return nil }
+        guard let fresh = create(projectPath: source.projectPath, provider: source.provider,
+                                 model: source.model, effort: source.effort, remote: source.remote),
+              let index = conversations.firstIndex(where: { $0.id == fresh }) else { return nil }
+        conversations[index].extraDirectories = source.extraDirectories
+        conversations[index].mode = source.mode
+        save(fresh)
+        return fresh
+    }
+
+    @discardableResult
+    public func create(projectPath: String, provider: ChatProvider, model: String? = nil, effort: String? = nil, parentID: UUID? = nil, title: String? = nil, select: Bool = true, remote: ChatRemoteEndpoint? = nil) -> UUID? {
         var isDirectory: ObjCBool = false
         guard projectPath.hasPrefix("/"), FileManager.default.fileExists(atPath: projectPath, isDirectory: &isDirectory), isDirectory.boolValue else {
             if select { errorMessage = "Selecciona una carpeta de proyecto válida." }
             return nil
         }
+        let effort = effort ?? defaultEffort(for: provider)
         var conversation = ChatConversation(projectPath: projectPath, provider: provider, model: model, effort: effort)
         // SSH remote agents only exist for top-level Claude Code chats.
         if provider == .claude, parentID == nil, let remote, remote.isValid { conversation.remote = remote }
@@ -284,7 +307,7 @@ import Foundation
     /// chooses when necessary. The agent moves to that space and starts.
     /// `projects` are the folders to choose from, most recently used first.
     @discardableResult
-    public func createLocating(_ message: String, provider: ChatProvider, model: String? = nil, effort: String = "high", projects: [String], remote: ChatRemoteEndpoint? = nil) -> UUID? {
+    public func createLocating(_ message: String, provider: ChatProvider, model: String? = nil, effort: String? = nil, projects: [String], remote: ChatRemoteEndpoint? = nil) -> UUID? {
         let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
         knownProjects = projects
@@ -578,6 +601,21 @@ import Foundation
         conversations[index].updatedAt = Date()
         save(id)
     }
+    private var terminalClaudeSessions = Set<UUID>()
+    /// A Normal terminal may take an idle Claude session, never one with pending work.
+    public func claimClaudeSessionForTerminal(_ session: UUID) -> Bool {
+        guard !stopped, !lightModeEnabled, !terminalClaudeSessions.contains(session) else { return false }
+        let chats = conversations.filter { $0.provider == .claude && $0.sessionID.flatMap(UUID.init(uuidString:)) == session }
+        guard chats.allSatisfy({ c in
+            runs[c.id] == nil && !queue.contains(where: { $0.0 == c.id })
+                && compactions[c.id] == nil && handoffs[c.id] == nil && waiting[c.id]?.isEmpty != false
+        }) else { return false }
+        for c in chats { guard closeSession(c.id) else { return false } }
+        terminalClaudeSessions.insert(session)
+        return true
+    }
+    public func releaseClaudeSessionFromTerminal(_ session: UUID) { terminalClaudeSessions.remove(session) }
+
     /// Ends the agent's open process, e.g. before the same session continues in a terminal.
     /// Returns false while it is working.
     @discardableResult
@@ -714,6 +752,12 @@ import Foundation
     public func readsWhileWorking(_ id: UUID) -> Bool { drivers[id]?.keepsAlive == true || liveDrivers[id] != nil }
     /// `interrupting` stops the turn so the agent reads the message right away, like Ctrl+Enter.
     public func send(_ prompt: String, attachments: [String] = [], to id: UUID, interrupting: Bool = false) {
+        if !lightModeEnabled, let c = conversations.first(where: { $0.id == id }), c.provider == .claude,
+           let session = c.sessionID.flatMap(UUID.init(uuidString:)), terminalClaudeSessions.contains(session) {
+            errorMessage = "Esta sesión está abierta en la interfaz Terminal. Cierra su proceso antes de usar el chat."
+            return
+        }
+
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !attachments.isEmpty, conversations.contains(where: { $0.id == id }), !stopped else { return }
         clearSuggestion(id)
@@ -903,7 +947,9 @@ import Foundation
     }
     /// Answers a question about the conversation from a copy of its session, without interrupting the agent.
     public func askAside(_ question: String, in id: UUID) {
-        guard !stopped, let conversation = conversations.first(where: { $0.id == id }) else { return }
+        guard !stopped else { return }
+        if !lightModeEnabled { loadTranscript(id) }
+        guard let conversation = conversations.first(where: { $0.id == id }) else { return }
         asides.ask(question, about: conversation, allowCloud: !lightModeEnabled, cloudAllowed: { [weak self] in
             guard let self else { return false }
             return !self.lightModeEnabled

@@ -44,15 +44,15 @@ enum JackPalette {
 // MARK: - Interface style
 
 /// How Jack's main window is drawn. Basic is the solid, dense workspace; Ice is built from
-/// macOS's own Liquid Glass structure: floating sidebar, glass toolbar and a floating composer.
+/// macOS's own Liquid Glass structure. Terminal presents native PTYs instead of chats.
 enum InterfaceStyle: String, CaseIterable, Identifiable {
-    case basic, ice
+    case basic, ice, terminal
 
     static let key = "interfaceStyle"
 
     var id: String { rawValue }
     var title: String {
-        switch self { case .basic: "Basic"; case .ice: "Ice" }
+        switch self { case .basic: "Basic"; case .ice: "Ice"; case .terminal: "Terminal" }
     }
 }
 
@@ -72,7 +72,7 @@ private struct JackSurfaceBackground: ViewModifier {
 
     func body(content: Content) -> some View {
         switch style {
-        case .basic: content.background(surface == .chrome ? JackPalette.chrome : JackPalette.canvas)
+        case .basic, .terminal: content.background(surface == .chrome ? JackPalette.chrome : JackPalette.canvas)
         case .ice: content
         }
     }

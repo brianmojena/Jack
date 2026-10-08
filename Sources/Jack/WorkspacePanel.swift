@@ -56,6 +56,16 @@ struct WorkspaceTab: Identifiable, Equatable {
     /// A message for an agent, such as one about elements picked in the browser: sent now, or left in its composer.
     var sendToAgent: ((_ conversation: UUID, _ text: String, _ files: [String], _ now: Bool) -> Void)?
 
+    // Created only when the Normal terminal interface is opened.
+    private var nativeTerminalWorkspace: NativeTerminalWorkspace?
+    func terminalInterface() -> NativeTerminalWorkspace {
+        if let nativeTerminalWorkspace { return nativeTerminalWorkspace }
+        let workspace = NativeTerminalWorkspace()
+        nativeTerminalWorkspace = workspace
+        return workspace
+    }
+    func suspendTerminalInterface() { nativeTerminalWorkspace?.stopAll() }
+
     var terminalCount: Int { tabs.values.reduce(0) { $0 + $1.filter { $0.kind == .terminal }.count } }
 
     func tabs(for conversation: UUID) -> [WorkspaceTab] { tabs[conversation] ?? [] }
@@ -156,6 +166,7 @@ struct WorkspaceTab: Identifiable, Equatable {
     }
 
     func terminateAll() {
+        suspendTerminalInterface()
         cancelAutomaticGitCommits()
         terminals.values.forEach { $0.terminate() }
         simulatorSession?.shutdownOnQuit()
@@ -298,6 +309,12 @@ private struct BrowserTitle: View {
 
 // MARK: - Terminal
 
+struct TerminalProcessLaunch {
+    let executable: String
+    let arguments: [String]
+    var environment: [String: String] = [:]
+}
+
 /// A login shell in the agent's project folder.
 @MainActor final class TerminalSession: NSObject, ObservableObject, LocalProcessTerminalViewDelegate {
     @Published private(set) var running = false
@@ -306,11 +323,13 @@ private struct BrowserTitle: View {
     /// Set for agents that run on another machine: the tab is an ssh session there.
     let remote: ChatRemoteEndpoint?
     let container: TerminalContainer
+    private let directLaunch: TerminalProcessLaunch?
     var view: JackTerminalView { container.terminal }
 
-    init(directory: String, remote: ChatRemoteEndpoint? = nil, openLink: @escaping (URL) -> Void) {
+    init(directory: String, remote: ChatRemoteEndpoint? = nil, directLaunch: TerminalProcessLaunch? = nil, openLink: @escaping (URL) -> Void) {
         self.directory = directory
         self.remote = remote
+        self.directLaunch = directLaunch
         projectPath = directory
         container = TerminalContainer(terminal: JackTerminalView(frame: NSRect(x: 0, y: 0, width: 600, height: 400)))
         super.init()
@@ -321,11 +340,21 @@ private struct BrowserTitle: View {
 
     func start() {
         let shell = ProcessInfo.processInfo.environment["SHELL"].flatMap { $0.isEmpty ? nil : $0 } ?? "/bin/zsh"
-        var environment = ProcessInfo.processInfo.environment
+        var environment = directLaunch == nil ? ProcessInfo.processInfo.environment : ExecutableResolver.childEnvironment()
         environment["TERM"] = "xterm-256color"
         environment["COLORTERM"] = "truecolor"
         environment["TERM_PROGRAM"] = "Jack"
         if environment["LANG"] == nil { environment["LANG"] = "es_ES.UTF-8" }
+        if let directLaunch {
+            environment.merge(directLaunch.environment) { _, new in new }
+            view.startProcess(executable: directLaunch.executable, args: directLaunch.arguments,
+                              environment: environment.map { "\($0)=\($1)" },
+                              execName: URL(fileURLWithPath: directLaunch.executable).lastPathComponent,
+                              currentDirectory: projectPath)
+            directory = projectPath
+            running = true
+            return
+        }
         if let remote, remote.isValid {
             // The project folder only exists on the other machine, so the local shell starts in home.
             let ssh = ExecutableResolver.resolve("ssh") ?? "/usr/bin/ssh"
@@ -485,7 +514,7 @@ final class TerminalContainer: NSView {
 }
 
 /// Moves the session's terminal into whichever panel is showing it.
-private struct TerminalHost: NSViewRepresentable {
+struct TerminalHost: NSViewRepresentable {
     let container: TerminalContainer
     func makeNSView(context: Context) -> NSView {
         let host = NSView()

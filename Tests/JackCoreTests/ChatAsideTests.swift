@@ -22,6 +22,44 @@ final class ChatAsideTests: XCTestCase {
         XCTAssertTrue(openCodeArgs.joined(separator: " ").contains("--model openai/gpt-6"))
     }
 
+    func testEconomicalClaudeAsideUsesHaikuWithoutResumingAndBoundsVisibleContext() {
+        let chat = ChatConversation(projectPath: "/tmp", provider: .claude, model: "opus", sessionID: "expensive",
+                                    messages: [ChatMessage(role: "user", text: "old secret")]
+                                        + (0..<20).map { _ in ChatMessage(role: "assistant", text: String(repeating: "🙂", count: 5000)) }
+                                        + [ChatMessage(role: "tool", text: "tool secret", detail: "large output"),
+                                           ChatMessage(role: "reasoning", text: "private thinking"),
+                                           ChatMessage(role: "user", text: "recent decision")])
+        let prompt = ChatAsideService.economicalPrompt("current question", about: chat)
+        XCTAssertLessThan(prompt.count, 12_200)
+        XCTAssertTrue(prompt.contains("recent decision"))
+        XCTAssertTrue(prompt.hasSuffix("current question"))
+        XCTAssertFalse(prompt.contains("old secret"))
+        XCTAssertFalse(prompt.contains("tool secret"))
+        XCTAssertFalse(prompt.contains("private thinking"))
+        let args = ChatAsideService.arguments(chat, prompt: prompt, economicalClaude: true)
+        XCTAssertFalse(args.contains("--resume"))
+        XCTAssertFalse(args.contains("--fork-session"))
+        XCTAssertTrue(args.contains("haiku"))
+        XCTAssertFalse(args.contains("opus"))
+        XCTAssertTrue(args.contains("--system-prompt"))
+        XCTAssertTrue(args.contains("--setting-sources"))
+        XCTAssertEqual(Array(args.suffix(2)), ["--tools", ""])
+        // Light still forks the original model with the complete session.
+        let light = ChatAsideService.arguments(chat, prompt: "q")
+        XCTAssertTrue(light.contains("opus"))
+        XCTAssertTrue(light.contains("--resume"))
+    }
+
+    @MainActor func testEconomicalAsideRefusesToLaunchAfterSwitchingToLight() async {
+        let chat = ChatConversation(projectPath: "/tmp", provider: .claude)
+        do {
+            _ = try await ChatAsideService.ask("q", about: chat, allowCloud: true, cloudAllowed: { false }, partial: { _ in })
+            XCTFail("Must not start a CLI when Normal's policy is no longer allowed")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("Light"))
+        }
+    }
+
     func testClaudeStreamIsReplacedByTheCompleteMessage() {
         var parser = ChatAsideService.Parser(provider: .claude)
         let delta: (String) -> [String: Any] = { ["type": "stream_event", "event": ["type": "content_block_delta", "index": 0, "delta": ["type": "text_delta", "text": $0]]] }
