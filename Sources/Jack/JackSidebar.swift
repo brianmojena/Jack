@@ -26,6 +26,38 @@ struct SidebarRowModel: Identifiable, Equatable {
     var needsAttention: Bool { status == .waiting }
 }
 
+enum SidebarProjectSort: String, CaseIterable, Identifiable, Hashable {
+    case manual
+    case nameAscending
+    case nameDescending
+    case recentActivity
+    case mostAgents
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .manual: "Manual"
+        case .nameAscending: "Nombre (A–Z)"
+        case .nameDescending: "Nombre (Z–A)"
+        case .recentActivity: "Actividad reciente"
+        case .mostAgents: "Más agentes"
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .manual: "hand.draw"
+        case .nameAscending: "arrow.up"
+        case .nameDescending: "arrow.down"
+        case .recentActivity: "clock"
+        case .mostAgents: "person.3"
+        }
+    }
+
+    static func resolve(_ value: String, legacyAlphabetical: Bool) -> Self {
+        Self(rawValue: value) ?? (legacyAlphabetical ? .nameAscending : .manual)
+    }
+}
+
 /// Sidebar grouping, shared with keyboard navigation so ⌥⌘↑/↓ follow what is on screen.
 struct SidebarSections {
     typealias Space = (path: String, name: String, rows: [SidebarRowModel])
@@ -34,7 +66,8 @@ struct SidebarSections {
     let attention: [SidebarRowModel]
     let projects: [Space]
 
-    init(rows: [SidebarRowModel], projectPaths: [UUID: String], projectOrder: [String] = [], alphabetical: Bool = false) {
+    init(rows: [SidebarRowModel], projectPaths: [UUID: String], projectOrder: [String] = [], alphabetical: Bool = false,
+         sort: SidebarProjectSort? = nil) {
         pinned = Array(rows.filter { $0.pinnedAt != nil }.sorted { ($0.pinnedAt ?? .distantPast) < ($1.pinnedAt ?? .distantPast) }
             .prefix(ChatStore.maxPinned))
         let pinnedIDs = Set(pinned.map(\.id))
@@ -44,12 +77,32 @@ struct SidebarSections {
         let groupedProjects = grouped.map { path, rows in
             (path: path, name: URL(fileURLWithPath: path).lastPathComponent, rows: Self.nested(rows))
         }
-        if alphabetical {
+        let sort = sort ?? (alphabetical ? .nameAscending : .manual)
+        switch sort {
+        case .nameAscending:
             projects = groupedProjects.sorted {
                 let comparison = $0.name.localizedStandardCompare($1.name)
                 return comparison == .orderedSame ? $0.path < $1.path : comparison == .orderedAscending
             }
-        } else {
+        case .nameDescending:
+            projects = groupedProjects.sorted {
+                let comparison = $0.name.localizedStandardCompare($1.name)
+                return comparison == .orderedSame ? $0.path > $1.path : comparison == .orderedDescending
+            }
+        case .recentActivity:
+            projects = groupedProjects.sorted {
+                let left = Self.latestActivity($0)
+                let right = Self.latestActivity($1)
+                return left == right ? $0.path < $1.path : left > right
+            }
+        case .mostAgents:
+            projects = groupedProjects.sorted {
+                guard $0.rows.count == $1.rows.count else { return $0.rows.count > $1.rows.count }
+                let left = Self.latestActivity($0)
+                let right = Self.latestActivity($1)
+                return left == right ? $0.path < $1.path : left > right
+            }
+        case .manual:
             let rank = projectOrder.enumerated().reduce(into: [String: Int]()) { ranks, item in
                 if ranks[item.element] == nil { ranks[item.element] = item.offset }
             }
@@ -58,9 +111,15 @@ struct SidebarSections {
                 if let left, let right { return left < right }
                 if left != nil { return true }
                 if right != nil { return false }
-                return ($0.rows.first?.updatedAt ?? .distantPast) > ($1.rows.first?.updatedAt ?? .distantPast)
+                let leftActivity = Self.latestActivity($0)
+                let rightActivity = Self.latestActivity($1)
+                return leftActivity == rightActivity ? $0.path < $1.path : leftActivity > rightActivity
             }
         }
+    }
+
+    private static func latestActivity(_ project: Space) -> Date {
+        project.rows.map(\.updatedAt).max() ?? .distantPast
     }
 
     /// Newest first, with each agent's sub-agents right below it in creation order.
@@ -123,7 +182,8 @@ struct JackSidebar: View {
     @FocusState private var searchFocused: Bool
     /// Folded spaces, stored as newline-separated project paths.
     @AppStorage("collapsedSpaces") private var collapsedSpacesValue = ""
-    @AppStorage("sidebarProjectsAlphabetical") private var alphabeticalProjects = false
+    @AppStorage("sidebarProjectSort") private var projectSortValue = ""
+    @AppStorage("sidebarProjectsAlphabetical") private var legacyAlphabeticalProjects = false
     @AppStorage("sidebarProjectOrder") private var projectOrderValue = ""
     @Environment(\.interfaceStyle) private var style
     // Only the reorder surfaces observe pointer changes, not the sidebar's chats.
@@ -131,12 +191,22 @@ struct JackSidebar: View {
 
     private var collapsedSpaces: Set<String> { SidebarSections.collapsed(collapsedSpacesValue) }
     private var projectOrder: [String] { projectOrderValue.split(separator: "\n").map(String.init) }
-
-    private func sections(for rows: [SidebarRowModel]) -> SidebarSections {
-        SidebarSections(rows: rows, projectPaths: projectPaths, projectOrder: folderDrag.source == nil ? projectOrder : folderDrag.order, alphabetical: alphabeticalProjects)
+    private var projectSort: SidebarProjectSort {
+        SidebarProjectSort.resolve(projectSortValue, legacyAlphabetical: legacyAlphabeticalProjects)
     }
 
-    private var canReorderProjects: Bool { !alphabeticalProjects && query.trimmingCharacters(in: .whitespaces).isEmpty }
+    private func sections(for rows: [SidebarRowModel]) -> SidebarSections {
+        SidebarSections(rows: rows, projectPaths: projectPaths,
+                        projectOrder: folderDrag.source == nil ? projectOrder : folderDrag.order, sort: projectSort)
+    }
+
+    private var canReorderProjects: Bool { projectSort == .manual && query.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    private func setProjectSort(_ sort: SidebarProjectSort) {
+        projectSortValue = sort.rawValue
+        legacyAlphabeticalProjects = sort == .nameAscending
+        folderDrag.end()
+    }
 
     private func moveProject(_ source: String, relativeTo destination: String, after: Bool) -> Bool {
         guard canReorderProjects,
@@ -149,7 +219,7 @@ struct JackSidebar: View {
     private func dragHandle(for project: SidebarSections.Space) -> some View {
         SidebarFolderDragHandle(path: project.path, name: project.name, state: folderDrag,
                                 order: sections(for: rows).projects.map(\.path))
-            .frame(width: 16, height: 24)
+            .frame(width: 24, height: 30)
             .help("Arrastra para ordenar \(project.name)")
     }
 
@@ -169,7 +239,8 @@ struct JackSidebar: View {
 
     var body: some View {
         Group { if style == .ice { nativeBody } else { basicBody } }
-            .onChange(of: alphabeticalProjects) { _, _ in folderDrag.end() }
+            .onChange(of: projectSortValue) { _, _ in folderDrag.end() }
+            .onChange(of: legacyAlphabeticalProjects) { _, _ in folderDrag.end() }
             .onChange(of: query) { _, _ in folderDrag.end() }
             .onDisappear { folderDrag.end() }
     }
@@ -396,16 +467,20 @@ struct JackSidebar: View {
 
     private var projectOrderMenu: some View {
         Menu {
-            Toggle("Orden alfabético", isOn: $alphabeticalProjects)
+            Picker("Organizar proyectos", selection: Binding(get: { projectSort }, set: setProjectSort)) {
+                ForEach(SidebarProjectSort.allCases) { sort in
+                    Label(sort.title, systemImage: sort.symbol).tag(sort)
+                }
+            }
         } label: {
-            Image(systemName: alphabeticalProjects ? "textformat.abc" : "arrow.up.arrow.down")
+            Image(systemName: projectSort.symbol)
                 .font(.system(size: 11, weight: .medium))
                 .frame(width: 22, height: 20)
                 .contentShape(Rectangle())
         }
         .menuStyle(.borderlessButton)
         .foregroundStyle(JackPalette.muted)
-        .help(alphabeticalProjects ? "Orden alfabético activado" : "Orden manual; usa el tirador para colocar cada carpeta antes o después de otra")
+        .help("Organizar proyectos: \(projectSort.title)")
     }
 
     private func rowView(_ row: SidebarRowModel, showProject: Bool, now: Date) -> some View {
@@ -616,9 +691,9 @@ private struct SidebarFolderDragHandle: NSViewRepresentable {
             pasteboard.setString(path, forType: NSPasteboard.PasteboardType(SidebarFolderDragState.type.identifier))
             let item = NSDraggingItem(pasteboardWriter: pasteboard)
             let image = preview()
-            let origin = convert(down.locationInWindow, from: nil)
+            let origin = convert(event.locationInWindow, from: nil)
             item.setDraggingFrame(NSRect(x: origin.x - 18, y: origin.y - 18, width: image.size.width, height: image.size.height), contents: image)
-            let session = beginDraggingSession(with: [item], event: down, source: self)
+            let session = beginDraggingSession(with: [item], event: event, source: self)
             session.animatesToStartingPositionsOnCancelOrFail = true
         }
         func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {

@@ -35,7 +35,8 @@ struct MainWindowView: View {
     /// The composer being typed in: the main chat's or a pane's.
     @FocusState private var focusedComposer: UUID?
     @AppStorage("collapsedSpaces") private var collapsedSpacesValue = ""
-    @AppStorage("sidebarProjectsAlphabetical") private var alphabeticalProjects = false
+    @AppStorage("sidebarProjectSort") private var projectSortValue = ""
+    @AppStorage("sidebarProjectsAlphabetical") private var legacyAlphabeticalProjects = false
     @AppStorage("sidebarProjectOrder") private var projectOrderValue = ""
     @State private var renamingConversation: ChatConversation?
     @State private var renameText = ""
@@ -62,6 +63,9 @@ struct MainWindowView: View {
         workspaceVisible = true
     }
     private var ice: Bool { interfaceStyle == .ice }
+    private var sidebarProjectSort: SidebarProjectSort {
+        SidebarProjectSort.resolve(projectSortValue, legacyAlphabetical: legacyAlphabeticalProjects)
+    }
     /// Identifies the plan the selected agent is putting forward, when it has steps to draw.
     private var planKey: String? {
         guard let id = store.selectedID, let offer = store.plan(for: id), PlanFlow.parse(offer.markdown) != nil else { return nil }
@@ -1198,7 +1202,7 @@ struct MainWindowView: View {
 
     private func navigationOrder(includeFolded: Bool) -> [UUID] {
         SidebarSections(rows: sidebarRows, projectPaths: Dictionary(uniqueKeysWithValues: store.conversations.map { ($0.id, $0.projectPath) }),
-                        projectOrder: projectOrderValue.split(separator: "\n").map(String.init), alphabetical: alphabeticalProjects)
+                        projectOrder: projectOrderValue.split(separator: "\n").map(String.init), sort: sidebarProjectSort)
             .visibleIDs(collapsed: includeFolded ? [] : SidebarSections.collapsed(collapsedSpacesValue))
     }
 
