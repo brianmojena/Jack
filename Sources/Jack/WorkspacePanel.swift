@@ -13,7 +13,7 @@ enum WorkspaceTool: String, CaseIterable, Identifiable {
         case .browser: "Navegador"
         case .simulator: "Simulador"
         case .git: "Git"
-        case .flow: "Flujo"
+        case .flow: "Diagrama de flujo"
         }
     }
     var symbol: String {
@@ -203,7 +203,7 @@ struct WorkspacePane: View, Equatable {
                     Button("Nuevo navegador", systemImage: "globe") { sessions.open(.browser, for: conversationID) }
                     Button("Simulador de iOS", systemImage: "iphone") { sessions.open(.simulator, for: conversationID) }
                     Button("Git", systemImage: "arrow.triangle.branch") { sessions.open(.git, for: conversationID) }
-                    Button("Diagrama del plan", systemImage: "flowchart") { sessions.open(.flow, for: conversationID) }
+                    Button("Diagrama de flujo", systemImage: "flowchart") { sessions.open(.flow, for: conversationID) }
                 } label: {
                     Image(systemName: "plus").font(.system(size: 12, weight: .medium))
                 } primaryAction: {
@@ -256,7 +256,7 @@ struct WorkspacePane: View, Equatable {
                 Button("Navegador") { sessions.open(.browser, for: conversationID) }
                 Button("Simulador") { sessions.open(.simulator, for: conversationID) }
                 Button("Git") { sessions.open(.git, for: conversationID) }
-                Button("Flujo") { sessions.open(.flow, for: conversationID) }
+                Button("Diagrama de flujo") { sessions.open(.flow, for: conversationID) }
             }
             .controlSize(.small)
         }
@@ -276,7 +276,7 @@ private struct WorkspaceTabTitle: View {
             case .browser: Text("Nueva pestaña")
             case .simulator: Text("Simulador")
             case .git: Text("Git")
-            case .flow: Text("Flujo")
+            case .flow: Text("Diagrama de flujo")
             }
         }
     }
@@ -889,4 +889,3 @@ private struct BrowserPickComposer: View {
         }
     }
 }
-

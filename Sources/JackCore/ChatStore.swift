@@ -16,6 +16,9 @@ import Foundation
     /// Models Stellar Code can use, from the local servers that answered last time.
     @Published public private(set) var localModels: [StellarModel] = []
     @Published public private(set) var loadingLocalModels = false
+    /// Flow-diagram drafts are separate from the agent transcript and survive closing the workspace pane.
+    private var flowDiagramStates: [UUID: FlowDiagramState] = [:]
+    var makeFlowDiagramState: () -> FlowDiagramState = { FlowDiagramState() }
     @Published public var errorMessage: String?
     @Published public private(set) var maxConcurrent = 4
     /// Light's preferences are independent of Normal's.
@@ -173,6 +176,7 @@ import Foundation
             localModels.removeAll(where: \.isCloud)
             loadingLocalModels = false
             asides.cancelCloudAsides()
+            for state in flowDiagramStates.values { state.cancel() }
         }
         notebookWorkspace?.setEnabled(!enabled)
         lightWindowVisible = true
@@ -874,6 +878,29 @@ import Foundation
         if !localModels.contains(where: { $0.id == model.id }) { localModels.append(model) }
         return model
     }
+    public func flowDiagramState(for id: UUID) -> FlowDiagramState {
+        if let state = flowDiagramStates[id] { return state }
+        let state = makeFlowDiagramState()
+        flowDiagramStates[id] = state
+        return state
+    }
+    /// Generates only on an explicit request in Normal. The copied transcript is never appended or sent to the agent.
+    public func generateFlowDiagram(in id: UUID, modelID: String) {
+        guard !stopped, !lightModeEnabled,
+              let conversation = conversations.first(where: { $0.id == id }) else { return }
+        let state = flowDiagramState(for: id)
+        guard let model = localModels.first(where: { $0.id == modelID }), model.server.api == .ollama, model.isCloud else {
+            state.fail("Selecciona un modelo de Ollama Cloud validado en el selector.")
+            return
+        }
+        let requestModeGeneration = modeGeneration
+        let context = FlowDiagramContext.recentVisible(from: conversation.messages)
+        state.generate(modelID: model.id, context: context, allowed: { [weak self] in
+            guard let self else { return false }
+            return !self.stopped && !self.lightModeEnabled && self.modeGeneration == requestModeGeneration
+                && self.conversations.contains(where: { $0.id == id })
+        })
+    }
     /// Answers a question about the conversation from a copy of its session, without interrupting the agent.
     public func askAside(_ question: String, in id: UUID) {
         guard !stopped, let conversation = conversations.first(where: { $0.id == id }) else { return }
@@ -1036,6 +1063,7 @@ import Foundation
     public func remove(_ id: UUID) {
         guard runs[id] == nil, !queue.contains(where: { $0.0 == id }) else { return }
         cancelLocating(id)
+        flowDiagramStates.removeValue(forKey: id)?.cancel()
         liveDrivers.removeValue(forKey: id)?.close()
         conversations.removeAll { $0.id == id }; loaded.remove(id); statuses.removeValue(forKey: id); approvals.removeValue(forKey: id)
         waiting.removeValue(forKey: id); recalled.removeValue(forKey: id)
@@ -1142,6 +1170,8 @@ import Foundation
     public func shutdown() {
         stopped = true; queue.removeAll(); flushTask?.cancel(); flushTask = nil
         modeGeneration += 1
+        for state in flowDiagramStates.values { state.cancel() }
+        flowDiagramStates.removeAll()
         for id in Array(locateTasks.keys) { cancelLocating(id) }
         asides.cancelAll()
         notebookWorkspace?.stop()

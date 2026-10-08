@@ -434,8 +434,12 @@ enum StellarClient {
     }
 
     static func stream(server: StellarServer, model: String, messages: [StellarMessage], tools: [[String: Any]]?, contextLength: Int) throws -> AsyncThrowingStream<StellarChunk, Error> {
+        try stream(server: server, model: model, messages: messages, tools: tools, contextLength: contextLength, timeout: 600)
+    }
+
+    static func stream(server: StellarServer, model: String, messages: [StellarMessage], tools: [[String: Any]]?, contextLength: Int, timeout: TimeInterval) throws -> AsyncThrowingStream<StellarChunk, Error> {
         let payload = requestPayload(server: server, model: model, messages: messages, tools: tools, contextLength: contextLength)
-        let request = try StellarHTTP.request(server, path: payload.path, body: payload.body, timeout: 600)
+        let request = try StellarHTTP.request(server, path: payload.path, body: payload.body, timeout: timeout)
         return AsyncThrowingStream { continuation in
             let task = Task {
                 do {

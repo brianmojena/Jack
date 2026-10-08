@@ -28,6 +28,7 @@
 		28AC8F651C192396167D8317 /* AttachmentViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8AC5CBAB71E44192E8AF824 /* AttachmentViews.swift */; };
 		2A23B1440EE00D3C9D2CD650 /* ChatImages.swift in Sources */ = {isa = PBXBuildFile; fileRef = C77FC7E95D4EE8768DC19D3F /* ChatImages.swift */; };
 		2A74F5CBFD0102E18EA266C5 /* JupyterKernel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52312515048B37AD7AAEE21C /* JupyterKernel.swift */; };
+		2B63503F337D59229C435107 /* FlowDiagram.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23A3C12F03AEFEE7243BF5C8 /* FlowDiagram.swift */; };
 		2CD3AE84E731F84635B040B6 /* NotebookDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CCF40FF45B214513A23886B /* NotebookDocument.swift */; };
 		2F603788E2314A82B075A85A /* ServerViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1ABE22C8EB6AC06EEB29920D /* ServerViews.swift */; };
 		31A450B8426DD2E2BEF42A41 /* SSHTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD2509598C4FC1C9E886108E /* SSHTransport.swift */; };
@@ -165,6 +166,7 @@
 		1ABE22C8EB6AC06EEB29920D /* ServerViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerViews.swift; sourceTree = "<group>"; };
 		1FCA7EE32BDFA05868D21D74 /* ChatAside.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatAside.swift; sourceTree = "<group>"; };
 		21FADA6FCE0D89345442C744 /* SSHKeySetup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHKeySetup.swift; sourceTree = "<group>"; };
+		23A3C12F03AEFEE7243BF5C8 /* FlowDiagram.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowDiagram.swift; sourceTree = "<group>"; };
 		2C9731344B7463E74671F52C /* StellarCode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StellarCode.swift; sourceTree = "<group>"; };
 		32B0BA461A610CE350B86967 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		35E06A7FE63EA77BDC8FA29C /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
@@ -294,6 +296,7 @@
 				0D0A660EF197200211C217B4 /* ChatUsage.swift */,
 				CA9AEFCAF5C3EB12827473A9 /* ClaudeSessions.swift */,
 				8A45A93DAF44DBBC83A60C50 /* ExecutableResolver.swift */,
+				23A3C12F03AEFEE7243BF5C8 /* FlowDiagram.swift */,
 				BD49B26FBE95D7FD23912D74 /* Git.swift */,
 				3A74557C47C15953992E8937 /* JackLog.swift */,
 				CCABA0283CE71A5F4ED877AC /* JackRemoteProtocol.swift */,
@@ -610,6 +613,7 @@
 				1E4B9916484367A33AC3D959 /* ChatUsage.swift in Sources */,
 				56C38ADB49FAC17203F73ED4 /* ClaudeSessions.swift in Sources */,
 				6EB861C0B842D3CECBD7F800 /* ExecutableResolver.swift in Sources */,
+				2B63503F337D59229C435107 /* FlowDiagram.swift in Sources */,
 				9E0D42BCAC6096551B207E07 /* Git.swift in Sources */,
 				CE4A748AA81B0389D7907972 /* JackLog.swift in Sources */,
 				DC0F7DC79D21E0C22DDD82F0 /* JackRemoteProtocol.swift in Sources */,
