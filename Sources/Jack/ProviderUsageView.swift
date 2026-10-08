@@ -5,13 +5,15 @@ struct ProviderUsageView: View {
     let usage: [ChatProvider: ProviderUsage]
     let refreshing: Bool
     let refresh: () -> Void
+    var showsUsed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Uso y límites").font(.system(size: 14, weight: .semibold))
-                    Text("Cuota restante de cada proveedor").font(.system(size: 11)).foregroundStyle(JackPalette.muted)
+                    Text(showsUsed ? "Consumo usado por ventana" : "Cuota restante de cada proveedor")
+                        .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
                 }
                 Spacer()
                 if refreshing { ProgressView().controlSize(.small) }
@@ -25,7 +27,7 @@ struct ProviderUsageView: View {
             ScrollView {
                 VStack(spacing: 10) {
                     ForEach(ChatProvider.allCases) { provider in
-                        ProviderUsageCard(provider: provider, usage: usage[provider], refreshing: refreshing)
+                        ProviderUsageCard(provider: provider, usage: usage[provider], refreshing: refreshing, showsUsed: showsUsed)
                     }
                 }
                 .padding(12)
@@ -40,6 +42,7 @@ private struct ProviderUsageCard: View {
     let provider: ChatProvider
     let usage: ProviderUsage?
     let refreshing: Bool
+    let showsUsed: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -55,7 +58,7 @@ private struct ProviderUsageCard: View {
             }
             if let usage, !usage.windows.isEmpty {
                 ForEach(usage.windows) { window in
-                    UsageWindowRow(window: window)
+                    UsageWindowRow(window: window, showsUsed: showsUsed)
                 }
             } else {
                 Text(refreshing ? "Consultando…" : "Sin datos todavía")
@@ -76,11 +79,13 @@ private struct ProviderUsageCard: View {
 
 private struct UsageWindowRow: View {
     let window: UsageWindow
+    let showsUsed: Bool
 
     private var color: Color {
-        guard let remaining = window.remainingPercent else { return JackPalette.faint }
-        if remaining <= 10 { return JackPalette.red }
-        if remaining <= 30 { return JackPalette.amber }
+        let value = showsUsed ? window.usedPercent : window.remainingPercent
+        guard let value else { return JackPalette.faint }
+        if showsUsed ? value >= 90 : value <= 10 { return JackPalette.red }
+        if showsUsed ? value >= 70 : value <= 30 { return JackPalette.amber }
         return JackPalette.green
     }
 
@@ -89,11 +94,11 @@ private struct UsageWindowRow: View {
             HStack(alignment: .firstTextBaseline) {
                 Text(window.title).font(.system(size: 11, weight: .medium))
                 Spacer()
-                if let remaining = window.remainingPercent {
-                    Text("\(Int(remaining.rounded())) %")
+                if let percent = showsUsed ? window.usedPercent : window.remainingPercent {
+                    Text("\(Int(percent.rounded())) %")
                         .font(.system(size: 12, weight: .semibold).monospacedDigit())
-                        .foregroundStyle(remaining <= 30 ? color : JackPalette.secondaryText)
-                    Text("restante").font(.system(size: 10)).foregroundStyle(JackPalette.muted)
+                        .foregroundStyle(showsUsed ? color : (percent <= 30 ? color : JackPalette.secondaryText))
+                    Text(showsUsed ? "usado" : "restante").font(.system(size: 10)).foregroundStyle(JackPalette.muted)
                 } else {
                     Text(window.resetsAt.map { $0 <= Date() } == true ? "Lectura vencida" : "Sin porcentaje")
                         .font(.system(size: 10)).foregroundStyle(JackPalette.muted)
@@ -103,7 +108,7 @@ private struct UsageWindowRow: View {
                 ZStack(alignment: .leading) {
                     Capsule().fill(JackPalette.panelStrong)
                     Capsule().fill(color)
-                        .frame(width: proxy.size.width * CGFloat((window.remainingPercent ?? 0) / 100))
+                        .frame(width: proxy.size.width * CGFloat(((showsUsed ? window.usedPercent : window.remainingPercent) ?? 0) / 100))
                 }
             }
             .frame(height: 5)

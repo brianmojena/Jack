@@ -49,7 +49,7 @@ struct StatusBar: View, Equatable {
             .buttonStyle(.plain)
             .help("Uso y límites de cada proveedor")
             .popover(isPresented: $showingUsage, arrowEdge: .top) {
-                ProviderUsageView(usage: usage, refreshing: refreshing, refresh: refresh)
+                ProviderUsageView(usage: usage, refreshing: refreshing, refresh: refresh, showsUsed: true)
             }
             Button(action: refresh) {
                 Image(systemName: "arrow.clockwise").font(.system(size: 10, weight: .medium))
@@ -108,28 +108,40 @@ struct StatusBar: View, Equatable {
     }
 }
 
-/// "✳ ▰▰▱ 58% 5h · 41% 7d": used share of the first two windows of a provider.
+/// Compact provider indicator: mark, used quota bar and reset countdown for the five-hour window.
 private struct ProviderQuota: View {
     let provider: ChatProvider
     let windows: [UsageWindow]
 
     var body: some View {
-        HStack(spacing: 6) {
-            ProviderMark(provider: provider, size: 11)
-            if let first = windows.first?.usedPercent {
-                Capsule().fill(JackPalette.panelStrong).frame(width: 34, height: 4)
-                    .overlay(alignment: .leading) {
-                        Capsule().fill(tint(first)).frame(width: 34 * CGFloat(min(100, max(0, first))) / 100, height: 4)
-                    }
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            HStack(spacing: 6) {
+                ProviderMark(provider: provider, size: 11)
+                if let quota = fiveHourWindow?.usedPercent ?? windows.first?.usedPercent {
+                    Capsule().fill(JackPalette.panelStrong).frame(width: 34, height: 4)
+                        .overlay(alignment: .leading) {
+                            Capsule().fill(tint(quota)).frame(width: 34 * CGFloat(min(100, max(0, quota))) / 100, height: 4)
+                        }
+                }
+                if let reset = fiveHourWindow?.resetsAt, reset > context.date {
+                    Text(timeUntilReset(reset, now: context.date))
+                        .foregroundStyle(JackPalette.muted)
+                        .help("El límite de 5 h se reinicia \(reset.formatted(.relative(presentation: .named)))")
+                }
             }
-            Text(windows.map { window in
-                "\(window.usedPercent.map { "\(Int($0.rounded()))%" } ?? "–") \(shortTitle(window.title))"
-            }.joined(separator: " · "))
         }
     }
 
-    private func shortTitle(_ title: String) -> String {
-        (title.components(separatedBy: " · ").last ?? title).replacingOccurrences(of: " ", with: "")
+    private var fiveHourWindow: UsageWindow? {
+        windows.first { $0.id == "five_hour" || $0.title.localizedCaseInsensitiveContains("5 h") }
+    }
+
+    private func timeUntilReset(_ reset: Date, now: Date) -> String {
+        let minutes = max(1, Int(ceil(reset.timeIntervalSince(now) / 60)))
+        let hours = minutes / 60
+        let remainder = minutes % 60
+        if hours == 0 { return "\(minutes) min" }
+        return remainder == 0 ? "\(hours) h" : "\(hours) h \(remainder) min"
     }
 
     private func tint(_ used: Double) -> Color {
@@ -137,14 +149,17 @@ private struct ProviderQuota: View {
     }
 }
 
-/// Jack's own memory footprint, read every 20 seconds; only this label redraws.
+/// Jack's own memory footprint and process CPU usage; neither value includes other processes.
 private struct MemoryLabel: View {
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 20)) { _ in
-            if let bytes = Self.footprint() {
-                Label(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .memory), systemImage: "memorychip")
-                    .help("Memoria que usa Jack")
+        HStack(spacing: 8) {
+            TimelineView(.periodic(from: .now, by: 20)) { _ in
+                if let bytes = Self.footprint() {
+                    Label(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .memory), systemImage: "memorychip")
+                        .help("Memoria que usa Jack")
+                }
             }
+            ProcessCPUUsageLabel()
         }
     }
 
@@ -156,4 +171,45 @@ private struct MemoryLabel: View {
         }
         return result == KERN_SUCCESS ? info.phys_footprint : nil
     }
+}
+
+private struct ProcessCPUUsageLabel: View {
+    @State private var previousSample: CPUSample?
+    @State private var percent: Double?
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 2)) { context in
+            Group {
+                if let percent {
+                    Label("\(Int(percent.rounded())) %", systemImage: "cpu")
+                } else {
+                    Label("—", systemImage: "cpu")
+                }
+            }
+            .help("Uso del procesador por Jack; puede superar el 100 % si usa varios núcleos")
+            .onChange(of: context.date, initial: true) { _, date in
+                guard let cpuSeconds = Self.processCPUSeconds() else { return }
+                if let previousSample {
+                    let elapsed = date.timeIntervalSince(previousSample.date)
+                    if elapsed > 0 {
+                        percent = max(0, (cpuSeconds - previousSample.cpuSeconds) / elapsed * 100)
+                    }
+                }
+                previousSample = CPUSample(date: date, cpuSeconds: cpuSeconds)
+            }
+        }
+    }
+
+    private static func processCPUSeconds() -> Double? {
+        var usage = rusage()
+        guard getrusage(RUSAGE_SELF, &usage) == 0 else { return nil }
+        let user = Double(usage.ru_utime.tv_sec) + Double(usage.ru_utime.tv_usec) / 1_000_000
+        let system = Double(usage.ru_stime.tv_sec) + Double(usage.ru_stime.tv_usec) / 1_000_000
+        return user + system
+    }
+}
+
+private struct CPUSample {
+    let date: Date
+    let cpuSeconds: Double
 }
