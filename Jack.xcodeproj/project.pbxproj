@@ -66,6 +66,7 @@
 		9E0D42BCAC6096551B207E07 /* Git.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD49B26FBE95D7FD23912D74 /* Git.swift */; };
 		9E32EAA13FF894FCB4AAB92D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2E1B2F8CCC4DBA9277E4269 /* SettingsView.swift */; };
 		A2732E28952569560148E19D /* ChatDrivers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CE721E7266C74484EE01DBD /* ChatDrivers.swift */; };
+		A2E8E05038BC1F06CFDD8C89 /* AppInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB9EBFF77446878230D70940 /* AppInstaller.swift */; };
 		A39B7CF137522252F4D1A9C3 /* PlanFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D47B1B2C9E68EC321647E2E /* PlanFlow.swift */; };
 		A7D328F4FA370B7E3C7FFB6F /* ChatProcess.swift in Sources */ = {isa = PBXBuildFile; fileRef = E229CF3EA3E5C8331E30BF2D /* ChatProcess.swift */; };
 		A98FB0615710A756161AC7F6 /* JackApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC084525C4D6CE0EBEF1CF88 /* JackApp.swift */; };
@@ -235,6 +236,7 @@
 		D270EF82D7E479169076203B /* BrowserAddress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserAddress.swift; sourceTree = "<group>"; };
 		D509AEAE925B54594B2E191B /* PaneLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaneLayout.swift; sourceTree = "<group>"; };
 		D8E5B74C47ED76F7F4E3175D /* ChatModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModels.swift; sourceTree = "<group>"; };
+		DB9EBFF77446878230D70940 /* AppInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppInstaller.swift; sourceTree = "<group>"; };
 		DD0F0EC32A5D428E50E5152F /* NotebookSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotebookSession.swift; sourceTree = "<group>"; };
 		DD2509598C4FC1C9E886108E /* SSHTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHTransport.swift; sourceTree = "<group>"; };
 		DE392CC548349392081A80A6 /* NotebookPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotebookPanel.swift; sourceTree = "<group>"; };
@@ -286,6 +288,7 @@
 			isa = PBXGroup;
 			children = (
 				112E9D6E62140F40A3F29A21 /* AgentBridge.swift */,
+				DB9EBFF77446878230D70940 /* AppInstaller.swift */,
 				D270EF82D7E479169076203B /* BrowserAddress.swift */,
 				99043DC6E87DB144C2ECE631 /* BrowserPick.swift */,
 				094C42C6DC4B76FE4E66E40D /* ChatArchive.swift */,
@@ -606,6 +609,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				26F33593401C4D6EF10CC974 /* AgentBridge.swift in Sources */,
+				A2E8E05038BC1F06CFDD8C89 /* AppInstaller.swift in Sources */,
 				7E295FDBE4DB448AD14EB38C /* BrowserAddress.swift in Sources */,
 				1E413BE4FA305A05CFCDA372 /* BrowserPick.swift in Sources */,
 				02B83CB51FECD80B94438A2F /* ChatArchive.swift in Sources */,

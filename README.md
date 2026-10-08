@@ -4,7 +4,7 @@ Chat nativo y compacto para gestionar varios agentes de desarrollo en macOS. Int
 
 ## Versionado
 
-La versión actual es **0.3.35**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
+La versión actual es **0.3.36**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
 
 ## Construir
 
@@ -23,9 +23,11 @@ Para reinstalar la compilación, usa `python3 scripts/install-app.py` con acceso
 
 ## Actualizaciones
 
-En modo Normal, Jack consulta las releases de GitHub (`brianmojena/Jack`) al abrirse y cada 6 horas. Si hay una versión más nueva que la instalada, lo avisa en la barra de estado; desde ahí se leen las notas, se descarga el zip a Descargas o se omite esa versión. Ajustes > General permite desactivar la comprobación o buscar al momento. El modo Light nunca comprueba. Jack no instala la actualización por su cuenta: de momento se sustituye `Jack.app` a mano.
+En modo Normal, Jack consulta las releases de GitHub (`brianmojena/Jack`) al abrirse y cada 6 horas. Si hay una versión más nueva que la instalada, lo avisa en la barra de estado; desde ahí se leen las notas, se instala o se omite esa versión. Ajustes > General permite desactivar la comprobación o buscar al momento. El modo Light nunca comprueba.
 
-Para publicar una versión: sube `CFBundleShortVersionString` y `CFBundleVersion` en `Resources/Info.plist`, haz commit y push, y ejecuta `scripts/release.sh --publish`. Sin `--publish` solo genera `build/release/Jack-<versión>.zip`. La app lleva firma ad hoc, así que un zip descargado con el navegador pide clic derecho > Abrir la primera vez.
+**Instalar y reiniciar** descarga el zip, comprueba el tamaño, la firma, el identificador y la versión, y lo descomprime en `~/Library/Application Support/Jack/Updates`. Después Jack se cierra y un script auxiliar (`replace-app.sh`, ya fuera de Jack) espera a que termine, sustituye el contenido de `Jack.app` conservando la carpeta (el Dock no pierde el icono) y abre la nueva versión. La versión anterior queda en `Updates/previous` y, si la sustitución falla, se restaura sola. El registro está en `Updates/update.log`. Si hay agentes trabajando, el aviso lo dice antes de instalar: se detienen al reiniciar. Solo se reemplaza una app que esté en `/Applications` o `~/Applications` y sea escribible; una compilación de `build/` solo ofrece descargar el zip a Descargas. Jack no instala nada sin que lo pidas.
+
+Para publicar una versión: sube `CFBundleShortVersionString` y `CFBundleVersion` en `Resources/Info.plist`, haz commit y push, y ejecuta `scripts/release.sh --publish`. Sin `--publish` solo genera `build/release/Jack-<versión>.zip`. La app lleva firma ad hoc, así que un zip descargado con el navegador pide clic derecho > Abrir la primera vez; la instalación desde Jack no tiene ese problema porque la descarga no lleva cuarentena.
 
 ## Uso
 

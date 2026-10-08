@@ -60,7 +60,7 @@ struct StatusBar: View, Equatable {
 
             Spacer(minLength: 8)
 
-            UpdateStatusItem(checker: updates)
+            UpdateStatusItem(checker: updates, activeAgents: activeCount)
             ServerStatusItem(monitor: servers, title: conversationTitle)
             ProgressStatusItem(monitor: progress, title: conversationTitle, open: openConversation)
             MemoryLabel()

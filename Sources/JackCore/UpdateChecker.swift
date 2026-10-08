@@ -37,18 +37,20 @@ public struct AppRelease: Equatable, Sendable {
     /// The `.zip` attached to the release, if there is one.
     public let downloadURL: URL?
     public let downloadName: String?
+    public let downloadSize: Int?
 
-    public init(version: AppVersion, notes: String, pageURL: URL, downloadURL: URL?, downloadName: String?) {
+    public init(version: AppVersion, notes: String, pageURL: URL, downloadURL: URL?, downloadName: String?, downloadSize: Int? = nil) {
         self.version = version
         self.notes = notes
         self.pageURL = pageURL
         self.downloadURL = downloadURL
         self.downloadName = downloadName
+        self.downloadSize = downloadSize
     }
 
     /// Reads the JSON of `GET /repos/{owner}/{repo}/releases/latest`. Drafts and pre-releases are ignored.
     public static func parse(_ data: Data) -> AppRelease? {
-        struct Asset: Decodable { let name: String; let browser_download_url: String }
+        struct Asset: Decodable { let name: String; let browser_download_url: String; let size: Int? }
         struct Payload: Decodable {
             let tag_name: String
             let html_url: String
@@ -62,7 +64,7 @@ public struct AppRelease: Equatable, Sendable {
               let version = AppVersion(payload.tag_name), let page = URL(string: payload.html_url) else { return nil }
         let zip = payload.assets?.first { $0.name.lowercased().hasSuffix(".zip") }
         return AppRelease(version: version, notes: (payload.body ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
-                          pageURL: page, downloadURL: zip.flatMap { URL(string: $0.browser_download_url) }, downloadName: zip?.name)
+                          pageURL: page, downloadURL: zip.flatMap { URL(string: $0.browser_download_url) }, downloadName: zip?.name, downloadSize: zip?.size)
     }
 }
 
@@ -74,6 +76,8 @@ public struct AppRelease: Equatable, Sendable {
         case upToDate
         case failed(String)
         case downloading
+        /// The update is staged and the helper waits for Jack to quit.
+        case installing
     }
 
     public typealias Fetch = @Sendable (URL) async throws -> (Data, HTTPURLResponse)
@@ -129,7 +133,7 @@ public struct AppRelease: Equatable, Sendable {
 
     /// `manual` also reports "up to date" and errors, and offers a release the user had skipped.
     public func check(manual: Bool) async {
-        guard status != .checking, status != .downloading else { return }
+        guard status != .checking, status != .downloading, status != .installing else { return }
         let previous = status
         status = .checking
         do {
@@ -176,6 +180,43 @@ public struct AppRelease: Equatable, Sendable {
         try? FileManager.default.removeItem(at: destination)
         try FileManager.default.moveItem(at: temporary, to: destination)
         return destination
+    }
+
+    /// Whether Jack can replace itself here, or only download the zip.
+    public var canInstallInPlace: Bool { AppInstaller.replaceableLocation() != nil }
+
+    /// Downloads and checks the release, then starts the helper that swaps the app after Jack quits. The caller quits Jack
+    /// right after this returns; a failure leaves the installed app untouched.
+    public func install() async throws {
+        guard let release = available, let source = release.downloadURL else {
+            throw UpdateError("La versión no incluye un archivo .zip para descargar.")
+        }
+        guard let destination = AppInstaller.replaceableLocation() else {
+            throw UpdateError("Jack no está en una carpeta de Aplicaciones donde pueda reemplazarse: descarga el zip.")
+        }
+        guard status != .downloading, status != .installing else { return }
+        status = .downloading
+        do {
+            let (temporary, response) = try await URLSession.shared.download(from: source)
+            defer { try? FileManager.default.removeItem(at: temporary) }
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw UpdateError("No se pudo descargar la actualización.") }
+            if let size = release.downloadSize,
+               (try? temporary.resourceValues(forKeys: [.fileSizeKey]).fileSize) != size {
+                throw UpdateError("La descarga está incompleta: inténtalo de nuevo.")
+            }
+            status = .installing
+            let version = release.version
+            let identifier = Bundle.main.bundleIdentifier ?? "dev.jack.desktop"
+            let pid = ProcessInfo.processInfo.processIdentifier
+            try await Task.detached {
+                let staged = try AppInstaller.stage(zip: temporary, expected: version, bundleIdentifier: identifier,
+                                                    in: AppInstaller.updatesDirectory.appendingPathComponent(version.description, isDirectory: true))
+                try AppInstaller.startReplacement(staged: staged, destination: destination, pid: pid)
+            }.value
+        } catch {
+            status = .idle
+            throw error
+        }
     }
 
     private static let liveFetch: Fetch = { url in
