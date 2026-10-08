@@ -39,4 +39,33 @@ final class SidebarFolderOrderTests: XCTestCase {
         XCTAssertNil(SidebarSections.movingProject("/Beta", before: "missing", in: order))
         XCTAssertNil(SidebarSections.movingProject("/Beta", before: "/Beta", in: order))
     }
+
+    func testDropAfterLastFolderAndBothDirections() {
+        let order = ["/Alpha", "/Beta", "/Gamma"]
+        XCTAssertEqual(SidebarSections.movingProject("/Alpha", relativeTo: "/Gamma", after: true, in: order),
+                       ["/Beta", "/Gamma", "/Alpha"])
+        XCTAssertEqual(SidebarSections.movingProject("/Gamma", relativeTo: "/Alpha", after: true, in: order),
+                       ["/Alpha", "/Gamma", "/Beta"])
+        XCTAssertEqual(SidebarSections.movingProject("/Alpha", relativeTo: "/Beta", after: true, in: order),
+                       ["/Beta", "/Alpha", "/Gamma"])
+    }
+
+    func testAdjacentNoOpIsRejectedWithoutSavingANewOrder() {
+        let order = ["/Alpha", "/Beta", "/Gamma"]
+        XCTAssertNil(SidebarSections.movingProject("/Alpha", relativeTo: "/Beta", after: false, in: order))
+        XCTAssertNil(SidebarSections.movingProject("/Gamma", relativeTo: "/Beta", after: true, in: order))
+    }
+
+    @MainActor func testCancellingADragClearsFeedbackAndKeepsTheOriginalOrder() {
+        let order = ["/Alpha", "/Beta", "/Gamma"]
+        let state = SidebarFolderDragState()
+        state.begin("/Alpha", order: order)
+        state.show("/Gamma", after: true)
+        XCTAssertEqual(state.order, order, "hovering must not reorder any folders")
+        XCTAssertEqual(state.target, .init(path: "/Gamma", after: true))
+        state.end()
+        XCTAssertNil(state.source)
+        XCTAssertNil(state.target)
+        XCTAssertTrue(state.order.isEmpty)
+    }
 }

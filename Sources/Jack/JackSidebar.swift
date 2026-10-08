@@ -1,4 +1,6 @@
+import AppKit
 import JackCore
+import UniformTypeIdentifiers
 import SwiftUI
 
 /// Everything a sidebar row shows. Rows are `Equatable`, so streaming in one chat only redraws its own row.
@@ -82,11 +84,15 @@ struct SidebarSections {
     }
 
     static func movingProject(_ source: String, before destination: String, in projects: [String]) -> [String]? {
+        movingProject(source, relativeTo: destination, after: false, in: projects)
+    }
+
+    static func movingProject(_ source: String, relativeTo destination: String, after: Bool, in projects: [String]) -> [String]? {
         guard source != destination, projects.contains(source), projects.contains(destination) else { return nil }
         var order = projects.filter { $0 != source }
         guard let index = order.firstIndex(of: destination) else { return nil }
-        order.insert(source, at: index)
-        return order
+        order.insert(source, at: index + (after ? 1 : 0))
+        return order == projects ? nil : order
     }
 
     static func collapsed(_ value: String) -> Set<String> {
@@ -120,19 +126,31 @@ struct JackSidebar: View {
     @AppStorage("sidebarProjectsAlphabetical") private var alphabeticalProjects = false
     @AppStorage("sidebarProjectOrder") private var projectOrderValue = ""
     @Environment(\.interfaceStyle) private var style
+    // Only the reorder surfaces observe pointer changes, not the sidebar's chats.
+    @State private var folderDrag = SidebarFolderDragState()
 
     private var collapsedSpaces: Set<String> { SidebarSections.collapsed(collapsedSpacesValue) }
     private var projectOrder: [String] { projectOrderValue.split(separator: "\n").map(String.init) }
 
     private func sections(for rows: [SidebarRowModel]) -> SidebarSections {
-        SidebarSections(rows: rows, projectPaths: projectPaths, projectOrder: projectOrder, alphabetical: alphabeticalProjects)
+        SidebarSections(rows: rows, projectPaths: projectPaths, projectOrder: folderDrag.source == nil ? projectOrder : folderDrag.order, alphabetical: alphabeticalProjects)
     }
 
-    private func moveProject(_ source: String, before destination: String) -> Bool {
-        guard !alphabeticalProjects,
-              let order = SidebarSections.movingProject(source, before: destination, in: sections(for: rows).projects.map(\.path)) else { return false }
-        projectOrderValue = order.joined(separator: "\n")
+    private var canReorderProjects: Bool { !alphabeticalProjects && query.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    private func moveProject(_ source: String, relativeTo destination: String, after: Bool) -> Bool {
+        guard canReorderProjects,
+              let order = SidebarSections.movingProject(source, relativeTo: destination, after: after,
+                                                       in: sections(for: rows).projects.map(\.path)) else { return false }
+        withAnimation(.easeInOut(duration: 0.18)) { projectOrderValue = order.joined(separator: "\n") }
         return true
+    }
+
+    private func dragHandle(for project: SidebarSections.Space) -> some View {
+        SidebarFolderDragHandle(path: project.path, name: project.name, state: folderDrag,
+                                order: sections(for: rows).projects.map(\.path))
+            .frame(width: 16, height: 24)
+            .help("Arrastra para ordenar \(project.name)")
     }
 
     private func toggleSpace(_ path: String) {
@@ -150,7 +168,10 @@ struct JackSidebar: View {
     }
 
     var body: some View {
-        if style == .ice { nativeBody } else { basicBody }
+        Group { if style == .ice { nativeBody } else { basicBody } }
+            .onChange(of: alphabeticalProjects) { _, _ in folderDrag.end() }
+            .onChange(of: query) { _, _ in folderDrag.end() }
+            .onDisappear { folderDrag.end() }
     }
 
     private var basicBody: some View {
@@ -214,13 +235,13 @@ struct JackSidebar: View {
                                                 set: { _ in toggleSpace(project.path) })) {
                         ForEach(project.rows) { row in nativeRow(row, showProject: false, now: context.date) }
                     } header: {
-                        NativeProjectHeader(name: project.name, path: project.path, rows: project.rows,
-                                            onNew: { onNewConversation(project.path) })
-                            .draggable(project.path)
-                            .dropDestination(for: String.self) { items, _ in
-                                guard let source = items.first else { return false }
-                                return moveProject(source, before: project.path)
-                            }
+                        HStack(spacing: 4) {
+                            if canReorderProjects { dragHandle(for: project) }
+                            NativeProjectHeader(name: project.name, path: project.path, rows: project.rows,
+                                                onNew: { onNewConversation(project.path) })
+                        }
+                        .modifier(SidebarFolderDropSurface(path: project.path, state: folderDrag,
+                                                           enabled: canReorderProjects, move: moveProject))
                     }
                 }
             }
@@ -334,16 +355,18 @@ struct JackSidebar: View {
                 ForEach(sections.projects, id: \.path) { project in
                     // While searching every space stays open so no match is hidden.
                     let expanded = !collapsedSpaces.contains(project.path) || !query.isEmpty
-                    ProjectRow(name: project.name, path: project.path, rows: project.rows, expanded: expanded,
-                               onToggle: { toggleSpace(project.path) }, onNew: { onNewConversation(project.path) })
-                        .draggable(project.path)
-                        .dropDestination(for: String.self) { items, _ in
-                            guard let source = items.first else { return false }
-                            return moveProject(source, before: project.path)
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack(spacing: 0) {
+                            if canReorderProjects { dragHandle(for: project) }
+                            ProjectRow(name: project.name, path: project.path, rows: project.rows, expanded: expanded,
+                                       onToggle: { toggleSpace(project.path) }, onNew: { onNewConversation(project.path) })
                         }
-                    if expanded {
-                        ForEach(project.rows) { row in rowView(row, showProject: false, now: now) }
+                        if expanded {
+                            ForEach(project.rows) { row in rowView(row, showProject: false, now: now) }
+                        }
                     }
+                    .modifier(SidebarFolderDropSurface(path: project.path, state: folderDrag,
+                                                       enabled: canReorderProjects, move: moveProject))
                 }
             }
             .padding(.horizontal, 8).padding(.bottom, 10)
@@ -382,7 +405,7 @@ struct JackSidebar: View {
         }
         .menuStyle(.borderlessButton)
         .foregroundStyle(JackPalette.muted)
-        .help(alphabeticalProjects ? "Orden alfabético activado" : "Orden manual; arrastra las carpetas para reordenarlas")
+        .help(alphabeticalProjects ? "Orden alfabético activado" : "Orden manual; usa el tirador para colocar cada carpeta antes o después de otra")
     }
 
     private func rowView(_ row: SidebarRowModel, showProject: Bool, now: Date) -> some View {
@@ -452,6 +475,174 @@ struct JackSidebar: View {
             Spacer()
         }
         .padding(.horizontal, 8).frame(height: 34)
+    }
+}
+
+/// One native drag session. Its end callback clears both successful and cancelled drags.
+@MainActor final class SidebarFolderDragState: ObservableObject {
+    static let type = UTType(importedAs: "dev.jack.sidebar-project", conformingTo: .data)
+    struct Target: Equatable {
+        let path: String
+        let after: Bool
+    }
+    @Published private(set) var source: String?
+    @Published private(set) var target: Target?
+    private(set) var order: [String] = []
+
+    func begin(_ path: String, order: [String]) {
+        self.order = order
+        target = nil
+        source = path
+    }
+    func show(_ path: String, after: Bool) {
+        let next = Target(path: path, after: after)
+        if target != next { target = next }
+    }
+    func clear(_ path: String) { if target?.path == path { target = nil } }
+    func end() {
+        target = nil
+        source = nil
+        order = []
+    }
+}
+
+/// Insertion feedback spans the whole folder, including its expanded chats in the compact sidebar.
+private struct SidebarFolderDropSurface: ViewModifier {
+    let path: String
+    @ObservedObject var state: SidebarFolderDragState
+    let enabled: Bool
+    let move: (String, String, Bool) -> Bool
+    @State private var height: CGFloat = 28
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if enabled {
+            content
+                .opacity(state.source == path ? 0.4 : 1)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
+                .onDrop(of: [SidebarFolderDragState.type],
+                        delegate: SidebarFolderDropDelegate(path: path, height: height, state: state, move: move))
+                .overlay(alignment: state.target?.after == true ? .bottom : .top) {
+                    if state.target?.path == path {
+                        HStack(spacing: 0) {
+                            Circle().fill(JackPalette.accent).frame(width: 5, height: 5)
+                            Rectangle().fill(JackPalette.accent).frame(height: 2)
+                        }
+                        .padding(.horizontal, 3)
+                        .allowsHitTesting(false)
+                    }
+                }
+        } else { content }
+    }
+}
+
+private struct SidebarFolderDropDelegate: DropDelegate {
+    let path: String
+    let height: CGFloat
+    let state: SidebarFolderDragState
+    let move: (String, String, Bool) -> Bool
+
+    private func accepts(_ info: DropInfo) -> Bool {
+        guard info.hasItemsConforming(to: [SidebarFolderDragState.type]), let source = state.source else { return false }
+        return SidebarSections.movingProject(source, relativeTo: path, after: info.location.y >= height / 2, in: state.order) != nil
+    }
+    private func update(_ info: DropInfo) {
+        if accepts(info) { state.show(path, after: info.location.y >= height / 2) }
+        else { state.clear(path) }
+    }
+    func validateDrop(info: DropInfo) -> Bool {
+        guard info.hasItemsConforming(to: [SidebarFolderDragState.type]), let source = state.source else { return false }
+        // Validate the folder, not a particular half: an adjacent no-op above must still let the pointer move below.
+        return source != path && state.order.contains(source) && state.order.contains(path)
+    }
+    func dropEntered(info: DropInfo) { update(info) }
+    func dropExited(info: DropInfo) { state.clear(path) }
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        update(info)
+        return DropProposal(operation: accepts(info) ? .move : .forbidden)
+    }
+    func performDrop(info: DropInfo) -> Bool {
+        guard accepts(info), let source = state.source else { state.clear(path); return false }
+        let moved = move(source, path, info.location.y >= height / 2)
+        state.end()
+        return moved
+    }
+}
+
+/// A dedicated grip keeps folding a folder and starting a drag separate. AppKit provides reliable cancellation.
+private struct SidebarFolderDragHandle: NSViewRepresentable {
+    let path: String
+    let name: String
+    let state: SidebarFolderDragState
+    let order: [String]
+
+    func makeNSView(context: Context) -> Grip { Grip() }
+    func updateNSView(_ view: Grip, context: Context) {
+        view.path = path
+        view.name = name
+        view.begin = { state.begin(path, order: order) }
+        view.end = { state.end() }
+        view.setAccessibilityElement(true)
+        view.setAccessibilityRole(.button)
+        view.setAccessibilityLabel("Ordenar carpeta \(name)")
+    }
+
+    final class Grip: NSView, NSDraggingSource {
+        var path = ""
+        var name = ""
+        var begin: () -> Void = {}
+        var end: () -> Void = {}
+        private var mouseDownEvent: NSEvent?
+        private var dragging = false
+        override var isFlipped: Bool { true }
+
+        override func draw(_ dirtyRect: NSRect) {
+            NSColor.tertiaryLabelColor.setFill()
+            for x in [CGFloat(5), 10] {
+                for y in [-CGFloat(4), 0, 4] {
+                    NSBezierPath(ovalIn: NSRect(x: x, y: bounds.midY + y - 1, width: 2, height: 2)).fill()
+                }
+            }
+        }
+        override func resetCursorRects() { addCursorRect(bounds, cursor: .openHand) }
+        override func mouseDown(with event: NSEvent) { mouseDownEvent = event }
+        override func mouseUp(with event: NSEvent) { mouseDownEvent = nil }
+        override func mouseDragged(with event: NSEvent) {
+            guard !dragging, let down = mouseDownEvent else { return }
+            guard hypot(event.locationInWindow.x - down.locationInWindow.x,
+                        event.locationInWindow.y - down.locationInWindow.y) >= 4 else { return }
+            dragging = true
+            begin()
+            let pasteboard = NSPasteboardItem()
+            pasteboard.setString(path, forType: NSPasteboard.PasteboardType(SidebarFolderDragState.type.identifier))
+            let item = NSDraggingItem(pasteboardWriter: pasteboard)
+            let image = preview()
+            let origin = convert(down.locationInWindow, from: nil)
+            item.setDraggingFrame(NSRect(x: origin.x - 18, y: origin.y - 18, width: image.size.width, height: image.size.height), contents: image)
+            let session = beginDraggingSession(with: [item], event: down, source: self)
+            session.animatesToStartingPositionsOnCancelOrFail = true
+        }
+        func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+            context == .withinApplication ? .move : []
+        }
+        func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+            dragging = false
+            mouseDownEvent = nil
+            end()
+        }
+        func ignoreModifierKeys(for session: NSDraggingSession) -> Bool { true }
+
+        private func preview() -> NSImage {
+            let title = NSAttributedString(string: name, attributes: [.font: NSFont.systemFont(ofSize: 12, weight: .medium), .foregroundColor: NSColor.labelColor])
+            let size = NSSize(width: min(280, max(120, title.size().width + 48)), height: 36)
+            return NSImage(size: size, flipped: false) { rect in
+                let shape = NSBezierPath(roundedRect: rect.insetBy(dx: 1, dy: 1), xRadius: 8, yRadius: 8)
+                NSColor.windowBackgroundColor.setFill(); shape.fill()
+                NSColor.separatorColor.setStroke(); shape.stroke()
+                NSImage(systemSymbolName: "folder.fill", accessibilityDescription: nil)?.draw(in: NSRect(x: 10, y: 10, width: 16, height: 16))
+                title.draw(with: NSRect(x: 34, y: 9, width: size.width - 42, height: 18), options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+                return true
+            }
+        }
     }
 }
 

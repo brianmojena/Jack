@@ -15,6 +15,16 @@ public enum ExecutableResolver {
         return resolve(command, environment: childEnvironment())
     }
 
+    /// Rescans the login shell's current PATH as well as known user install locations.
+    /// Unlike `resolve`, this deliberately does not use the cached shell PATH, so it can
+    /// find an agent installed while Jack is already running.
+    public static func scan(_ command: String, override: String? = nil) -> String? {
+        var environment = ProcessInfo.processInfo.environment
+        let loginPaths = Self.loginShellPath()
+        environment = sanitizedChildEnvironment(environment, loginShellPaths: loginPaths)
+        return resolve(command, override: override, environment: environment)
+    }
+
     /// The supplied environment makes Finder-style PATHs testable without changing the user's installation.
     static func resolve(_ command: String, override: String? = nil, environment: [String: String]) -> String? {
         let fileManager = FileManager.default
@@ -37,6 +47,10 @@ public enum ExecutableResolver {
     }
 
     static func sanitizedChildEnvironment(_ source: [String: String]) -> [String: String] {
+        sanitizedChildEnvironment(source, loginShellPaths: cachedLoginShellPaths)
+    }
+
+    private static func sanitizedChildEnvironment(_ source: [String: String], loginShellPaths: [String]) -> [String: String] {
         var environment = source
         for key in environment.keys.filter({ $0.hasPrefix("HERDR_") }) {
             environment.removeValue(forKey: key)
@@ -44,15 +58,10 @@ public enum ExecutableResolver {
 
         let standardPaths = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"]
         let existing = (environment["PATH"] ?? "").split(separator: ":").map(String.init)
-        environment["PATH"] = orderedUnique(standardPaths + existing + userPaths).joined(separator: ":")
+        let installedPaths = installedUserPaths(home: FileManager.default.homeDirectoryForCurrentUser,
+                                                environment: ProcessInfo.processInfo.environment)
+        environment["PATH"] = orderedUnique(standardPaths + existing + loginShellPaths + installedPaths).joined(separator: ":")
         return environment
-    }
-
-    /// Folders where the user's own tools live. An app opened from Finder or the Dock only gets the system folders,
-    /// so CLIs installed in ~/.local/bin (Claude Code's installer), nvm, bun… would not be found without them.
-    static var userPaths: [String] {
-        cachedLoginShellPaths + installedUserPaths(home: FileManager.default.homeDirectoryForCurrentUser,
-                                                   environment: ProcessInfo.processInfo.environment)
     }
 
     // Only shell startup is cached. Filesystem paths are rediscovered when a CLI is requested,

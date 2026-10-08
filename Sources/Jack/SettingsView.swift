@@ -217,9 +217,9 @@ private struct AgentExecutablesSettings: View {
                     .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
             }
             Section {
-                ProviderExecutableRow(provider: .codex, path: $codexPath)
-                ProviderExecutableRow(provider: .claude, path: $claudePath)
-                ProviderExecutableRow(provider: .opencode, path: $opencodePath)
+                ProviderExecutableRow(provider: .codex, path: $codexPath, allowsScan: !store.lightModeEnabled)
+                ProviderExecutableRow(provider: .claude, path: $claudePath, allowsScan: !store.lightModeEnabled)
+                ProviderExecutableRow(provider: .opencode, path: $opencodePath, allowsScan: !store.lightModeEnabled)
             } header: {
                 Text("Ejecutables")
             } footer: {
@@ -250,6 +250,10 @@ private struct AgentExecutablesSettings: View {
 private struct ProviderExecutableRow: View {
     let provider: ChatProvider
     @Binding var path: String
+    let allowsScan: Bool
+    @State private var isScanning = false
+    @State private var didScan = false
+    @State private var scannedPath: String?
 
     private var resolved: String? {
         ExecutableResolver.resolve(provider.rawValue, override: path.isEmpty ? nil : path)
@@ -263,7 +267,7 @@ private struct ProviderExecutableRow: View {
                 HStack(spacing: 6) {
                     Text(provider.title).font(.system(size: 13, weight: .semibold))
                     if !path.isEmpty {
-                        Text("Personalizado").font(.system(size: 9, weight: .semibold))
+                        Text(path == scannedPath ? "Detectado" : "Personalizado").font(.system(size: 9, weight: .semibold))
                             .padding(.horizontal, 5).padding(.vertical, 1)
                             .background(JackPalette.panelStrong, in: Capsule())
                             .foregroundStyle(JackPalette.muted)
@@ -277,14 +281,26 @@ private struct ProviderExecutableRow: View {
                         .lineLimit(1).truncationMode(.middle)
                         .help(resolved)
                 } else {
-                    Label("No encontrado", systemImage: "exclamationmark.triangle.fill")
+                    Label(didScan ? "No encontrado tras escanear" : "No encontrado", systemImage: "exclamationmark.triangle.fill")
                         .font(.system(size: 11))
                         .foregroundStyle(JackPalette.amber)
                 }
             }
             Spacer()
             if !path.isEmpty {
-                Button("Restablecer") { path = "" }.buttonStyle(.borderless)
+                Button("Restablecer") { path = ""; scannedPath = nil; didScan = false }.buttonStyle(.borderless)
+            }
+            if allowsScan {
+                Button(action: scan) {
+                    if isScanning {
+                        ProgressView().controlSize(.small).frame(width: 58)
+                    } else {
+                        Label("Escanear", systemImage: "magnifyingglass")
+                    }
+                }
+                .buttonStyle(.borderless)
+                .disabled(isScanning)
+                .help("Buscar de nuevo en el PATH del shell y en las rutas locales habituales")
             }
             Button("Elegir…", action: choose)
         }
@@ -299,6 +315,25 @@ private struct ProviderExecutableRow: View {
         panel.canChooseFiles = true
         guard panel.runModal() == .OK, let url = panel.url else { return }
         path = url.path
+        scannedPath = nil
+        didScan = false
+    }
+
+    private func scan() {
+        guard !isScanning else { return }
+        isScanning = true
+        didScan = false
+        let command = provider.rawValue
+        let currentPath = path.isEmpty ? nil : path
+        Task {
+            let result = await Task.detached(priority: .userInitiated) {
+                ExecutableResolver.scan(command, override: currentPath)
+            }.value
+            didScan = true
+            scannedPath = result
+            if let result { path = result }
+            isScanning = false
+        }
     }
 }
 
