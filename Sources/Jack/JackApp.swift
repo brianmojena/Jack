@@ -9,6 +9,7 @@ struct JackApp: App {
     @AppStorage("lightModeEnabled") private var lightMode = false
     @NSApplicationDelegateAdaptor(JackAppDelegate.self) private var appDelegate
     @StateObject private var batterySaver = BatterySaver()
+    @StateObject private var updateChecker = UpdateChecker()
 
     var body: some Scene {
         Window("Jack", id: "main") {
@@ -16,7 +17,7 @@ struct JackApp: App {
                 if lightMode {
                     LightWindowView(store: store, memory: appDelegate.memory)
                 } else {
-                    MainWindowView(store: store, workspace: appDelegate.workspace, memory: appDelegate.memory, batterySaver: batterySaver)
+                    MainWindowView(store: store, workspace: appDelegate.workspace, memory: appDelegate.memory, batterySaver: batterySaver, updateChecker: updateChecker)
                 }
             }
                 .onAppear {
@@ -29,7 +30,9 @@ struct JackApp: App {
                     store.applyRemote(enabled: UserDefaults.standard.bool(forKey: "jackRemoteEnabled"))
                 }
                 .task(id: lightMode) {
-                    guard !lightMode else { return }
+                    // Light never looks for updates; Normal checks at launch and every few hours.
+                    guard !lightMode else { updateChecker.stop(); return }
+                    updateChecker.start()
                     await store.refreshUsage()
                     // Codex's quota only changes when asked for; Claude Code reports its own as it works.
                     while !Task.isCancelled {
@@ -44,7 +47,7 @@ struct JackApp: App {
         .commands { JackCommands() }
 
         Settings {
-            SettingsView(store: store)
+            SettingsView(store: store, updateChecker: updateChecker)
         }
 
         MenuBarExtra(isInserted: Binding(get: { batterySaver.isOn }, set: { _ in })) {

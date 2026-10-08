@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		02B83CB51FECD80B94438A2F /* ChatArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = 094C42C6DC4B76FE4E66E40D /* ChatArchive.swift */; };
+		02FB26A412E092684DB37B1A /* UpdateChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = F92F2637817F350152A1A81C /* UpdateChecker.swift */; };
 		051E30A12B62E96A652522D3 /* FileExplorer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 138D59F70F9CA07105FD1933 /* FileExplorer.swift */; };
 		0BD576E2B4A206561BD3BED4 /* MainWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7BD885E59F4C6849E846404 /* MainWindowView.swift */; };
 		0D007B95A841A3699ECD9CEE /* JackRemoteServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E6A931D3216E15958A00AFD /* JackRemoteServer.swift */; };
@@ -28,6 +29,7 @@
 		28AC8F651C192396167D8317 /* AttachmentViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8AC5CBAB71E44192E8AF824 /* AttachmentViews.swift */; };
 		2A23B1440EE00D3C9D2CD650 /* ChatImages.swift in Sources */ = {isa = PBXBuildFile; fileRef = C77FC7E95D4EE8768DC19D3F /* ChatImages.swift */; };
 		2A74F5CBFD0102E18EA266C5 /* JupyterKernel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52312515048B37AD7AAEE21C /* JupyterKernel.swift */; };
+		2B63503F337D59229C435107 /* FlowDiagram.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23A3C12F03AEFEE7243BF5C8 /* FlowDiagram.swift */; };
 		2CD3AE84E731F84635B040B6 /* NotebookDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CCF40FF45B214513A23886B /* NotebookDocument.swift */; };
 		2F603788E2314A82B075A85A /* ServerViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1ABE22C8EB6AC06EEB29920D /* ServerViews.swift */; };
 		31A450B8426DD2E2BEF42A41 /* SSHTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD2509598C4FC1C9E886108E /* SSHTransport.swift */; };
@@ -59,6 +61,7 @@
 		8D901B967A33198662F4A94B /* ChatMessageRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504E39FB7DA22A1B9933C4A5 /* ChatMessageRow.swift */; };
 		945101B1264E34154DC79876 /* WorkspacePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6164E34644769C64B3E867B1 /* WorkspacePanel.swift */; };
 		96AB78C25512D6E21C9AA45B /* ChatStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55789284D46B10B50C316C86 /* ChatStore.swift */; };
+		978EF068AE97ED7910AE84DB /* UpdateViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1E7A7878DA866A5D263950D /* UpdateViews.swift */; };
 		987806B9522EFBAD726C800D /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35E06A7FE63EA77BDC8FA29C /* main.swift */; };
 		9E0D42BCAC6096551B207E07 /* Git.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD49B26FBE95D7FD23912D74 /* Git.swift */; };
 		9E32EAA13FF894FCB4AAB92D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2E1B2F8CCC4DBA9277E4269 /* SettingsView.swift */; };
@@ -165,6 +168,7 @@
 		1ABE22C8EB6AC06EEB29920D /* ServerViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerViews.swift; sourceTree = "<group>"; };
 		1FCA7EE32BDFA05868D21D74 /* ChatAside.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatAside.swift; sourceTree = "<group>"; };
 		21FADA6FCE0D89345442C744 /* SSHKeySetup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHKeySetup.swift; sourceTree = "<group>"; };
+		23A3C12F03AEFEE7243BF5C8 /* FlowDiagram.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowDiagram.swift; sourceTree = "<group>"; };
 		2C9731344B7463E74671F52C /* StellarCode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StellarCode.swift; sourceTree = "<group>"; };
 		32B0BA461A610CE350B86967 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		35E06A7FE63EA77BDC8FA29C /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
@@ -214,6 +218,7 @@
 		A669F4C23030DFB614FB88C4 /* JackCore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = JackCore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		A8AC5CBAB71E44192E8AF824 /* AttachmentViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentViews.swift; sourceTree = "<group>"; };
 		AF1118CA07727753620BBFEB /* ProgressMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressMonitor.swift; sourceTree = "<group>"; };
+		B1E7A7878DA866A5D263950D /* UpdateViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateViews.swift; sourceTree = "<group>"; };
 		B332971E94CCDE4220748943 /* RemoteAgentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteAgentView.swift; sourceTree = "<group>"; };
 		BAA06A062E9665524A768902 /* ChatModelChoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModelChoice.swift; sourceTree = "<group>"; };
 		BB76527AA8274E1DC203B419 /* ProviderUsageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderUsageView.swift; sourceTree = "<group>"; };
@@ -242,6 +247,7 @@
 		EEB5D3C1C311E732214D3E5F /* ImagePlaygroundViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePlaygroundViews.swift; sourceTree = "<group>"; };
 		F40A187CE25E794DFACFD965 /* LightTranscript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LightTranscript.swift; sourceTree = "<group>"; };
 		F7BD885E59F4C6849E846404 /* MainWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowView.swift; sourceTree = "<group>"; };
+		F92F2637817F350152A1A81C /* UpdateChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateChecker.swift; sourceTree = "<group>"; };
 		FB9EA786E5FECB86077B5F5E /* Jack.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Jack.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -294,6 +300,7 @@
 				0D0A660EF197200211C217B4 /* ChatUsage.swift */,
 				CA9AEFCAF5C3EB12827473A9 /* ClaudeSessions.swift */,
 				8A45A93DAF44DBBC83A60C50 /* ExecutableResolver.swift */,
+				23A3C12F03AEFEE7243BF5C8 /* FlowDiagram.swift */,
 				BD49B26FBE95D7FD23912D74 /* Git.swift */,
 				3A74557C47C15953992E8937 /* JackLog.swift */,
 				CCABA0283CE71A5F4ED877AC /* JackRemoteProtocol.swift */,
@@ -319,6 +326,7 @@
 				DD2509598C4FC1C9E886108E /* SSHTransport.swift */,
 				2C9731344B7463E74671F52C /* StellarCode.swift */,
 				09291DE01EDF91BE9972B424 /* UnixSocketTransport.swift */,
+				F92F2637817F350152A1A81C /* UpdateChecker.swift */,
 			);
 			path = JackCore;
 			sourceTree = "<group>";
@@ -404,6 +412,7 @@
 				A3A3D7246F7BBDA7A8018807 /* SimulatorPanel.swift */,
 				50C1361476010EC1B422C026 /* StartView.swift */,
 				A093DD8DC6081C7E5DB0FA3D /* StatusBar.swift */,
+				B1E7A7878DA866A5D263950D /* UpdateViews.swift */,
 				3DCC822661DED49C89F2189E /* WaitingMessagesView.swift */,
 				49EB006FB5D21FFC9B93D8CF /* WindowChrome.swift */,
 				6164E34644769C64B3E867B1 /* WorkspacePanel.swift */,
@@ -585,6 +594,7 @@
 				6A89D2DA42A687D07F5F2C3F /* SimulatorPanel.swift in Sources */,
 				D96D2234A324FE3A3E06BAD7 /* StartView.swift in Sources */,
 				19F535BFB4481EB3F8D01D87 /* StatusBar.swift in Sources */,
+				978EF068AE97ED7910AE84DB /* UpdateViews.swift in Sources */,
 				AF626BAEB5B26D0504A10C56 /* WaitingMessagesView.swift in Sources */,
 				7441A1CC448183A8E8566D6D /* WindowChrome.swift in Sources */,
 				945101B1264E34154DC79876 /* WorkspacePanel.swift in Sources */,
@@ -610,6 +620,7 @@
 				1E4B9916484367A33AC3D959 /* ChatUsage.swift in Sources */,
 				56C38ADB49FAC17203F73ED4 /* ClaudeSessions.swift in Sources */,
 				6EB861C0B842D3CECBD7F800 /* ExecutableResolver.swift in Sources */,
+				2B63503F337D59229C435107 /* FlowDiagram.swift in Sources */,
 				9E0D42BCAC6096551B207E07 /* Git.swift in Sources */,
 				CE4A748AA81B0389D7907972 /* JackLog.swift in Sources */,
 				DC0F7DC79D21E0C22DDD82F0 /* JackRemoteProtocol.swift in Sources */,
@@ -635,6 +646,7 @@
 				C0A2D15690CE9014A9C2E443 /* Simulators.swift in Sources */,
 				F68F4CEAD8E711BE50639E5C /* StellarCode.swift in Sources */,
 				E60ACFDAC8A34BDB557D96DC /* UnixSocketTransport.swift in Sources */,
+				02FB26A412E092684DB37B1A /* UpdateChecker.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

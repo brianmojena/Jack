@@ -8,6 +8,7 @@ struct MainWindowView: View {
     let workspace: WorkspaceSessions
     let memory: WindowMemory
     let batterySaver: BatterySaver
+    let updateChecker: UpdateChecker
     @Environment(\.dismissWindow) private var dismissWindow
     @State private var drafts: [UUID: String] = [:]
     @State private var historyIndices: [UUID: Int] = [:]
@@ -247,7 +248,7 @@ struct MainWindowView: View {
 
     private var statusBar: some View {
         StatusBar(usage: store.usage, refreshing: store.refreshingUsage, activeCount: store.activeCount, maxConcurrent: store.maxConcurrent,
-                  sessions: workspace, progress: store.progress, servers: store.servers, refresh: { Task { await store.refreshUsage() } }, setConcurrency: store.setConcurrency,
+                  sessions: workspace, progress: store.progress, servers: store.servers, updates: updateChecker, refresh: { Task { await store.refreshUsage() } }, setConcurrency: store.setConcurrency,
                   conversationTitle: { id in store.conversations.first { $0.id == id }?.title },
                   openConversation: store.select, enterBatterySaver: enterBatterySaver)
             .equatable()

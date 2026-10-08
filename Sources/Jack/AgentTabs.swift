@@ -238,7 +238,7 @@ struct WorkspaceToggles: View, Equatable {
             StripIconButton(symbol: "globe", active: current == .browser, help: "Navegador (⇧⌘B)") { onToggle(.browser) }
             StripIconButton(symbol: "iphone", active: current == .simulator, help: "Simulador de iOS (⇧⌘I)") { onToggle(.simulator) }
             StripIconButton(symbol: "arrow.triangle.branch", active: current == .git, help: "Git (⇧⌘G)") { onToggle(.git) }
-            StripIconButton(symbol: "flowchart", active: current == .flow, help: "Diagrama del plan") { onToggle(.flow) }
+            StripIconButton(symbol: "flowchart", active: current == .flow, help: "Diagrama de flujo") { onToggle(.flow) }
             StripIconButton(symbol: "sidebar.right", active: explorerVisible, help: "Archivos del proyecto (⇧⌘E)", action: onToggleExplorer)
         }
         .disabled(conversationID == nil)
@@ -281,7 +281,7 @@ struct WorkspaceToolbarButtons: View {
             toggle("Navegador", "globe", on: current == .browser, help: "Navegador (⇧⌘B)") { onToggle(.browser) }
             toggle("Simulador", "iphone", on: current == .simulator, help: "Simulador de iOS (⇧⌘I)") { onToggle(.simulator) }
             toggle("Git", "arrow.triangle.branch", on: current == .git, help: "Git (⇧⌘G)") { onToggle(.git) }
-            toggle("Flujo", "flowchart", on: current == .flow, help: "Diagrama del plan") { onToggle(.flow) }
+            toggle("Flujo", "flowchart", on: current == .flow, help: "Diagrama de flujo") { onToggle(.flow) }
             toggle("Archivos", "sidebar.right", on: explorerVisible, help: "Archivos del proyecto (⇧⌘E)", action: onToggleExplorer)
         }
         .disabled(conversationID == nil)

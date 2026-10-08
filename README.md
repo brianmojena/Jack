@@ -4,7 +4,7 @@ Chat nativo y compacto para gestionar varios agentes de desarrollo en macOS. Int
 
 ## Versionado
 
-La versión actual es **0.3.29**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
+La versión actual es **0.3.35**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
 
 ## Construir
 
@@ -20,6 +20,12 @@ La aplicación queda en `build/Build/Products/Release/Jack.app`. Es una compilac
 El icono de la aplicación está en `Resources/AppIcon.icon`, en el formato por capas de Icon Composer. Conserva el logo original de Jack, con los brazos traseros, el núcleo frontal y el nodo naranja en capas SVG independientes. Xcode compila el icono Liquid Glass y genera también el icono compatible con versiones anteriores de macOS. `Resources/Logo/jack-icon.svg` conserva el diseño original como referencia.
 
 Para reinstalar la compilación, usa `python3 scripts/install-app.py` con acceso a Aplicaciones. El instalador conserva la carpeta `/Applications/Jack.app` y sustituye únicamente su contenido, guarda la copia anterior, comprueba la firma y todos los archivos, y restaura la copia anterior si falla la sustitución. Actualiza únicamente el acceso de Jack que ya exista en el Dock y refresca el Dock. No abre ni reinicia Jack. Las pruebas del instalador se ejecutan con `python3 scripts/test_install_app.py`, después de compilar.
+
+## Actualizaciones
+
+En modo Normal, Jack consulta las releases de GitHub (`brianmojena/Jack`) al abrirse y cada 6 horas. Si hay una versión más nueva que la instalada, lo avisa en la barra de estado; desde ahí se leen las notas, se descarga el zip a Descargas o se omite esa versión. Ajustes > General permite desactivar la comprobación o buscar al momento. El modo Light nunca comprueba. Jack no instala la actualización por su cuenta: de momento se sustituye `Jack.app` a mano.
+
+Para publicar una versión: sube `CFBundleShortVersionString` y `CFBundleVersion` en `Resources/Info.plist`, haz commit y push, y ejecuta `scripts/release.sh --publish`. Sin `--publish` solo genera `build/release/Jack-<versión>.zip`. La app lleva firma ad hoc, así que un zip descargado con el navegador pide clic derecho > Abrir la primera vez.
 
 ## Uso
 
@@ -49,6 +55,8 @@ Claude Code funciona en Jack como en su terminal:
 Escribe `/` en el cuadro de mensaje para ver los comandos del agente: los integrados, como `/compact`, y sus skills o comandos personalizados. Las flechas eligen, Tab o Enter completan y Esc cierra la lista. Claude Code ejecuta sus propios comandos; en Codex, `/compact` y `/review` usan sus funciones nativas y las skills se invocan por nombre; en OpenCode se ejecutan sus comandos, y `/compact` resume la sesión. La lista se lee del proveedor la primera vez que escribes `/` en cada proyecto, sin gastar tokens.
 
 En Stellar Code, `/compact` y `/compact N` (solo modo Normal) usan la compactación real de Jack, con un objetivo predeterminado de aproximadamente 2000 tokens; `!compact N` sigue disponible. Para análisis y revisiones, el prompt pide hallazgos, consecuencias, mejoras y evidencia por archivo y línea, y limita las afirmaciones sobre verificaciones a las que realmente se ejecutaron. Lee el `AGENTS.md` de raíz hasta 12 KiB; al leer dentro de subdirectorios entrega instrucciones anidadas con un presupuesto total de 4 KiB y bloquea ediciones si la carga está incompleta o desactualizada. El listado inicial es de una carpeta y hasta 80 entradas; `recursive=true` solicita una exploración recursiva acotada. La estimación de contexto usa bytes UTF-8 divididos por cuatro, incluye instrucciones y definiciones de herramientas, y reserva margen para la respuesta; no equivale al tokenizer del modelo. Si se excede, solo pueden reducirse cuerpos de resultados de herramientas antiguos, con marcador visible; nunca se quitan mensajes de usuario/asistente ni pares de llamadas. Si aun así no cabe, conserva todo y recomienda `/compact`. Las instrucciones anidadas no se descubren automáticamente para comandos de shell arbitrarios; Stellar pide inspeccionarlas antes de ejecutar comandos que actúen en esos ámbitos, pero el cargador de instrucciones no es un sandbox de comandos. En Normal puedes vincular explícitamente un modelo de Ollama Cloud desde el daemon local autenticado con `ollama signin`; no se conecta Jack directamente a Ollama Cloud ni se guardan API keys. Ollama recibe el prompt y los archivos leídos, y el uso puede consumir cuota de tu cuenta. Cloud nunca es la selección automática: se prioriza un modelo local con herramientas. Light mantiene el prompt, el catálogo local, el listado recursivo y el comportamiento anteriores. Estas instrucciones de prompt y controles no miden ni garantizan una mejora de un modelo entrenado.
+
+La pestaña **Diagrama de flujo** permite pedir explícitamente en Normal un diagrama para cualquier pregunta, sin activar el modo Plan. Elige un modelo Ollama Cloud vinculado o usa la pregunta más reciente; Jack envía la pregunta y hasta ocho mensajes visibles recientes (máximo 6 KiB) a través del daemon Ollama local autenticado. No lee archivos ni cambia el modelo, historial o sesión del agente. El resultado se valida como grafo y se dibuja en la interfaz nativa; un plan existente sigue apareciendo como alternativa cuando aún no se genera un diagrama. Light conserva el visor anterior de planes. La generación usa una reparación JSON como máximo y no garantiza que el modelo produzca un resultado válido.
 
 ### Claude Code remoto por SSH
 

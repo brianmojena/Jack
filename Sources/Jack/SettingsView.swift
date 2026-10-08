@@ -4,10 +4,11 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var store: ChatStore
+    let updateChecker: UpdateChecker
 
     var body: some View {
         TabView {
-            GeneralSettings(store: store)
+            GeneralSettings(store: store, updateChecker: updateChecker)
                 .tabItem { Label("General", systemImage: "gearshape") }
             AgentExecutablesSettings(store: store)
                 .tabItem { Label("Agentes", systemImage: "terminal") }
@@ -20,6 +21,7 @@ struct SettingsView: View {
 
 private struct GeneralSettings: View {
     @ObservedObject var store: ChatStore
+    let updateChecker: UpdateChecker
     @AppStorage("collapsedSpaces") private var collapsedSpaces = ""
     @AppStorage("delegationEnabled") private var delegationEnabled = true
     @AppStorage("imageGenerationEnabled") private var imageGenerationEnabled = true
@@ -65,6 +67,7 @@ private struct GeneralSettings: View {
                     .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
             }
             if !store.lightModeEnabled { JackRemoteSettings(store: store) }
+            if !store.lightModeEnabled { UpdateSettings(checker: updateChecker) }
             Section {
                 Toggle("Modo ligero", isOn: $simulatorLightMode)
                 Picker("Apagar si no lo miras durante", selection: $simulatorIdleMinutes) {

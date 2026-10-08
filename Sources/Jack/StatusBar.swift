@@ -12,6 +12,7 @@ struct StatusBar: View, Equatable {
     @ObservedObject var sessions: WorkspaceSessions
     let progress: ProgressMonitor
     let servers: ServerMonitor
+    let updates: UpdateChecker
     let refresh: () -> Void
     let setConcurrency: (Int) -> Void
     let conversationTitle: (UUID) -> String?
@@ -59,6 +60,7 @@ struct StatusBar: View, Equatable {
 
             Spacer(minLength: 8)
 
+            UpdateStatusItem(checker: updates)
             ServerStatusItem(monitor: servers, title: conversationTitle)
             ProgressStatusItem(monitor: progress, title: conversationTitle, open: openConversation)
             MemoryLabel()
