@@ -174,29 +174,60 @@ private struct MemoryLabel: View {
 }
 
 private struct ProcessCPUUsageLabel: View {
-    @State private var percent: Double?
+    @State private var jackPercent: Double?
+    @State private var systemPercent: Double?
 
     var body: some View {
-        Group {
-            if let percent {
-                Label("\(Int(percent.rounded())) %", systemImage: "cpu")
-            } else {
-                Label("—", systemImage: "cpu")
+        Label("Jack \(formatted(jackPercent)) · Sistema \(formatted(systemPercent))", systemImage: "cpu")
+            .help("CPU como porcentaje de la capacidad total del equipo. Jack mide solo esta app; Sistema incluye todos los procesos, también los agentes y servidores. Se actualiza cada 2 segundos.")
+            .task {
+                // Both samplers use actual readings; view redraws never reset their baselines.
+                var jack = ProcessCPUUsageSampler()
+                var system = SystemCPUUsageSampler()
+                jackPercent = jack.sample().map { $0 / Double(max(1, ProcessInfo.processInfo.processorCount)) }
+                systemPercent = system.sample()
+                while !Task.isCancelled {
+                    do { try await Task.sleep(for: .seconds(2)) }
+                    catch { return }
+                    guard !Task.isCancelled else { return }
+                    jackPercent = jack.sample().map { $0 / Double(max(1, ProcessInfo.processInfo.processorCount)) }
+                    systemPercent = system.sample()
+                }
+            }
+    }
+
+    private func formatted(_ value: Double?) -> String {
+        value.map { String(format: "%.1f %%", $0) } ?? "—"
+    }
+}
+
+/// Kernel counters summed over all CPUs; no subprocesses or process-list scans are needed.
+struct SystemCPUUsageSampler {
+    private var previous: [UInt32]?
+
+    mutating func sample() -> Double? {
+        var info = host_cpu_load_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<host_cpu_load_info_data_t>.size / MemoryLayout<integer_t>.size)
+        let host = mach_host_self()
+        defer { mach_port_deallocate(mach_task_self_, host) }
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                host_statistics(host, host_flavor_t(HOST_CPU_LOAD_INFO), $0, &count)
             }
         }
-        .help("CPU usada por el proceso de Jack: 100 % equivale a un núcleo ocupado; no incluye agentes ni servidores")
-        .task {
-            // The task survives body updates and stops when this label leaves the window.
-            // TimelineView dates describe a schedule, not when getrusage actually ran.
-            var sampler = ProcessCPUUsageSampler()
-            percent = sampler.sample()
-            while !Task.isCancelled {
-                do { try await Task.sleep(for: .seconds(2)) }
-                catch { return }
-                guard !Task.isCancelled else { return }
-                percent = sampler.sample()
-            }
-        }
+        guard result == KERN_SUCCESS else { previous = nil; return nil }
+        return sample(ticks: [info.cpu_ticks.0, info.cpu_ticks.1, info.cpu_ticks.2, info.cpu_ticks.3])
+    }
+
+    mutating func sample(ticks: [UInt32]) -> Double? {
+        guard ticks.count == Int(CPU_STATE_MAX) else { previous = nil; return nil }
+        guard let previous else { self.previous = ticks; return nil }
+        self.previous = ticks
+        // The kernel exposes 32-bit cumulative counters, which can wrap on long-running Macs.
+        let deltas = zip(ticks, previous).map { Double($0 &- $1) }
+        let total = deltas.reduce(0, +)
+        guard total > 0 else { return nil }
+        return (total - deltas[Int(CPU_STATE_IDLE)]) / total * 100
     }
 }
 

@@ -35,6 +35,8 @@ struct MainWindowView: View {
     /// The composer being typed in: the main chat's or a pane's.
     @FocusState private var focusedComposer: UUID?
     @AppStorage("collapsedSpaces") private var collapsedSpacesValue = ""
+    @AppStorage("sidebarProjectsAlphabetical") private var alphabeticalProjects = false
+    @AppStorage("sidebarProjectOrder") private var projectOrderValue = ""
     @State private var renamingConversation: ChatConversation?
     @State private var renameText = ""
     @State private var deletingConversation: ChatConversation?
@@ -1195,7 +1197,8 @@ struct MainWindowView: View {
     }
 
     private func navigationOrder(includeFolded: Bool) -> [UUID] {
-        SidebarSections(rows: sidebarRows, projectPaths: Dictionary(uniqueKeysWithValues: store.conversations.map { ($0.id, $0.projectPath) }))
+        SidebarSections(rows: sidebarRows, projectPaths: Dictionary(uniqueKeysWithValues: store.conversations.map { ($0.id, $0.projectPath) }),
+                        projectOrder: projectOrderValue.split(separator: "\n").map(String.init), alphabetical: alphabeticalProjects)
             .visibleIDs(collapsed: includeFolded ? [] : SidebarSections.collapsed(collapsedSpacesValue))
     }
 

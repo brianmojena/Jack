@@ -32,17 +32,33 @@ struct SidebarSections {
     let attention: [SidebarRowModel]
     let projects: [Space]
 
-    init(rows: [SidebarRowModel], projectPaths: [UUID: String]) {
+    init(rows: [SidebarRowModel], projectPaths: [UUID: String], projectOrder: [String] = [], alphabetical: Bool = false) {
         pinned = Array(rows.filter { $0.pinnedAt != nil }.sorted { ($0.pinnedAt ?? .distantPast) < ($1.pinnedAt ?? .distantPast) }
             .prefix(ChatStore.maxPinned))
         let pinnedIDs = Set(pinned.map(\.id))
         let rest = rows.filter { !pinnedIDs.contains($0.id) }
         attention = rest.filter(\.needsAttention)
         let grouped = Dictionary(grouping: rest.filter { !$0.needsAttention }) { projectPaths[$0.id] ?? "" }
-        projects = grouped.map { path, rows in
+        let groupedProjects = grouped.map { path, rows in
             (path: path, name: URL(fileURLWithPath: path).lastPathComponent, rows: Self.nested(rows))
         }
-        .sorted { ($0.rows.first?.updatedAt ?? .distantPast) > ($1.rows.first?.updatedAt ?? .distantPast) }
+        if alphabetical {
+            projects = groupedProjects.sorted {
+                let comparison = $0.name.localizedStandardCompare($1.name)
+                return comparison == .orderedSame ? $0.path < $1.path : comparison == .orderedAscending
+            }
+        } else {
+            let rank = projectOrder.enumerated().reduce(into: [String: Int]()) { ranks, item in
+                if ranks[item.element] == nil { ranks[item.element] = item.offset }
+            }
+            projects = groupedProjects.sorted {
+                let left = rank[$0.path], right = rank[$1.path]
+                if let left, let right { return left < right }
+                if left != nil { return true }
+                if right != nil { return false }
+                return ($0.rows.first?.updatedAt ?? .distantPast) > ($1.rows.first?.updatedAt ?? .distantPast)
+            }
+        }
     }
 
     /// Newest first, with each agent's sub-agents right below it in creation order.
@@ -63,6 +79,14 @@ struct SidebarSections {
     /// Agents in on-screen order, skipping folded spaces.
     func visibleIDs(collapsed: Set<String>) -> [UUID] {
         pinned.map(\.id) + attention.map(\.id) + projects.filter { !collapsed.contains($0.path) }.flatMap { $0.rows.map(\.id) }
+    }
+
+    static func movingProject(_ source: String, before destination: String, in projects: [String]) -> [String]? {
+        guard source != destination, projects.contains(source), projects.contains(destination) else { return nil }
+        var order = projects.filter { $0 != source }
+        guard let index = order.firstIndex(of: destination) else { return nil }
+        order.insert(source, at: index)
+        return order
     }
 
     static func collapsed(_ value: String) -> Set<String> {
@@ -93,9 +117,23 @@ struct JackSidebar: View {
     @FocusState private var searchFocused: Bool
     /// Folded spaces, stored as newline-separated project paths.
     @AppStorage("collapsedSpaces") private var collapsedSpacesValue = ""
+    @AppStorage("sidebarProjectsAlphabetical") private var alphabeticalProjects = false
+    @AppStorage("sidebarProjectOrder") private var projectOrderValue = ""
     @Environment(\.interfaceStyle) private var style
 
     private var collapsedSpaces: Set<String> { SidebarSections.collapsed(collapsedSpacesValue) }
+    private var projectOrder: [String] { projectOrderValue.split(separator: "\n").map(String.init) }
+
+    private func sections(for rows: [SidebarRowModel]) -> SidebarSections {
+        SidebarSections(rows: rows, projectPaths: projectPaths, projectOrder: projectOrder, alphabetical: alphabeticalProjects)
+    }
+
+    private func moveProject(_ source: String, before destination: String) -> Bool {
+        guard !alphabeticalProjects,
+              let order = SidebarSections.movingProject(source, before: destination, in: sections(for: rows).projects.map(\.path)) else { return false }
+        projectOrderValue = order.joined(separator: "\n")
+        return true
+    }
 
     private func toggleSpace(_ path: String) {
         var spaces = collapsedSpaces
@@ -136,7 +174,7 @@ struct JackSidebar: View {
     /// Ice: the system's sidebar list, which macOS 26 floats as a Liquid Glass panel.
     private var nativeBody: some View {
         TimelineView(.everyMinute) { context in
-            let sections = SidebarSections(rows: filtered, projectPaths: projectPaths)
+            let sections = sections(for: filtered)
             List(selection: Binding(get: { selectedID }, set: { id in if let id { onSelect(id) } })) {
                 if !sections.pinned.isEmpty {
                     Section {
@@ -161,6 +199,15 @@ struct JackSidebar: View {
                         }
                     }
                 }
+                Section {
+                    HStack {
+                        Text("Proyectos").font(.system(size: 12, weight: .medium))
+                        Spacer()
+                        projectOrderMenu
+                    }
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                }
                 ForEach(sections.projects, id: \.path) { project in
                     // While searching every space stays open so no match is hidden.
                     Section(isExpanded: Binding(get: { !collapsedSpaces.contains(project.path) || !query.isEmpty },
@@ -169,6 +216,11 @@ struct JackSidebar: View {
                     } header: {
                         NativeProjectHeader(name: project.name, path: project.path, rows: project.rows,
                                             onNew: { onNewConversation(project.path) })
+                            .draggable(project.path)
+                            .dropDestination(for: String.self) { items, _ in
+                                guard let source = items.first else { return false }
+                                return moveProject(source, before: project.path)
+                            }
                     }
                 }
             }
@@ -258,7 +310,7 @@ struct JackSidebar: View {
     }
 
     private func list(now: Date) -> some View {
-        let sections = SidebarSections(rows: filtered, projectPaths: projectPaths)
+        let sections = sections(for: filtered)
         return ScrollView {
             LazyVStack(alignment: .leading, spacing: 1) {
                 if !sections.pinned.isEmpty {
@@ -272,6 +324,7 @@ struct JackSidebar: View {
                 HStack {
                     sectionLabel("Proyectos")
                     Spacer()
+                    projectOrderMenu
                     Button { onNewConversation(nil) } label: {
                         Image(systemName: "plus").font(.system(size: 11, weight: .medium)).frame(width: 22, height: 20).contentShape(Rectangle())
                     }
@@ -283,6 +336,11 @@ struct JackSidebar: View {
                     let expanded = !collapsedSpaces.contains(project.path) || !query.isEmpty
                     ProjectRow(name: project.name, path: project.path, rows: project.rows, expanded: expanded,
                                onToggle: { toggleSpace(project.path) }, onNew: { onNewConversation(project.path) })
+                        .draggable(project.path)
+                        .dropDestination(for: String.self) { items, _ in
+                            guard let source = items.first else { return false }
+                            return moveProject(source, before: project.path)
+                        }
                     if expanded {
                         ForEach(project.rows) { row in rowView(row, showProject: false, now: now) }
                     }
@@ -311,6 +369,20 @@ struct JackSidebar: View {
             }
         }
         .padding(.horizontal, 8).padding(.top, 12).padding(.bottom, 4)
+    }
+
+    private var projectOrderMenu: some View {
+        Menu {
+            Toggle("Orden alfabético", isOn: $alphabeticalProjects)
+        } label: {
+            Image(systemName: alphabeticalProjects ? "textformat.abc" : "arrow.up.arrow.down")
+                .font(.system(size: 11, weight: .medium))
+                .frame(width: 22, height: 20)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .foregroundStyle(JackPalette.muted)
+        .help(alphabeticalProjects ? "Orden alfabético activado" : "Orden manual; arrastra las carpetas para reordenarlas")
     }
 
     private func rowView(_ row: SidebarRowModel, showProject: Bool, now: Date) -> some View {

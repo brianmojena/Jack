@@ -4,7 +4,7 @@ Chat nativo y compacto para gestionar varios agentes de desarrollo en macOS. Int
 
 ## Versionado
 
-La versión actual es **0.3.42**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
+La versión actual es **0.3.43**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
 
 ## Construir
 
@@ -30,6 +30,12 @@ En modo Normal, Jack consulta las releases de GitHub (`brianmojena/Jack`) al abr
 Para publicar una versión: sube `CFBundleShortVersionString` y `CFBundleVersion` en `Resources/Info.plist`, haz commit y push, y ejecuta `scripts/release.sh --publish`. Sin `--publish` solo genera `build/release/Jack-<versión>.zip`. La app lleva firma ad hoc, así que un zip descargado con el navegador pide clic derecho > Abrir la primera vez; la instalación desde Jack no tiene ese problema porque la descarga no lleva cuarentena.
 
 ## Uso
+
+En modo Normal, el menú de **Proyectos** permite activar el orden alfabético de carpetas. Con ese orden desactivado, arrastra una carpeta sobre otra para colocarla antes; Jack conserva el orden manual y los atajos de navegación siguen el orden mostrado.
+
+En modo Normal, la barra inferior compara **CPU de Jack** y **CPU del sistema** en la misma escala: porcentaje de la capacidad total del equipo, actualizado cada dos segundos. El sistema incluye Jack, agentes, servidores y las demás aplicaciones; la cifra de Jack incluye solo el proceso de la app. Por ejemplo, ocupar un núcleo de un equipo con ocho núcleos equivale a un 12,5 % de su capacidad total.
+
+La detección local de las CLI funciona también al abrir Jack desde Finder o el Dock: busca el PATH del shell y las carpetas de instalación nativa, npm, nvm, fnm, asdf, mise, pnpm, Yarn y otros gestores. Las rutas de instalación se vuelven a leer al solicitar un ejecutable para detectar instalaciones hechas con Jack abierto. En Ajustes → Agentes se conserva la opción de elegir un ejecutable manualmente.
 
 Pulsa **Nuevo agente** o **⌘N** y escribe directamente en el chat. La carpeta se elige siempre de forma automática a partir de lo que pidas; si nombras un proyecto que ya está en Jack, el nuevo agente se añade a su grupo. Antes del primer envío, pulsa el logo para elegir Codex, Claude Code, OpenCode o Stellar Code; después, ese mismo logo abre la ventana de contexto. Si no se identifica el proyecto, el chat pide su nombre o ruta y conserva la tarea mientras lo aclaras. Cada conversación guarda su modelo, razonamiento y sesión. Usa **Enter** para enviar y **Shift+Enter** para insertar un salto de línea; **↑/↓** recorre los mensajes enviados anteriores cuando el cuadro está vacío. El chat muestra el razonamiento o resumen que expone cada proveedor, herramientas con entradas y resultados, comandos con salida en streaming y cambios de archivos con diff. Una franja de actividad indica qué está haciendo el agente. Las herramientas se muestran como actividades expandibles; los permisos requieren una respuesta explícita. Puedes cambiar de conversación mientras otros agentes trabajan.
 
