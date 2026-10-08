@@ -1,4 +1,5 @@
 import AppKit
+import JackCore
 import SwiftUI
 
 /// Window actions exposed to the menu bar, so every shortcut also appears in the "Agentes" menu.
@@ -49,10 +50,19 @@ struct LightModeToggle: View {
 }
 
 struct JackCommands: Commands {
+    @ObservedObject var updateChecker: UpdateChecker
     @FocusedValue(\.jackActions) private var actions
     @AppStorage("lightModeEnabled") private var lightMode = false
 
     var body: some Commands {
+        CommandGroup(after: .appInfo) {
+            if !lightMode {
+                Button("Buscar actualizaciones…") {
+                    Task { await updateChecker.check(manual: true) }
+                }
+                .disabled(updateChecker.status == .checking || updateChecker.status == .downloading || updateChecker.status == .installing)
+            }
+        }
         CommandGroup(replacing: .newItem) {
             Button(lightMode ? "Nuevo agente…" : "Nuevo agente") { actions?.newAgent() }
                 .keyboardShortcut("n", modifiers: .command)

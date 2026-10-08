@@ -174,42 +174,59 @@ private struct MemoryLabel: View {
 }
 
 private struct ProcessCPUUsageLabel: View {
-    @State private var previousSample: CPUSample?
     @State private var percent: Double?
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 2)) { context in
-            Group {
-                if let percent {
-                    Label("\(Int(percent.rounded())) %", systemImage: "cpu")
-                } else {
-                    Label("—", systemImage: "cpu")
-                }
+        Group {
+            if let percent {
+                Label("\(Int(percent.rounded())) %", systemImage: "cpu")
+            } else {
+                Label("—", systemImage: "cpu")
             }
-            .help("Uso del procesador por Jack; puede superar el 100 % si usa varios núcleos")
-            .onChange(of: context.date, initial: true) { _, date in
-                guard let cpuSeconds = Self.processCPUSeconds() else { return }
-                if let previousSample {
-                    let elapsed = date.timeIntervalSince(previousSample.date)
-                    if elapsed > 0 {
-                        percent = max(0, (cpuSeconds - previousSample.cpuSeconds) / elapsed * 100)
-                    }
-                }
-                previousSample = CPUSample(date: date, cpuSeconds: cpuSeconds)
+        }
+        .help("CPU usada por el proceso de Jack: 100 % equivale a un núcleo ocupado; no incluye agentes ni servidores")
+        .task {
+            // The task survives body updates and stops when this label leaves the window.
+            // TimelineView dates describe a schedule, not when getrusage actually ran.
+            var sampler = ProcessCPUUsageSampler()
+            percent = sampler.sample()
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(2)) }
+                catch { return }
+                guard !Task.isCancelled else { return }
+                percent = sampler.sample()
             }
         }
     }
-
-    private static func processCPUSeconds() -> Double? {
-        var usage = rusage()
-        guard getrusage(RUSAGE_SELF, &usage) == 0 else { return nil }
-        let user = Double(usage.ru_utime.tv_sec) + Double(usage.ru_utime.tv_usec) / 1_000_000
-        let system = Double(usage.ru_stime.tv_sec) + Double(usage.ru_stime.tv_usec) / 1_000_000
-        return user + system
-    }
 }
 
-private struct CPUSample {
-    let date: Date
-    let cpuSeconds: Double
+/// Measures CPU time against the actual monotonic time of each reading, independently of rendering.
+struct ProcessCPUUsageSampler {
+    private var previous: (uptime: TimeInterval, cpuSeconds: Double)?
+
+    mutating func sample() -> Double? {
+        var usage = rusage()
+        guard getrusage(RUSAGE_SELF, &usage) == 0 else { previous = nil; return nil }
+        let user = Double(usage.ru_utime.tv_sec) + Double(usage.ru_utime.tv_usec) / 1_000_000
+        let system = Double(usage.ru_stime.tv_sec) + Double(usage.ru_stime.tv_usec) / 1_000_000
+        return sample(cpuSeconds: user + system, uptime: ProcessInfo.processInfo.systemUptime)
+    }
+
+    mutating func sample(cpuSeconds: Double, uptime: TimeInterval) -> Double? {
+        guard cpuSeconds.isFinite, uptime.isFinite else { previous = nil; return nil }
+        guard let previous else {
+            self.previous = (uptime, cpuSeconds)
+            return nil
+        }
+        let elapsed = uptime - previous.uptime
+        let used = cpuSeconds - previous.cpuSeconds
+        guard elapsed > 0, used >= 0 else {
+            self.previous = (uptime, cpuSeconds)
+            return nil
+        }
+        // Keep the baseline if called again during a redraw, avoiding noisy tiny intervals.
+        guard elapsed >= 1 else { return nil }
+        self.previous = (uptime, cpuSeconds)
+        return used / elapsed * 100
+    }
 }

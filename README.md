@@ -4,7 +4,7 @@ Chat nativo y compacto para gestionar varios agentes de desarrollo en macOS. Int
 
 ## Versionado
 
-La versión actual es **0.3.41**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
+La versión actual es **0.3.42**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
 
 ## Construir
 
@@ -23,7 +23,7 @@ Para reinstalar la compilación, usa `python3 scripts/install-app.py` con acceso
 
 ## Actualizaciones
 
-En modo Normal, Jack consulta las releases de GitHub (`brianmojena/Jack`) al abrirse y cada 6 horas. Si hay una versión más nueva que la instalada, lo avisa en la barra de estado; desde ahí se leen las notas, se instala o se omite esa versión. Ajustes > General permite desactivar la comprobación o buscar al momento. El modo Light nunca comprueba.
+En modo Normal, Jack consulta las releases de GitHub (`brianmojena/Jack`) al abrirse y cada 6 horas. **Jack → Buscar actualizaciones…** permite comprobar al momento; el resultado aparece abajo a la derecha, en la barra de estado. Si hay una versión más nueva que la instalada, desde ahí se leen las notas, se instala o se omite esa versión. Ajustes > General permite desactivar la comprobación automática o buscar al momento. El modo Light nunca comprueba.
 
 **Instalar y reiniciar** descarga el zip, comprueba el tamaño, la firma, el identificador y la versión, y lo descomprime en `~/Library/Application Support/Jack/Updates`. Después Jack se cierra y un script auxiliar (`replace-app.sh`, ya fuera de Jack) espera a que termine, sustituye el contenido de `Jack.app` conservando la carpeta (el Dock no pierde el icono) y abre la nueva versión. La versión anterior queda en `Updates/previous` y, si la sustitución falla, se restaura sola. El registro está en `Updates/update.log`. Si hay agentes trabajando, el aviso lo dice antes de instalar: se detienen al reiniciar. Solo se reemplaza una app que esté en `/Applications` o `~/Applications` y sea escribible; una compilación de `build/` solo ofrece descargar el zip a Descargas. Jack no instala nada sin que lo pidas.
 

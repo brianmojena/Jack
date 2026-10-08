@@ -45,7 +45,7 @@ struct JackApp: App {
         }
         .defaultSize(width: 1280, height: 800)
         .windowStyle(.hiddenTitleBar)
-        .commands { JackCommands() }
+        .commands { JackCommands(updateChecker: updateChecker) }
 
         Settings {
             SettingsView(store: store, updateChecker: updateChecker)

@@ -2,7 +2,7 @@ import AppKit
 import JackCore
 import SwiftUI
 
-/// Status bar badge, only while a newer Jack is published.
+/// New releases and the result of a manual check, in the bottom status bar.
 struct UpdateStatusItem: View {
     @ObservedObject var checker: UpdateChecker
     let activeAgents: Int
@@ -19,6 +19,35 @@ struct UpdateStatusItem: View {
             .help("Hay una versión nueva de Jack")
             .popover(isPresented: $showing, arrowEdge: .top) {
                 UpdateAvailableView(checker: checker, release: release, activeAgents: activeAgents, close: { showing = false })
+            }
+        } else {
+            switch checker.status {
+            case .checking:
+                Label("Buscando actualizaciones…", systemImage: "arrow.triangle.2.circlepath")
+            case .upToDate:
+                Label("Jack está al día", systemImage: "checkmark.circle")
+                    .help("No hay una versión más reciente de Jack")
+            case .failed(let message):
+                Button { showing.toggle() } label: {
+                    Label("No se pudo buscar actualizaciones", systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(JackPalette.amber)
+                }
+                .buttonStyle(.plain)
+                .help(message)
+                .popover(isPresented: $showing, arrowEdge: .top) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(message).font(.system(size: 12)).textSelection(.enabled)
+                        Button("Reintentar") {
+                            showing = false
+                            Task { await checker.check(manual: true) }
+                        }
+                        .controlSize(.small)
+                    }
+                    .padding(14)
+                    .frame(width: 300)
+                }
+            default:
+                EmptyView()
             }
         }
     }
