@@ -4,15 +4,23 @@ import XCTest
 @MainActor private final class ControlledDriver: ChatDriver {
     var callback: (@MainActor (ChatEvent) -> Void)?
     var continuation: CheckedContinuation<Void, Never>?
+    var sessionIDToEmit: String?
     var answers: [(String, Bool)] = []
+    var lastPrompt: String?
     var stopped = false
     var finishesOnStop = true
     var holdResponses = false
     var responseContinuation: CheckedContinuation<Void, Never>?
     var energySavingChanges: [Bool] = []
     func setEnergySaving(_ enabled: Bool) { energySavingChanges.append(enabled) }
+    func complete(_ text: String) {
+        callback?(.text(id: "controlled-answer-\(UUID().uuidString)", text: text, replace: true))
+        finish()
+    }
     func run(conversation: ChatConversation, prompt: String, onEvent: @escaping @MainActor (ChatEvent) -> Void) async throws {
+        lastPrompt = prompt
         callback = onEvent
+        if let sessionIDToEmit { onEvent(.session(sessionIDToEmit)) }
         await withCheckedContinuation { continuation = $0 }
     }
     func respond(approvalID: String, allow: Bool) async throws {
@@ -25,20 +33,309 @@ import XCTest
 }
 
 final class ChatStoreTests: XCTestCase {
-    @MainActor private func fixture() -> (ChatStore, ChatArchive, URL, () -> [ControlledDriver]) {
+    @MainActor private func fixture(lightMode: Bool = false, sessionIDToEmit: String? = nil, preferences: UserDefaults? = nil) -> (ChatStore, ChatArchive, URL, () -> [ControlledDriver]) {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("jack-chat-tests-" + UUID().uuidString)
         let archive = ChatArchive(directory: folder)
         var drivers: [ControlledDriver] = []
-        let store = ChatStore(archive: archive, preferences: nil, driverFactory: { _ in let driver = ControlledDriver(); drivers.append(driver); return driver })
+        let store = ChatStore(archive: archive, preferences: preferences, driverFactory: { _ in let driver = ControlledDriver(); driver.sessionIDToEmit = sessionIDToEmit; drivers.append(driver); return driver }, lightMode: lightMode)
         store.setConcurrency(2)
         return (store, archive, folder, { drivers })
+    }
+
+    @MainActor func testStellarSlashCompactRunsRealCompactionAndKeepsTranscript() async throws {
+        let (store, _, folder, drivers) = fixture()
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let id = try XCTUnwrap(store.create(projectPath: folder.path, provider: .stellar))
+        store.send("/compact inválido", to: id)
+        XCTAssertTrue(store.errorMessage?.contains("Uso: /compact") == true)
+        XCTAssertTrue(drivers().isEmpty)
+
+        store.send("objetivo original: conservar decisión", to: id)
+        await settle()
+        let firstDriver = try XCTUnwrap(drivers().first)
+        XCTAssertEqual(firstDriver.lastPrompt, "objetivo original: conservar decisión")
+        firstDriver.complete("Decisión anterior: mantener el formato de archivo.")
+        await settle()
+
+        store.send("/compact 1234", to: id)
+        await settle()
+        let compactDriver = try XCTUnwrap(drivers().last)
+        XCTAssertTrue(try XCTUnwrap(compactDriver.lastPrompt).contains("aproximadamente 1234 tokens"))
+        XCTAssertTrue(try XCTUnwrap(compactDriver.lastPrompt).contains("objetivo original: conservar decisión"))
+        XCTAssertTrue(try XCTUnwrap(compactDriver.lastPrompt).contains("Decisión anterior: mantener el formato de archivo."))
+        XCTAssertFalse(compactDriver.lastPrompt?.contains("/compact 1234") == true)
+        compactDriver.complete("RESUMEN REAL DE LA SESIÓN")
+        await settle()
+
+        let compacted = try XCTUnwrap(store.conversations.first { $0.id == id })
+        XCTAssertNil(compacted.sessionID)
+        XCTAssertEqual(compacted.jackContext?.seed, "RESUMEN REAL DE LA SESIÓN")
+        XCTAssertTrue(compacted.messages.contains { $0.role == "user" && $0.text == "objetivo original: conservar decisión" })
+        XCTAssertTrue(compacted.messages.contains { $0.role == "assistant" && $0.text == "Decisión anterior: mantener el formato de archivo." })
+        XCTAssertTrue(compacted.messages.contains { $0.role == "jack" && $0.text.contains("Contexto compactado") })
+
+        store.send("/compact", to: id)
+        await settle()
+        let defaultCompact = try XCTUnwrap(drivers().last)
+        XCTAssertTrue(try XCTUnwrap(defaultCompact.lastPrompt).contains("aproximadamente 2000 tokens"))
+        XCTAssertTrue(try XCTUnwrap(defaultCompact.lastPrompt).contains("objetivo original: conservar decisión"))
+        defaultCompact.complete("SEGUNDO RESUMEN")
+        await settle()
+        XCTAssertEqual(store.conversations.first { $0.id == id }?.jackContext?.seed, "SEGUNDO RESUMEN")
+    }
+
+    @MainActor func testStellarCompactionResetsAnExistingSessionID() async throws {
+        let (store, _, folder, drivers) = fixture(sessionIDToEmit: "existing-stellar-session")
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let id = try XCTUnwrap(store.create(projectPath: folder.path, provider: .stellar))
+        store.send("objetivo antes de compactar", to: id)
+        await settle()
+        XCTAssertEqual(store.conversations.first { $0.id == id }?.sessionID, "existing-stellar-session")
+        let first = try XCTUnwrap(drivers().first)
+        first.complete("respuesta anterior")
+        await settle()
+
+        store.send("/compact 777", to: id)
+        await settle()
+        let compact = try XCTUnwrap(drivers().last)
+        XCTAssertTrue(try XCTUnwrap(compact.lastPrompt).contains("aproximadamente 777 tokens"))
+        compact.complete("resumen de sesión existente")
+        await settle()
+        XCTAssertNil(store.conversations.first { $0.id == id }?.sessionID)
+        XCTAssertEqual(store.conversations.first { $0.id == id }?.jackContext?.seed, "resumen de sesión existente")
+    }
+
+    @MainActor func testStellarCloudCatalogAndRecentModelsAreRemovedFromLightAndDiscoveryRace() async throws {
+        let (store, _, folder, _) = fixture()
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let id = try XCTUnwrap(store.create(projectPath: folder.path, provider: .stellar))
+        let local = StellarModel(id: "ollama/gemma4:e2b", name: "gemma4:e2b", server: StellarServer.builtIn[0], tools: true)
+        let cloud = StellarModel(id: "ollama/account/model:latest", name: "account/model:latest", server: StellarServer.builtIn[0], tools: true, isCloud: true)
+        store.loadStellarModels = { includeCloud in includeCloud ? [cloud, local] : [local] }
+        await store.refreshLocalModels()
+        XCTAssertEqual(store.modelChoices(for: .stellar).map(\.id), [cloud.id, local.id])
+        store.updateSettings(id: id, model: cloud.id, effort: "high")
+        XCTAssertTrue(store.recentModels[.stellar]?.contains(cloud.id) == true)
+        store.setLightMode(true)
+        XCTAssertEqual(store.localModels, [local])
+        XCTAssertFalse(store.modelChoices(for: .stellar).contains { $0.id == cloud.id })
+        XCTAssertTrue(store.recentModels[.stellar]?.contains(cloud.id) == true, "Light hides Normal recents without deleting them")
+        store.setLightMode(false)
+        XCTAssertTrue(store.modelChoices(for: .stellar).contains { $0.id == cloud.id }, "returning to Normal restores the cloud recent")
+
+        let (racingStore, _, raceFolder, _) = fixture()
+        defer { racingStore.shutdown(); try? FileManager.default.removeItem(at: raceFolder) }
+        var pending: CheckedContinuation<[StellarModel], Never>?
+        var requestedCloud = false
+        racingStore.loadStellarModels = { includeCloud in
+            requestedCloud = includeCloud
+            return await withCheckedContinuation { pending = $0 }
+        }
+        let refresh = Task { await racingStore.refreshLocalModels() }
+        await settle()
+        XCTAssertTrue(requestedCloud)
+        racingStore.setLightMode(true)
+        pending?.resume(returning: [cloud, local])
+        await refresh.value
+        XCTAssertEqual(racingStore.localModels, [], "a Normal discovery finishing after the switch cannot overwrite the Light catalog")
+        XCTAssertFalse(racingStore.modelChoices(for: .stellar).contains { $0.id == cloud.id })
+    }
+
+    @MainActor func testStellarDiscoveryChecksModeBeforeRehydratingLinkedCloudAndRejectsStaleOverride() async throws {
+        let cloud = StellarModel(id: "ollama/account/model:latest", name: "account/model:latest", server: StellarServer.builtIn[0], tools: true, isCloud: true)
+        let local = StellarModel(id: "ollama/gemma4:e2b", name: "gemma4:e2b", server: StellarServer.builtIn[0], tools: true)
+        let suite = "StellarDiscovery-\(UUID().uuidString)"
+        let prefs = try XCTUnwrap(UserDefaults(suiteName: suite))
+        prefs.set([cloud.id], forKey: "stellar.linkedCloudModelIDs")
+        defer { prefs.removePersistentDomain(forName: suite) }
+
+        let (store, _, folder, _) = fixture(preferences: prefs)
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        var pending: CheckedContinuation<[StellarModel], Never>?
+        var inspections = 0
+        store.loadStellarModels = { _ in await withCheckedContinuation { pending = $0 } }
+        store.inspectLinkedCloudModel = { _ in inspections += 1; return cloud }
+        let refresh = Task { await store.refreshLocalModels() }
+        await settle()
+        store.setLightMode(true)
+        store.setLightMode(false)
+        store.setLightMode(true)
+        pending?.resume(returning: [local])
+        await refresh.value
+        XCTAssertEqual(inspections, 0, "an obsolete Normal discovery must not issue linked-cloud /api/show calls after a mode transition")
+        XCTAssertEqual(store.localModels, [], "stale completion cannot overwrite a newer mode's catalog")
+
+        let (latestStore, _, latestFolder, _) = fixture()
+        defer { latestStore.shutdown(); try? FileManager.default.removeItem(at: latestFolder) }
+        var older: CheckedContinuation<[StellarModel], Never>?
+        var loadCount = 0
+        latestStore.loadStellarModels = { _ in
+            loadCount += 1
+            if loadCount == 1 { return await withCheckedContinuation { older = $0 } }
+            return [local]
+        }
+        let stale = Task { await latestStore.refreshLocalModels() }
+        await settle()
+        await latestStore.refreshLocalModels()
+        older?.resume(returning: [cloud])
+        await stale.value
+        XCTAssertEqual(latestStore.localModels, [local], "a late older load cannot replace a newer catalog")
+    }
+
+    @MainActor func testLinkedCloudPersistsAcrossReloadAndLightHidesWithoutErasingRecent() async throws {
+        let suite = "StellarLinked-\(UUID().uuidString)"
+        let prefs = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { prefs.removePersistentDomain(forName: suite) }
+        let (store, _, folder, _) = fixture(preferences: prefs)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let conversation = try XCTUnwrap(store.create(projectPath: folder.path, provider: .stellar))
+        let response: [String: Any] = ["remote_host": "ollama.com", "remote_model": "gemma4:31b", "capabilities": ["completion", "tools"]]
+        store.inspectLinkedCloudInfo = { _ in response }
+        let linked = try await store.linkOllamaCloudModel("account/gemma4:31b")
+        store.updateSettings(id: conversation, model: linked.id, effort: "high")
+        XCTAssertEqual(prefs.stringArray(forKey: "stellar.linkedCloudModelIDs"), [linked.id])
+        store.setLightMode(true)
+        XCTAssertTrue(store.recentModels[.stellar]?.contains(linked.id) == true)
+        XCTAssertFalse(store.modelChoices(for: .stellar).contains { $0.id == linked.id })
+        store.setLightMode(false)
+        XCTAssertTrue(store.modelChoices(for: .stellar).contains { $0.id == linked.id })
+        store.shutdown()
+
+        let (reloaded, _, reloadFolder, _) = fixture(preferences: prefs)
+        defer { reloaded.shutdown(); try? FileManager.default.removeItem(at: folder); try? FileManager.default.removeItem(at: reloadFolder) }
+        reloaded.loadStellarModels = { _ in [] }
+        var rehydrations = 0
+        reloaded.inspectLinkedCloudModel = { name in
+            rehydrations += 1
+            XCTAssertEqual(name, "account/gemma4:31b")
+            return linked
+        }
+        await reloaded.refreshLocalModels()
+        XCTAssertEqual(rehydrations, 1)
+        XCTAssertTrue(reloaded.modelChoices(for: .stellar).contains { $0.id == linked.id })
+    }
+
+    @MainActor func testCloudLinkValidationSurvivesNormalDiscoveryRefresh() async throws {
+        let suite = "StellarLinkRace-\(UUID().uuidString)"
+        let prefs = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { prefs.removePersistentDomain(forName: suite) }
+        let (store, _, folder, _) = fixture(preferences: prefs)
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        var pending: CheckedContinuation<[String: Any], Never>?
+        store.inspectLinkedCloudInfo = { _ in await withCheckedContinuation { pending = $0 } }
+        store.loadStellarModels = { _ in [] }
+        let linking = Task { try await store.linkOllamaCloudModel("account/gemma4:cloud") }
+        await settle()
+        await store.refreshLocalModels()
+        pending?.resume(returning: ["remote_host": "ollama.com", "capabilities": ["completion", "tools"]])
+        let linked = try await linking.value
+        XCTAssertEqual(prefs.stringArray(forKey: "stellar.linkedCloudModelIDs"), [linked.id])
+    }
+
+    @MainActor func testCloudLinkValidationIsInvalidatedByLightRoundTrip() async throws {
+        let suite = "StellarLinkModeRace-\(UUID().uuidString)"
+        let prefs = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { prefs.removePersistentDomain(forName: suite) }
+        let (store, _, folder, _) = fixture(preferences: prefs)
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        var pending: CheckedContinuation<[String: Any], Never>?
+        store.inspectLinkedCloudInfo = { _ in await withCheckedContinuation { pending = $0 } }
+        let linking = Task { try await store.linkOllamaCloudModel("account/gemma4:cloud") }
+        await settle()
+        store.setLightMode(true)
+        store.setLightMode(false)
+        pending?.resume(returning: ["remote_host": "ollama.com", "capabilities": ["completion", "tools"]])
+        do {
+            _ = try await linking.value
+            XCTFail("a validation started before the mode change must not register after returning to Normal")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("solo están disponibles en modo Normal"))
+        }
+        XCTAssertNil(prefs.stringArray(forKey: "stellar.linkedCloudModelIDs"))
+        XCTAssertFalse(store.localModels.contains { $0.isCloud })
+    }
+
+    @MainActor func testLightCancelsNormalStellarLocatorForUnknownCloudAlias() async throws {
+        let (store, _, folder, _) = fixture()
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        var pending: CheckedContinuation<Void, Never>?
+        var allowCloudCaptured: Bool?
+        var streamStarted = false
+        store.locateProject = { _, _, model, _, allowCloud in
+            XCTAssertEqual(model, "ollama/account/model:latest")
+            allowCloudCaptured = allowCloud
+            await withCheckedContinuation { pending = $0 }
+            guard !Task.isCancelled else { throw CancellationError() }
+            streamStarted = true
+            return NSTemporaryDirectory()
+        }
+        let id = try XCTUnwrap(store.createLocating("revisa el proyecto", provider: .stellar,
+                                                    model: "ollama/account/model:latest", projects: []))
+        await settle()
+        XCTAssertEqual(allowCloudCaptured, true)
+        store.setLightMode(true)
+        pending?.resume()
+        await settle()
+        XCTAssertFalse(streamStarted, "the cancelled Normal locator must not continue to an Ollama Cloud stream")
+        XCTAssertTrue(store.isUnplaced(id))
+        XCTAssertEqual(store.statuses[id], .idle)
+    }
+
+    @MainActor func testStellarCompactAliasIsProviderAndLightGatedAndHandlesBusyQueue() async throws {
+        do {
+            let (store, _, folder, drivers) = fixture()
+            defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let id = try XCTUnwrap(store.create(projectPath: folder.path, provider: .codex))
+            store.send("/compact", to: id)
+            await settle()
+            XCTAssertEqual(drivers().first?.lastPrompt, "/compact")
+            drivers().first?.complete("ordinary provider response")
+        }
+        do {
+            let (store, _, folder, drivers) = fixture(lightMode: true)
+            defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let id = try XCTUnwrap(store.create(projectPath: folder.path, provider: .stellar))
+            store.send("/compact", to: id)
+            await settle()
+            XCTAssertEqual(drivers().first?.lastPrompt, "/compact")
+            drivers().first?.complete("Light forwarded the text")
+        }
+        do {
+            let (store, _, folder, drivers) = fixture()
+            defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let id = try XCTUnwrap(store.create(projectPath: folder.path, provider: .stellar))
+            store.send("objetivo durante el turno", to: id)
+            await settle()
+            let first = try XCTUnwrap(drivers().first)
+            store.send("/compact 555", to: id)
+            XCTAssertEqual(drivers().count, 1, "the alias waits until the active run completes")
+            first.complete("respuesta inicial")
+            await settle()
+            XCTAssertEqual(drivers().count, 2)
+            let compact = try XCTUnwrap(drivers().last)
+            XCTAssertTrue(try XCTUnwrap(compact.lastPrompt).contains("aproximadamente 555 tokens"))
+            XCTAssertTrue(try XCTUnwrap(compact.lastPrompt).contains("objetivo durante el turno"))
+            compact.complete("RESUMEN DESDE COLA")
+            await settle()
+            XCTAssertEqual(store.conversations.first { $0.id == id }?.jackContext?.seed, "RESUMEN DESDE COLA")
+        }
     }
     @MainActor func testAutomaticAgentMovesToTheFolderItsModelChooses() async throws {
         let (store, _, folder, drivers) = fixture()
         defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
         let project = NSTemporaryDirectory()
         var requests: [String] = []
-        store.locateProject = { request, _, _, _ in requests.append(request); return request.contains("Jack") ? project : nil }
+        var locatorMayUseCloud: Bool?
+        store.locateProject = { request, _, _, _, allowCloud in
+            requests.append(request); locatorMayUseCloud = allowCloud
+            return request.contains("Jack") ? project : nil
+        }
         let id = try XCTUnwrap(store.createLocating("arregla el login", provider: .codex, projects: [project]))
         XCTAssertTrue(store.isUnplaced(id))
         await settle()
@@ -50,6 +347,7 @@ final class ChatStoreTests: XCTestCase {
         store.send("es en Jack", to: id)
         await settle()
         XCTAssertEqual(requests.last, "arregla el login\n\nes en Jack")
+        XCTAssertEqual(locatorMayUseCloud, true, "Normal passes its explicit cloud permission to project location")
         XCTAssertEqual(store.selectedConversation?.projectPath, project)
         XCTAssertFalse(store.isUnplaced(id))
         XCTAssertEqual(drivers().count, 1, "the agent starts once placed")
@@ -62,7 +360,7 @@ final class ChatStoreTests: XCTestCase {
         try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
         defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
         let existing = try XCTUnwrap(store.create(projectPath: project.path, provider: .claude))
-        store.locateProject = { _, _, _, _ in XCTFail("An open project resolves without a model call"); return nil }
+        store.locateProject = { _, _, _, _, _ in XCTFail("An open project resolves without a model call"); return nil }
 
         // The indexed namesake comes first; Jack must still reuse the open project's path.
         let id = try XCTUnwrap(store.createLocating("ve a Jack y arregla el login", provider: .codex, projects: [other.path]))
@@ -86,7 +384,7 @@ final class ChatStoreTests: XCTestCase {
         store.create(projectPath: project.path, provider: .claude)
         var choice: CheckedContinuation<String?, Never>?
         var searches = 0
-        store.locateProject = { _, _, _, _ in
+        store.locateProject = { _, _, _, _, _ in
             searches += 1
             return await withCheckedContinuation { choice = $0 }
         }
@@ -106,7 +404,7 @@ final class ChatStoreTests: XCTestCase {
     @MainActor func testAutomaticAgentRejectsFolderThatNoLongerExists() async throws {
         let (store, _, folder, drivers) = fixture()
         defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
-        store.locateProject = { _, _, _, _ in folder.appendingPathComponent("missing").path }
+        store.locateProject = { _, _, _, _, _ in folder.appendingPathComponent("missing").path }
         let id = try XCTUnwrap(store.createLocating("arregla el login", provider: .codex, projects: []))
         await settle()
         XCTAssertTrue(store.isUnplaced(id))
@@ -120,7 +418,7 @@ final class ChatStoreTests: XCTestCase {
         defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
         final class Flag: @unchecked Sendable { var cancelled = false }
         let flag = Flag()
-        store.locateProject = { _, _, _, _ in
+        store.locateProject = { _, _, _, _, _ in
             do { try await Task.sleep(for: .seconds(30)) } catch { flag.cancelled = true; throw error }
             return NSTemporaryDirectory()
         }
@@ -139,7 +437,7 @@ final class ChatStoreTests: XCTestCase {
         let (store, _, folder, drivers) = fixture()
         defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
         store.locateDeadline = .milliseconds(50)
-        store.locateProject = { _, _, _, _ in try await Task.sleep(for: .seconds(30)); return NSTemporaryDirectory() }
+        store.locateProject = { _, _, _, _, _ in try await Task.sleep(for: .seconds(30)); return NSTemporaryDirectory() }
         let id = try XCTUnwrap(store.createLocating("arregla el login", provider: .codex, projects: []))
         for _ in 0..<100 where store.locating.contains(id) { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertEqual(store.statuses[id], .idle)
@@ -451,7 +749,7 @@ final class ChatStoreTests: XCTestCase {
         store.setLightMode(true)
         _ = try XCTUnwrap(store.create(projectPath: project.path, provider: .claude))
         var requests: [String] = []
-        store.locateProject = { request, _, _, _ in requests.append(request); return nil }
+        store.locateProject = { request, _, _, _, _ in requests.append(request); return nil }
         let id = try XCTUnwrap(store.createLocating("arregla LightProject", provider: .claude, projects: [project.path]))
         await settle()
         XCTAssertEqual(requests, ["arregla LightProject"], "Light still asks its existing locator, even for a known project")

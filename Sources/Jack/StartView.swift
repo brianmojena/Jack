@@ -15,6 +15,10 @@ struct StartView: View {
     @State private var message = ""
     @State private var customModel = ""
     @State private var showingCustomModel = false
+    @State private var linkingCloud = false
+    @State private var cloudLinkError: String?
+    @State private var cloudLinkLoading = false
+    @State private var cloudLinkRequestID = UUID()
     @State private var remoteEnabled = false
     @State private var remoteDestination = LastRemote.destination
     @State private var remotePath = LastRemote.path
@@ -28,7 +32,7 @@ struct StartView: View {
     private var choices: [ChatModelChoice] { store.modelChoices(for: provider) }
     private var selectedModel: String {
         if !model.isEmpty { return model }
-        if provider == .stellar { return (store.localModels.first { $0.tools } ?? store.localModels.first)?.id ?? "" }
+        if provider == .stellar { return StellarModels.preferredLocalID(in: store.localModels) }
         return provider.defaultModel
     }
     private var modelTitle: String { choices.first { $0.id == selectedModel }?.title ?? (selectedModel.isEmpty ? "Predeterminado" : selectedModel) }
@@ -166,25 +170,35 @@ struct StartView: View {
             }
             if provider == .stellar {
                 Divider()
-                if store.localModels.isEmpty { Text("Sin modelos locales") }
-                Button("Actualizar modelos locales") { Task { await store.refreshLocalModels() } }
+                if choices.isEmpty { Text("Sin modelos: inicia Ollama, MLX o LM Studio") }
+                Button("Vincular modelo de nube…") { linkingCloud = true; cloudLinkError = nil; customModel = ""; showingCustomModel = true }
+                Button("Actualizar modelos") { Task { await store.refreshLocalModels() } }
             }
             Divider()
-            Button("Otro modelo…") { customModel = selectedModel; showingCustomModel = true }
+            Button("Otro modelo…") { linkingCloud = false; customModel = selectedModel; showingCustomModel = true }
         } label: { Text(modelTitle).lineLimit(1).truncationMode(.middle).frame(maxWidth: 150, alignment: .leading) }
         .menuStyle(.borderlessButton).fixedSize().help("Modelo")
         .popover(isPresented: $showingCustomModel) {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Modelo · \(provider.title)").font(.headline)
-                TextField(provider == .opencode ? "proveedor/modelo" : "Identificador del modelo", text: $customModel)
-                    .textFieldStyle(.roundedBorder).onSubmit(applyCustomModel)
+                Text(linkingCloud ? "Vincular modelo de Ollama Cloud" : "Modelo · \(provider.title)").font(.headline)
+                TextField(linkingCloud ? "Nombre de Ollama, p. ej. gemma4:cloud" : provider == .opencode ? "proveedor/modelo" : "Identificador del modelo", text: $customModel)
+                    .textFieldStyle(.roundedBorder).disabled(cloudLinkLoading).onSubmit { linkingCloud ? linkCloudModel() : applyCustomModel() }
+                if linkingCloud {
+                    Text("Usa la cuenta ya conectada en Ollama (`ollama signin`). La conversación y los archivos leídos se enviarán a Ollama Cloud.")
+                        .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
+                    if let cloudLinkError { Text(cloudLinkError).font(.system(size: 11)).foregroundStyle(JackPalette.amber) }
+                }
                 HStack {
-                    Button("Cancelar") { showingCustomModel = false }.keyboardShortcut(.cancelAction)
+                    Button("Cancelar") { cloudLinkRequestID = UUID(); cloudLinkLoading = false; showingCustomModel = false; linkingCloud = false }.keyboardShortcut(.cancelAction)
                     Spacer()
-                    Button("Usar modelo", action: applyCustomModel).keyboardShortcut(.defaultAction)
+                    Button(cloudLinkLoading ? "Validando…" : linkingCloud ? "Validar y vincular" : "Usar modelo") { linkingCloud ? linkCloudModel() : applyCustomModel() }
+                        .disabled(cloudLinkLoading).keyboardShortcut(.defaultAction)
                 }
             }
             .padding(18).frame(width: 330)
+        }
+        .onChange(of: showingCustomModel) { _, shown in
+            if !shown { cloudLinkRequestID = UUID(); cloudLinkLoading = false }
         }
     }
 
@@ -192,6 +206,25 @@ struct StartView: View {
         model = customModel.trimmingCharacters(in: .whitespacesAndNewlines)
         showingCustomModel = false
         focused = true
+    }
+
+    private func linkCloudModel() {
+        guard !cloudLinkLoading else { return }
+        cloudLinkLoading = true
+        let requestID = UUID()
+        cloudLinkRequestID = requestID
+        Task {
+            do {
+                let model = try await store.linkOllamaCloudModel(customModel)
+                guard cloudLinkRequestID == requestID, showingCustomModel, linkingCloud else { return }
+                self.model = model.id
+                showingCustomModel = false; linkingCloud = false; cloudLinkError = nil
+            } catch {
+                guard cloudLinkRequestID == requestID else { return }
+                cloudLinkError = error.localizedDescription
+            }
+            if cloudLinkRequestID == requestID { cloudLinkLoading = false }
+        }
     }
 
     private func start() {

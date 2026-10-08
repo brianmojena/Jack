@@ -28,16 +28,71 @@ public enum ProjectLocator {
         } ?? URL(fileURLWithPath: path).standardizedFileURL.path
     }
 
+    static let folderWords: Set<String> = ["carpeta", "carpetas", "folder", "directorio", "directory"]
+    static let creationWords: Set<String> = ["crea", "crear", "creala", "cree", "nueva", "nuevo", "create", "new", "mkdir", "haz", "genera"]
+
+    /// A folder the request asks for that is not a project yet: an empty folder, one that does not exist
+    /// and is to be created, or one without any project marker. Project folders are found by `knownPath`.
+    /// Does disk work, so call it off the main actor.
+    public static func folderToStart(in request: String, roots: [String] = ProjectFinder.defaultRoots) -> String? {
+        let words = Set(ProjectFinder.tokens(request))
+        if !words.isDisjoint(with: creationWords), let path = newFolder(in: request) { return path }
+        guard !words.isDisjoint(with: folderWords) else { return nil }
+        return ProjectFinder.resolve(request, projects: plainFolders(roots: roots)).match?.path
+    }
+
+    /// A path written in the request that does not exist yet, inside a folder that does, under the user's home.
+    /// It is created, so the agent can start in it.
+    static func newFolder(in request: String) -> String? {
+        let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
+        for raw in request.split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "`" || $0 == "\"" }) {
+            let candidate = String(raw).trimmingCharacters(in: CharacterSet(charactersIn: ".,;:()'"))
+            guard candidate.hasPrefix("/") || candidate.hasPrefix("~/") else { continue }
+            let path = URL(fileURLWithPath: (candidate as NSString).expandingTildeInPath).standardizedFileURL.path
+            let parent = (path as NSString).deletingLastPathComponent
+            var isDirectory: ObjCBool = false
+            guard path.hasPrefix(home + "/"), !FileManager.default.fileExists(atPath: path),
+                  FileManager.default.fileExists(atPath: parent, isDirectory: &isDirectory), isDirectory.boolValue,
+                  (try? FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: false)) != nil else { continue }
+            return path
+        }
+        return nil
+    }
+
+    /// Folders below `roots` that are not projects, empty ones included: where a new project can start.
+    static func plainFolders(roots: [String], maxDepth: Int = 4, limit: Int = 4_000) -> [String] {
+        let manager = FileManager.default
+        var found: [String] = []
+        var seen = Set<String>()
+        func visit(_ path: String, depth: Int) {
+            guard found.count < limit, let names = try? manager.contentsOfDirectory(atPath: path) else { return }
+            if depth > 0 { found.append(path) }
+            // A project's insides are not places to start a new one.
+            if names.contains(where: { ProjectFinder.markers.contains($0) || $0.hasSuffix(".xcodeproj") }) { return }
+            guard depth < maxDepth else { return }
+            for name in names.sorted() where !name.hasPrefix(".") && !ProjectFinder.skipped.contains(name) && !name.hasSuffix(".app") {
+                let child = (path as NSString).appendingPathComponent(name)
+                var isDirectory: ObjCBool = false
+                guard manager.fileExists(atPath: child, isDirectory: &isDirectory), isDirectory.boolValue,
+                      (try? URL(fileURLWithPath: child).resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true,
+                      seen.insert(child).inserted else { continue }
+                visit(child, depth: depth + 1)
+            }
+        }
+        for root in roots where seen.insert(root).inserted { visit(root, depth: 0) }
+        return found
+    }
+
     /// The folder `request` is about, or nil when the model cannot tell.
     @MainActor
-    public static func locate(_ request: String, provider: ChatProvider, model: String, projects: [String]) async throws -> String? {
+    public static func locate(_ request: String, provider: ChatProvider, model: String, projects: [String], allowCloud: Bool = false) async throws -> String? {
         if let path = ProjectFinder.explicitPath(in: request) { return path }
         let likely = ProjectFinder.score(request, projects: projects).prefix(5).map(\.match.path)
         // Choosing a folder is a small job: Claude Code does it with its fastest model.
         var asker = ChatConversation(projectPath: FileManager.default.homeDirectoryForCurrentUser.path, provider: provider,
                                      model: provider == .claude ? "haiku" : model)
         asker.effort = provider == .claude ? "" : "low"
-        let answer = try await ChatAsideService.ask(request, about: asker, instructions: prompt(request, projects: projects, likely: likely)) { _ in }
+        let answer = try await ChatAsideService.ask(request, about: asker, instructions: prompt(request, projects: projects, likely: likely), allowCloud: allowCloud) { _ in }
         return path(in: answer, projects: projects)
     }
 

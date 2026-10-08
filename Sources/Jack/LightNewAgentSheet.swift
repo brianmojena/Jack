@@ -53,7 +53,7 @@ struct LightNewAgentSheet: View {
         _model = State(initialValue: provider == .stellar ? Self.firstLocal(localModels) : provider.defaultModel)
     }
 
-    private static func firstLocal(_ models: [StellarModel]) -> String { (models.first { $0.tools } ?? models.first)?.id ?? "" }
+    private static func firstLocal(_ models: [StellarModel]) -> String { StellarModels.preferredLocalID(in: models) }
 
     private static var lastProvider: ChatProvider {
         UserDefaults.standard.string(forKey: "lastNewAgentProvider").flatMap(ChatProvider.init(rawValue:)) ?? .codex
@@ -338,4 +338,3 @@ struct LightNewAgentSheet: View {
         projectPath = url.path
     }
 }
-

@@ -4,12 +4,17 @@ import SwiftUI
 struct ChatModelPicker: View {
     /// The Normal window offers Claude Code's bypass mode; Light does not.
     var allowsBypass = false
+    /// The cloud-linking control appears only on Normal surfaces.
+    var allowsCloud = false
     @State private var confirmingBypass = false
     @ObservedObject var store: ChatStore
     let conversation: ChatConversation
     let busy: Bool
     @State private var custom = false
     @State private var customModel = ""
+    @State private var linkingCloud = false
+    @State private var cloudLinkLoading = false
+    @State private var cloudLinkRequestID = UUID()
     @State private var providers: [OpenCodeProviderModels] = []
     @State private var openCodeModes: [ChatRunMode] = []
     @State private var loadingModels = false
@@ -75,15 +80,16 @@ struct ChatModelPicker: View {
                 } else if conversation.provider == .stellar {
                     ForEach(choices) { choice in modelButton(choice) }
                     Divider()
-                    if store.loadingLocalModels { Text("Buscando modelos locales…") }
-                    else if store.localModels.isEmpty { Text("Sin modelos: inicia Ollama, MLX o LM Studio") }
-                    Button("Actualizar modelos locales") { Task { await store.refreshLocalModels() } }
+                    if store.loadingLocalModels { Text("Buscando modelos de Ollama y locales…") }
+                    else if choices.isEmpty { Text("Sin modelos: inicia Ollama, MLX o LM Studio") }
+                    if allowsCloud { Button("Vincular modelo de nube…") { linkingCloud = true; customModel = ""; custom = true } }
+                    Button(allowsCloud ? "Actualizar modelos" : "Actualizar modelos locales") { Task { await store.refreshLocalModels() } }
                         .disabled(store.loadingLocalModels)
                 } else {
                     ForEach(choices) { choice in modelButton(choice) }
                 }
                 Divider()
-                Button("Otro modelo…") { customModel = conversation.model; custom = true }
+                Button("Otro modelo…") { linkingCloud = false; customModel = conversation.model; custom = true }
             } label: {
                 Text(selected?.title ?? conversation.model).lineLimit(1).truncationMode(.middle)
                     .frame(maxWidth: 150, alignment: .leading)
@@ -94,17 +100,26 @@ struct ChatModelPicker: View {
             .disabled(busy)
             .popover(isPresented: $custom) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Otro modelo · \(conversation.provider.title)").font(.headline)
-                    TextField(conversation.provider == .opencode ? "proveedor/modelo" : conversation.provider == .stellar ? "servidor/modelo, p. ej. ollama/qwen3:8b" : "Identificador del modelo", text: $customModel)
+                    Text(linkingCloud ? "Vincular modelo de Ollama Cloud" : "Otro modelo · \(conversation.provider.title)").font(.headline)
+                    TextField(linkingCloud ? "Nombre de Ollama, p. ej. gemma4:cloud" : conversation.provider == .opencode ? "proveedor/modelo" : conversation.provider == .stellar ? "servidor/modelo, p. ej. ollama/qwen3:8b" : "Identificador del modelo", text: $customModel)
                         .textFieldStyle(.roundedBorder)
+                        .disabled(cloudLinkLoading)
                         .onSubmit { applyCustom() }
+                    if linkingCloud {
+                        Text("Usa la cuenta ya conectada en Ollama (`ollama signin`). La conversación y los archivos leídos se enviarán a Ollama Cloud.")
+                            .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
+                    }
                     HStack {
-                        Button("Cancelar") { custom = false }.keyboardShortcut(.cancelAction)
+                        Button("Cancelar") { cloudLinkRequestID = UUID(); cloudLinkLoading = false; custom = false; linkingCloud = false }.keyboardShortcut(.cancelAction)
                         Spacer()
-                        Button("Usar modelo") { applyCustom() }.keyboardShortcut(.defaultAction)
+                        Button(cloudLinkLoading ? "Validando…" : linkingCloud ? "Validar y vincular" : "Usar modelo") { applyCustom() }
+                            .disabled(cloudLinkLoading).keyboardShortcut(.defaultAction)
                     }
                 }
                 .padding(18).frame(width: 330)
+            }
+            .onChange(of: custom) { _, shown in
+                if !shown { cloudLinkRequestID = UUID(); cloudLinkLoading = false }
             }
             if conversation.provider == .opencode || !efforts.isEmpty { Menu {
                 if conversation.provider == .opencode {
@@ -167,7 +182,7 @@ struct ChatModelPicker: View {
             }
         }
         .foregroundStyle(JackPalette.accent)
-        .onChange(of: conversation.id) { _, _ in custom = false }
+        .onChange(of: conversation.id) { _, _ in custom = false; linkingCloud = false }
         .task(id: conversation.id) {
             providers = []; openCodeModes = []; modelsError = nil
             if conversation.provider == .opencode { await refreshModels() }
@@ -203,6 +218,25 @@ struct ChatModelPicker: View {
     }
 
     private func applyCustom() {
+        if linkingCloud, conversation.provider == .stellar, allowsCloud {
+            guard !cloudLinkLoading else { return }
+            cloudLinkLoading = true
+            let requestID = UUID()
+            cloudLinkRequestID = requestID
+            Task {
+                do {
+                    let model = try await store.linkOllamaCloudModel(customModel)
+                    guard cloudLinkRequestID == requestID, custom, linkingCloud, allowsCloud else { return }
+                    store.updateSettings(id: conversation.id, model: model.id, effort: conversation.effort)
+                    custom = false; linkingCloud = false
+                } catch {
+                    guard cloudLinkRequestID == requestID else { return }
+                    store.errorMessage = error.localizedDescription
+                }
+                if cloudLinkRequestID == requestID { cloudLinkLoading = false }
+            }
+            return
+        }
         store.updateSettings(id: conversation.id, model: customModel, effort: conversation.effort)
         custom = false
     }

@@ -26,8 +26,10 @@ la validación local del paquete no demuestra que esas fases ya se hayan ejecuta
 
 Las ocho familias son: corregir bugs, añadir funciones, responder sobre el
 proyecto, crear archivos, renombrar, ejecutar y reportar tests, buscar TODO/FIXME
-y conversar sin herramientas. Hay ejemplos en español e inglés. Las herramientas,
-el prompt y el bucle replican `Sources/JackCore/StellarCode.swift`.
+y conversar sin herramientas. Hay ejemplos en español e inglés. `stellar_env.py`
+conserva el entorno/oráculo legado del paquete; no implementa el prompt Normal
+actual, la carga acotada de instrucciones, el presupuesto de contexto ni el listado
+Normal de `Sources/JackCore/StellarCode.swift`.
 
 Cada trayectoria oracle ejecuta herramientas reales en un proyecto temporal y
 comprueba el resultado. Los tests fallidos de diagnóstico son contexto válido.
@@ -36,6 +38,12 @@ las del teacher opcional, quedan en la misma partición. La validación se estra
 por familia. Los nombres del benchmark salen de los pools de evaluación reservados.
 Las plantillas de tareas siguen siendo parecidas: el benchmark mide este conjunto
 de habilidades y no garantiza mejora en repositorios grandes o tareas arbitrarias.
+`eval_fixtures/multiturn_instructions.json` y `eval_multiturn.py` preparan un scorer
+offline para un transcript de tres turnos: exige citas con línea, detecta ediciones
+prohibidas en `docs/`, comprueba que instrucciones anidadas lleguen antes de editar y
+rechaza afirmaciones de tests sin llamada y resultado exitoso. Las pruebas incluyen un
+transcript positivo y casos negativos mutados. El scorer solo puntúa trazas suministradas;
+no ejecuta inferencia y no mide una mejora del entrenamiento ni la calidad general del modelo.
 
 La plantilla de herramientas se descarga del repositorio oficial de Google y se
 fija por revisión para cada entrenamiento. Se comprueba que conserve todas las
@@ -125,7 +133,7 @@ vuelve a ejecutar `prepare_colab.py`. El notebook comprueba los hashes del manif
 - `export_colab.py`, `ollama_import.py`: exportación y registro local.
 - `Stellar_Gemma4_E2B_Colab.ipynb`, `stellar-colab.zip`: notebook y paquete portable.
 - `bench.py`, `tasks.py`, `stellar_env.py`, `runner.py`: evaluación y entorno real de herramientas.
-- `test_training.py`: regresiones locales sin GPU.
+- `test_training.py`, `eval_multiturn.py`, `eval_fixtures/`: regresiones locales sin GPU y scorer preparado para revisar transcripts de varios turnos.
 
 ## Referencias verificadas
 

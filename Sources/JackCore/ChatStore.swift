@@ -23,6 +23,13 @@ import Foundation
     public private(set) var lightModeEnabled = false
     private var lightWindowVisible = true
     private var lightDetailsVisible = false
+    private var modelDiscoveryGeneration = 0
+    private var modeGeneration = 0
+    private var knownCloudModelIDs = Set<String>()
+    private var linkedCloudModelIDs = Set<String>()
+    var loadStellarModels: (Bool) async -> [StellarModel] = { includeCloud in await StellarModels.discover(includeCloud: includeCloud) }
+    var inspectLinkedCloudModel: (String) async throws -> StellarModel = { name in try await StellarModels.inspectOllamaModel(named: name, includeCloud: true) }
+    var inspectLinkedCloudInfo: (String) async throws -> [String: Any] = { name in try await StellarHTTP.json(StellarServer.builtIn[0], path: "/api/show", body: ["model": name], timeout: 8) }
     public var effectiveMaxConcurrent: Int { lightModeEnabled ? lightMaxConcurrent : maxConcurrent }
     @Published public private(set) var usage: [ChatProvider: ProviderUsage] = [:]
     @Published public private(set) var tokenUsage: [UUID: ChatTokenUsage] = [:]
@@ -101,7 +108,9 @@ import Foundation
     /// Agents whose model is still choosing their project folder.
     @Published public private(set) var locating = Set<UUID>()
     /// Chooses the folder for a request: (request, provider, model, projects). Replaced in tests.
-    public var locateProject: @MainActor (String, ChatProvider, String, [String]) async throws -> String? = ProjectLocator.locate
+    public var locateProject: @MainActor (String, ChatProvider, String, [String], Bool) async throws -> String? = { request, provider, model, projects, allowCloud in
+        try await ProjectLocator.locate(request, provider: provider, model: model, projects: projects, allowCloud: allowCloud)
+    }
     /// Searches for agents' folders, so stopping an agent can cancel its own.
     private var locateTasks: [UUID: Task<Void, Never>] = [:]
     /// Choosing a folder is a short question; past this the agent asks the user instead.
@@ -131,6 +140,8 @@ import Foundation
         self.preferences = preferences
         self.makeDriver = driverFactory ?? { ChatDriverFactory.make($0) }
         for provider in ChatProvider.allCases { recentModels[provider] = preferences?.stringArray(forKey: "recentModels.\(provider.rawValue)") ?? [] }
+        knownCloudModelIDs = Set(preferences?.stringArray(forKey: "stellar.cloudModelIDs") ?? [])
+        linkedCloudModelIDs = Set(preferences?.stringArray(forKey: "stellar.linkedCloudModelIDs") ?? [])
         if let saved = preferences?.object(forKey: "maxConcurrentAgents") as? Int { maxConcurrent = max(0, min(64, saved)) }
         if let saved = preferences?.object(forKey: "lightMaxConcurrentAgents") as? Int { lightMaxConcurrent = max(1, min(64, saved)) }
         do {
@@ -153,14 +164,39 @@ import Foundation
         flushTask?.cancel(); flushTask = nil
         for id in Array(pending.keys) { flush(id) }
         lightModeEnabled = enabled
+        modelDiscoveryGeneration += 1
+        modeGeneration += 1
+        if enabled {
+            let hiddenCloudIDs = Set(localModels.filter(\.isCloud).map(\.id))
+            knownCloudModelIDs.formUnion(hiddenCloudIDs)
+            preferences?.set(Array(knownCloudModelIDs), forKey: "stellar.cloudModelIDs")
+            localModels.removeAll(where: \.isCloud)
+            loadingLocalModels = false
+            asides.cancelCloudAsides()
+        }
         notebookWorkspace?.setEnabled(!enabled)
         lightWindowVisible = true
         lightDetailsVisible = false
         if enabled { usageRefresh?.cancel(); usageRefresh = nil }
         progressMonitor?.setWatching(!enabled)
         serverMonitor?.setWatching(!enabled)
-        for driver in liveDrivers.values { driver.setEnergySaving(enabled) }
-        for driver in drivers.values { driver.setEnergySaving(enabled) }
+        for (id, driver) in liveDrivers {
+            if enabled, conversations.first(where: { $0.id == id }).map({ Self.isKnownCloud($0.model, known: knownCloudModelIDs, linked: linkedCloudModelIDs) }) == true { driver.stop() }
+            driver.setEnergySaving(enabled)
+        }
+        for (id, driver) in drivers {
+            if enabled, conversations.first(where: { $0.id == id }).map({ Self.isKnownCloud($0.model, known: knownCloudModelIDs, linked: linkedCloudModelIDs) }) == true { driver.stop() }
+            driver.setEnergySaving(enabled)
+        }
+        if enabled {
+            let stellarLocators = locateTasks.keys.filter { id in
+                conversations.first(where: { $0.id == id })?.provider == .stellar
+            }
+            for id in stellarLocators {
+                cancelLocating(id)
+                statuses[id] = .idle
+            }
+        }
         drainQueue()
     }
     /// Visibility changes arrive from AppKit; no visibility polling is needed.
@@ -182,8 +218,9 @@ import Foundation
         guard !refreshingUsage else { return }
         refreshingUsage = true
         defer { refreshingUsage = false }
+        let allowsCloud = !lightModeEnabled
         await withTaskGroup(of: ProviderUsage.self) { group in
-            for provider in providers { group.addTask { await ChatUsageService.read(provider) } }
+            for provider in providers { group.addTask { await ChatUsageService.read(provider, allowsCloud: allowsCloud) } }
             for await result in group { mergeUsage(result) }
         }
     }
@@ -223,7 +260,7 @@ import Foundation
         if provider == .claude, parentID == nil, let remote, remote.isValid { conversation.remote = remote }
         // Stellar Code has no default model: the first local one that can use tools.
         if provider == .stellar, conversation.model.isEmpty {
-            conversation.model = (localModels.first { $0.tools } ?? localModels.first)?.id ?? ""
+            conversation.model = StellarModels.preferredLocalID(in: Self.visibleStellarModels(localModels, lightMode: true))
         }
         conversation.effort = Self.clamp(effort, to: supportedEfforts(provider: provider, model: conversation.model))
         conversation.parentID = parentID
@@ -285,7 +322,7 @@ import Foundation
             projects = openProjects + knownProjects.filter { $0 != ProjectLocator.unplacedFolder && seen.insert($0).inserted }
             knownPath = ProjectLocator.knownPath(in: request, projects: projects, openProjects: openProjects)
         }
-        let locate = locateProject, deadline = locateDeadline
+        let locate = locateProject, deadline = locateDeadline, allowCloud = !lightModeEnabled, normal = !lightModeEnabled
         locating.insert(id)
         statuses[id] = .running
         locateTasks[id] = Task { [weak self] in
@@ -294,9 +331,12 @@ import Foundation
                 // Racing a timer: cancelling either way also ends the model's process.
                 if let knownPath {
                     path = knownPath
+                } else if normal, let folder = await Task.detached(priority: .userInitiated, operation: { ProjectLocator.folderToStart(in: request) }).value {
+                    // An empty or new folder is not in the project index, so the model could not choose it.
+                    path = folder
                 } else {
                     path = try await withThrowingTaskGroup(of: String?.self) { group in
-                        group.addTask { try await locate(request, conversation.provider, conversation.model, projects) }
+                        group.addTask { try await locate(request, conversation.provider, conversation.model, projects, allowCloud) }
                         group.addTask { try await Task.sleep(for: deadline); throw CommandDeadlineExceeded() }
                         defer { group.cancelAll() }
                         return try await group.next() ?? nil
@@ -395,7 +435,7 @@ import Foundation
                 // The model choosing among the remote folders; without a local CLI it falls back to scoring.
                 if path == nil {
                     path = try await self?.remoteLocate(request: request, conversation: conversation, projects: openRemote + projects,
-                                                        locate: locate, deadline: deadline) ?? nil
+                                                        locate: locate, deadline: deadline, allowCloud: false) ?? nil
                 }
                 // Never trust a guess blindly: the folder must exist over there.
                 if let candidate = path, !openRemote.contains(candidate), !projects.contains(candidate),
@@ -434,11 +474,11 @@ import Foundation
     /// The model picks a folder among remote candidates; without a usable local CLI,
     /// the best string match wins instead of failing.
     private func remoteLocate(request: String, conversation: ChatConversation, projects: [String],
-                              locate: @escaping @MainActor (String, ChatProvider, String, [String]) async throws -> String?,
-                              deadline: Duration) async throws -> String? {
+                              locate: @escaping @MainActor (String, ChatProvider, String, [String], Bool) async throws -> String?,
+                              deadline: Duration, allowCloud: Bool) async throws -> String? {
         do {
             return try await withThrowingTaskGroup(of: String?.self) { group in
-                group.addTask { try await locate(request, conversation.provider, conversation.model, projects) }
+                group.addTask { try await locate(request, conversation.provider, conversation.model, projects, allowCloud) }
                 group.addTask { try await Task.sleep(for: deadline); throw CommandDeadlineExceeded() }
                 defer { group.cancelAll() }
                 return try await group.next() ?? nil
@@ -687,6 +727,12 @@ import Foundation
             executeJack(command.name, arguments: command.arguments, to: id)
             return
         }
+        if !lightModeEnabled, attachments.isEmpty, let conversation = conversations.first(where: { $0.id == id }), conversation.provider == .stellar,
+           text.split(whereSeparator: \.isWhitespace).first?.lowercased() == "/compact" {
+            guard let target = Self.stellarCompactTarget(text) else { errorMessage = "Uso: /compact [objetivo en tokens, 1–2000000]."; return }
+            beginCompaction(id, target: target)
+            return
+        }
         let ordinaryText = text.hasPrefix("!!") ? String(text.dropFirst()) : text
         if runs[id] == nil, compactions[id] == nil, handoffs[id] == nil, let c = conversations.first(where: { $0.id == id }),
            let threshold = c.jackContext?.autoThreshold, let target = c.jackContext?.autoTarget,
@@ -712,6 +758,15 @@ import Foundation
         statuses[id] = .queued
         queue.append((id, ordinaryText))
         drainQueue()
+    }
+
+    private static func stellarCompactTarget(_ text: String) -> Int? {
+        let parts = text.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard let command = parts.first?.lowercased(), command == "/compact" else { return nil }
+        guard parts.count <= 2 else { return nil }
+        guard parts.count == 2 else { return 2_000 }
+        guard let target = Int(parts[1]), (1...2_000_000).contains(target) else { return nil }
+        return target
     }
     /// A message for an agent that is working. A pending permission request is rejected with it as the reason,
     /// as typing does in Claude Code; otherwise it waits: agents that read messages mid-turn get it at once and
@@ -759,15 +814,68 @@ import Foundation
     public func clearRecalled(_ id: UUID) { recalled.removeValue(forKey: id) }
     public func clearSuggestion(_ id: UUID) { suggestions.removeValue(forKey: id) }
     public func refreshLocalModels() async {
-        guard !loadingLocalModels else { return }
+        modelDiscoveryGeneration += 1
+        let request = modelDiscoveryGeneration
+        let includeCloud = !lightModeEnabled
         loadingLocalModels = true
-        localModels = await StellarModels.discover()
+        var models = await loadStellarModels(includeCloud)
+        guard request == modelDiscoveryGeneration, includeCloud == !lightModeEnabled else { return }
+        if includeCloud {
+            for id in linkedCloudModelIDs where !models.contains(where: { $0.id == id }) {
+                guard request == modelDiscoveryGeneration, !lightModeEnabled else { return }
+                guard let (server, name) = StellarModels.resolve(id), server.api == .ollama else { continue }
+                let linked = try? await inspectLinkedCloudModel(name)
+                guard request == modelDiscoveryGeneration, !lightModeEnabled else { return }
+                if let linked, linked.isCloud {
+                    models.append(linked)
+                }
+            }
+        }
+        guard request == modelDiscoveryGeneration, includeCloud == !lightModeEnabled else { return }
+        knownCloudModelIDs.formUnion(models.filter(\.isCloud).map(\.id))
+        preferences?.set(Array(knownCloudModelIDs), forKey: "stellar.cloudModelIDs")
+        localModels = Self.visibleStellarModels(models, lightMode: lightModeEnabled)
         loadingLocalModels = false
+    }
+
+    static func visibleStellarModels(_ models: [StellarModel], lightMode: Bool) -> [StellarModel] {
+        lightMode ? models.filter { !$0.isCloud } : models
+    }
+    private static func isKnownCloud(_ modelID: String, known: Set<String>, linked: Set<String>) -> Bool {
+        known.contains(modelID) || linked.contains(modelID) || cloudModelID(modelID)
+    }
+    private static func cloudModelID(_ id: String) -> Bool {
+        guard id.lowercased().hasPrefix("ollama/") else { return false }
+        let name = String(id.dropFirst("ollama/".count))
+        return StellarModels.isCloud(name: name, metadata: [:])
+    }
+    /// Validates an explicitly entered Ollama cloud model through the local daemon's `/api/show`.
+    @discardableResult
+    public func linkOllamaCloudModel(_ rawName: String) async throws -> StellarModel {
+        guard !lightModeEnabled else { throw StellarModels.cloudUnavailableError }
+        let requestGeneration = modeGeneration
+        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        try StellarModels.validateOllamaName(name)
+        let info: [String: Any]
+        do { info = try await inspectLinkedCloudInfo(name) }
+        catch let error as StellarError { throw error }
+        catch { throw StellarError.message("No se pudo contactar con el daemon local de Ollama. Inicia Ollama y vuelve a validar el modelo.") }
+        guard requestGeneration == modeGeneration, !lightModeEnabled else { throw StellarModels.cloudUnavailableError }
+        let model = try StellarModels.linkedCloudModel(named: name, show: info)
+        knownCloudModelIDs.insert(model.id)
+        linkedCloudModelIDs.insert(model.id)
+        preferences?.set(Array(knownCloudModelIDs), forKey: "stellar.cloudModelIDs")
+        preferences?.set(Array(linkedCloudModelIDs), forKey: "stellar.linkedCloudModelIDs")
+        if !localModels.contains(where: { $0.id == model.id }) { localModels.append(model) }
+        return model
     }
     /// Answers a question about the conversation from a copy of its session, without interrupting the agent.
     public func askAside(_ question: String, in id: UUID) {
         guard !stopped, let conversation = conversations.first(where: { $0.id == id }) else { return }
-        asides.ask(question, about: conversation)
+        asides.ask(question, about: conversation, allowCloud: !lightModeEnabled, cloudAllowed: { [weak self] in
+            guard let self else { return false }
+            return !self.lightModeEnabled
+        })
     }
     /// Waiting messages the agent no longer holds, e.g. because its process ended, go back to Jack's own queue.
     private func reconcileWaiting(_ id: UUID) {
@@ -997,12 +1105,17 @@ import Foundation
         case .codex: catalog = codexModels
         case .claude: catalog = ChatModelChoice.claudeCatalog
         case .opencode: catalog = [ChatModelChoice(id: "", efforts: [])]
-        case .stellar: catalog = localModels.map { ChatModelChoice(id: $0.id, title: $0.title, efforts: []) }
+        case .stellar: catalog = Self.visibleStellarModels(localModels, lightMode: lightModeEnabled).map { ChatModelChoice(id: $0.id, title: $0.title, efforts: []) }
         }
-        let ids = (recentModels[provider] ?? []) + conversations.filter { $0.provider == provider }.map(\.model) + [provider.defaultModel] + catalog.map(\.id)
+        var ids = (recentModels[provider] ?? []) + conversations.filter { $0.provider == provider }.map(\.model) + [provider.defaultModel] + catalog.map(\.id)
+        if provider == .stellar {
+            ids.removeAll { $0.isEmpty || (lightModeEnabled && Self.isKnownCloud($0, known: knownCloudModelIDs, linked: linkedCloudModelIDs)) }
+        }
         var seen = Set<String>()
         return ids.filter { seen.insert($0).inserted }.map { id in
-            catalog.first { $0.id == id } ?? ChatModelChoice(id: id, efforts: ChatModelChoice.fallbackEfforts(provider: provider, model: id))
+            if let model = catalog.first(where: { $0.id == id }) { return model }
+            let title = provider == .stellar && Self.isKnownCloud(id, known: knownCloudModelIDs, linked: linkedCloudModelIDs) ? "\(id) · Nube" : id
+            return ChatModelChoice(id: id, title: title, efforts: ChatModelChoice.fallbackEfforts(provider: provider, model: id))
         }
     }
     public func supportedEfforts(provider: ChatProvider, model: String) -> [String] {
@@ -1014,6 +1127,8 @@ import Foundation
         supported.isEmpty || supported.contains(effort) ? effort : supported.contains("high") ? "high" : supported.last!
     }
     private func rememberModel(_ model: String, provider: ChatProvider) {
+        if provider == .stellar, lightModeEnabled,
+           (Self.isKnownCloud(model, known: knownCloudModelIDs, linked: linkedCloudModelIDs) || localModels.first(where: { $0.id == model })?.isCloud == true) { return }
         var values = recentModels[provider] ?? []
         values.removeAll { $0 == model }; values.insert(model, at: 0)
         recentModels[provider] = Array(values.prefix(8))
@@ -1021,6 +1136,7 @@ import Foundation
     }
     public func shutdown() {
         stopped = true; queue.removeAll(); flushTask?.cancel(); flushTask = nil
+        modeGeneration += 1
         for id in Array(locateTasks.keys) { cancelLocating(id) }
         asides.cancelAll()
         notebookWorkspace?.stop()

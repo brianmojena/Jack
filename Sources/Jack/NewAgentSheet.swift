@@ -54,8 +54,7 @@ struct NewAgentProviderButton: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .disabled(option == .stellar && localModels.isEmpty)
-                    .help(option == .stellar && localModels.isEmpty ? "Inicia Ollama, MLX o LM Studio para usar un modelo local" : option.title)
+                    .help(option == .stellar ? "Stellar admite modelos locales y, en Normal, modelos vinculados de Ollama Cloud" : option.title)
                 }
             }
             .padding(10).frame(width: 240)

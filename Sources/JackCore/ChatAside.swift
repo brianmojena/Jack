@@ -10,27 +10,51 @@ public struct ChatAside: Identifiable, Equatable {
     public var error: String?
 }
 
+typealias AsideCloudPolicy = @MainActor () -> Bool
+typealias AsideCloudResolved = @MainActor () -> Void
+@MainActor final class AsidePartialSink {
+    private let handler: @MainActor (String) -> Void
+    init(_ handler: @escaping @MainActor (String) -> Void) { self.handler = handler }
+    func send(_ text: String) { handler(text) }
+}
+typealias ChatAsideRunner = @MainActor (String, ChatConversation, Bool, AsideCloudPolicy?, AsideCloudResolved?, AsidePartialSink) async throws -> String
+
 /// The aside of each conversation. Kept apart from `ChatStore` so the streamed answer only redraws its own card.
 @MainActor public final class ChatAsides: ObservableObject {
     @Published public private(set) var items: [UUID: ChatAside] = [:]
     private var tasks: [UUID: Task<Void, Never>] = [:]
+    private var cloudAsideConversations = Set<UUID>()
+    var runAside: ChatAsideRunner = { question, conversation, allowCloud, cloudAllowed, cloudModelResolved, partial in
+        try await ChatAsideService.ask(question, about: conversation, allowCloud: allowCloud,
+                                       cloudAllowed: cloudAllowed, cloudModelResolved: cloudModelResolved, partial: partial.send)
+    }
 
     public init() {}
 
     /// Replaces the conversation's previous aside, as Claude Code shows one at a time.
-    public func ask(_ question: String, about conversation: ChatConversation) {
+    public func ask(_ question: String, about conversation: ChatConversation, allowCloud: Bool = false) {
+        ask(question, about: conversation, allowCloud: allowCloud, cloudAllowed: nil)
+    }
+
+    func ask(_ question: String, about conversation: ChatConversation, allowCloud: Bool, cloudAllowed: AsideCloudPolicy?) {
         let text = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         let id = conversation.id
         tasks.removeValue(forKey: id)?.cancel()
+        cloudAsideConversations.remove(id)
         let aside = ChatAside(id: UUID(), question: text)
         items[id] = aside
         tasks[id] = Task { [weak self] in
             do {
-                let answer = try await ChatAsideService.ask(text, about: conversation) { partial in
+                let markCloud = { [weak self] in
+                    guard let self, self.items[id]?.id == aside.id else { return }
+                    self.cloudAsideConversations.insert(id)
+                }
+                let partial = AsidePartialSink { [weak self] partial in
                     guard let self, self.items[id]?.id == aside.id else { return }
                     self.items[id]?.answer = partial
                 }
+                let answer = try await self?.runAside(text, conversation, allowCloud, cloudAllowed, markCloud, partial) ?? ""
                 guard let self, self.items[id]?.id == aside.id else { return }
                 self.items[id]?.answer = answer
                 self.items[id]?.finished = true
@@ -39,18 +63,35 @@ public struct ChatAside: Identifiable, Equatable {
                 self.items[id]?.error = error.localizedDescription
                 self.items[id]?.finished = true
             }
-            if let self, self.items[id]?.id == aside.id { self.tasks[id] = nil }
+            if let self, self.items[id]?.id == aside.id {
+                self.tasks[id] = nil
+                self.cloudAsideConversations.remove(id)
+            }
         }
     }
 
     public func dismiss(_ id: UUID) {
         tasks.removeValue(forKey: id)?.cancel()
+        cloudAsideConversations.remove(id)
         items.removeValue(forKey: id)
+    }
+
+    public func cancelCloudAsides() {
+        for id in Array(cloudAsideConversations) {
+            tasks.removeValue(forKey: id)?.cancel()
+            if var aside = items[id] {
+                aside.finished = true
+                aside.error = "Pregunta cancelada al cambiar a Light."
+                items[id] = aside
+            }
+            cloudAsideConversations.remove(id)
+        }
     }
 
     public func cancelAll() {
         for task in tasks.values { task.cancel() }
         tasks.removeAll()
+        cloudAsideConversations.removeAll()
     }
 }
 
@@ -70,10 +111,15 @@ enum ChatAsideService {
     /// The answer so far is passed to `partial` while it streams; returns the whole answer.
     /// `instructions` replaces the side-question wrapper, for other one-off questions such as choosing a project.
     @MainActor
-    static func ask(_ question: String, about conversation: ChatConversation, instructions: String? = nil, partial: @escaping @MainActor (String) -> Void) async throws -> String {
+    static func ask(_ question: String, about conversation: ChatConversation, instructions: String? = nil, allowCloud: Bool = false,
+                    cloudAllowed: AsideCloudPolicy? = nil, cloudModelResolved: AsideCloudResolved? = nil,
+                    partial: @escaping @MainActor (String) -> Void) async throws -> String {
         let provider = conversation.provider
         let prompt = instructions ?? prompt(question)
-        if provider == .stellar { return try await StellarAside.ask(question, prompt: prompt, about: conversation, partial: partial) }
+        if provider == .stellar {
+            return try await StellarAside.ask(question, prompt: prompt, about: conversation, allowCloud: allowCloud,
+                                              cloudAllowed: cloudAllowed, cloudModelResolved: cloudModelResolved, partial: partial)
+        }
         // Each provider's executable is named after it.
         guard let executable = ExecutableResolver.resolve(provider.rawValue, override: UserDefaults.standard.string(forKey: "providerExecutablePath.\(provider.rawValue)")) else {
             throw AsideError.failure("No se encontró \(provider.rawValue). Instálalo o indica su ruta en Ajustes.")

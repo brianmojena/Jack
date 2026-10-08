@@ -9,7 +9,7 @@ struct SettingsView: View {
         TabView {
             GeneralSettings(store: store)
                 .tabItem { Label("General", systemImage: "gearshape") }
-            AgentExecutablesSettings()
+            AgentExecutablesSettings(store: store)
                 .tabItem { Label("Agentes", systemImage: "terminal") }
             ShortcutsSettings()
                 .tabItem { Label("Atajos", systemImage: "keyboard") }
@@ -184,6 +184,7 @@ private struct JackRemoteSettings: View {
 }
 
 private struct AgentExecutablesSettings: View {
+    @ObservedObject var store: ChatStore
     @AppStorage("providerExecutablePath.codex") private var codexPath = ""
     @AppStorage("providerExecutablePath.claude") private var claudePath = ""
     @AppStorage("providerExecutablePath.opencode") private var opencodePath = ""
@@ -207,7 +208,9 @@ private struct AgentExecutablesSettings: View {
             } header: {
                 HStack(spacing: 6) { Text("Stellar Code"); BetaBadge() }
             } footer: {
-                Text("Stellar Code usa solo modelos locales: Ollama (11434, se inicia solo si está instalado), MLX (mlx_lm.server, 8080) y LM Studio (1234). Más contexto necesita más memoria.")
+                Text(store.lightModeEnabled
+                     ? "Stellar Code usa solo modelos locales: Ollama (11434, se inicia solo si está instalado), MLX (mlx_lm.server, 8080) y LM Studio (1234). Más contexto necesita más memoria."
+                     : "Stellar usa Ollama (11434, se inicia solo si está instalado), MLX (8080) y LM Studio (1234). Puedes vincular un modelo de Ollama Cloud mediante tu sesión local de Ollama; la conversación y los archivos leídos se enviarán al servicio de nube y pueden consumir cuota de tu cuenta. Más contexto necesita más memoria.")
                     .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
             }
             Section {
@@ -383,7 +386,7 @@ struct ChatConversationSettingsSheet: View {
             Text("Configuración de \(conversation.provider.title)").font(.system(size: 16, weight: .semibold))
             Text("MODELO · ESFUERZO · MODO")
                 .font(.system(size: 9, weight: .bold)).tracking(0.7).foregroundStyle(JackPalette.muted)
-            ChatModelPicker(store: store, conversation: current, busy: busy)
+            ChatModelPicker(allowsCloud: true, store: store, conversation: current, busy: busy)
                 .font(.system(size: 12, weight: .medium))
             Text(busy ? "Detén el agente para cambiar sus opciones." : "Los cambios se guardan al seleccionarlos y se aplican al próximo mensaje.")
                 .font(.system(size: 11)).foregroundStyle(JackPalette.muted)

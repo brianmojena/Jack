@@ -74,7 +74,7 @@ enum UsageDecoder {
 }
 
 @MainActor public enum ChatUsageService {
-    public static func read(_ provider: ChatProvider) async -> ProviderUsage {
+    public static func read(_ provider: ChatProvider, allowsCloud: Bool = false) async -> ProviderUsage {
         switch provider {
         case .codex:
             do { return try await readCodex() }
@@ -90,7 +90,10 @@ enum UsageDecoder {
                 return UsageDecoder.claudeCache(data)
             }.value
         case .stellar:
-            return ProviderUsage(provider: .stellar, note: "Stellar Code usa modelos locales: sin cuotas ni coste.")
+            let note = allowsCloud
+                ? "Los modelos locales no tienen cuota de proveedor. Los modelos de Ollama Cloud pueden consumir la cuota y el plan de tu cuenta."
+                : "Stellar Code usa solo modelos locales: sin cuotas ni coste."
+            return ProviderUsage(provider: .stellar, note: note)
         case .opencode:
             return ProviderUsage(provider: .opencode, note: "OpenCode no expone una cuota unificada: depende de la cuenta del proveedor del modelo. El consumo de tokens y coste se muestra en cada conversación.")
         }

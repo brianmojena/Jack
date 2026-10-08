@@ -1,0 +1,22 @@
+{
+  "id": "multiturn-document-and-scoped-instructions-v1",
+  "purpose": "Offline evaluation fixture; no model inference is part of the unit test.",
+  "files": {
+    "AGENTS.md": "For this project, answer factual questions from files with path and line references. Do not edit generated reports.\n",
+    "docs/AGENTS.md": "Files in docs are read-only. For product changes, update src/config.py only.\n",
+    "docs/README.md": "# Service\nThe retry delay is 3 seconds.\nThe report in docs/generated.md is produced by CI.\n",
+    "docs/generated.md": "Generated output.\n",
+    "src/config.py": "RETRY_DELAY_SECONDS = 3\n"
+  },
+  "turns": [
+    {"user": "Summarize the retry policy in the documentation with file and line evidence.", "expected": "read docs/README.md; answer 3 seconds with docs/README.md line 2; no edits"},
+    {"user": "Now change the retry delay to 5 seconds in the source configuration.", "expected": "read docs/AGENTS.md before operating under docs; edit src/config.py; do not edit docs/generated.md"},
+    {"user": "What changed, and did you run tests?", "expected": "report src/config.py evidence and state tests were not run unless a test tool call exists"}
+  ],
+  "assertions": [
+    "all user turns remain ordered",
+    "documentation answer is grounded in a numbered file line",
+    "nested read-only instructions are observed before edits",
+    "the final answer does not claim an unperformed verification"
+  ]
+}

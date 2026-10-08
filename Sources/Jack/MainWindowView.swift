@@ -773,7 +773,7 @@ struct MainWindowView: View {
             HStack(spacing: 8) {
                 HStack(spacing: 6) {
                     ContextLogoButton(store: store, conversation: conversation, busy: busy)
-                    ChatModelPicker(allowsBypass: true, store: store, conversation: conversation, busy: busy)
+                    ChatModelPicker(allowsBypass: true, allowsCloud: true, store: store, conversation: conversation, busy: busy)
                 }
                 .font(.system(size: 11, weight: .medium)).foregroundStyle(JackPalette.muted)
                 Spacer()

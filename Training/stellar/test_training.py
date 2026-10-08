@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import contextlib
 import io
+import json
 import sys
 import tempfile
 import unittest
@@ -15,6 +16,7 @@ from runner import run_oracle
 from tasks import make_tasks
 from ollama_import import write_modelfile
 from colab_runner import run_logged
+from eval_multiturn import load_fixture, score_transcript
 
 
 class CharacterTokenizer:
@@ -31,6 +33,43 @@ class CharacterTokenizer:
 
 
 class TrainingTests(unittest.TestCase):
+    def test_multiturn_scorer_accepts_grounded_scoped_transcript(self):
+        fixture = load_fixture()
+        turns = [turn["user"] for turn in fixture["turns"]]
+        transcript = [
+            {"role": "user", "content": turns[0]},
+            {"role": "assistant", "content": "", "tool_calls": [{"id": "read-doc", "name": "read_file", "arguments": {"path": "docs/README.md"}}]},
+            {"role": "tool", "tool_call_id": "read-doc", "content": "Applicable nested AGENTS.md instructions: docs/AGENTS.md — Files in docs are read-only. For product changes, update src/config.py only.\nFile contents: retry delay is 3 seconds."},
+            {"role": "assistant", "content": "The documented retry delay is 3 seconds (docs/README.md:2)."},
+            {"role": "user", "content": turns[1]},
+            {"role": "assistant", "content": "", "tool_calls": [{"id": "edit-config", "name": "edit_file", "arguments": {"path": "src/config.py", "old_string": "3", "new_string": "5"}}]},
+            {"role": "tool", "tool_call_id": "edit-config", "content": "Edited: src/config.py"},
+            {"role": "user", "content": turns[2]},
+            {"role": "assistant", "content": "", "tool_calls": [{"id": "run-tests", "name": "run_command", "arguments": {"command": "python3 -m unittest"}}]},
+            {"role": "tool", "tool_call_id": "run-tests", "content": "Ran 3 tests. OK"},
+            {"role": "assistant", "content": "Updated src/config.py:1. Tests passed."},
+        ]
+        result = score_transcript(transcript, fixture)
+        self.assertTrue(result["passed"], result["failed"])
+
+    def test_multiturn_scorer_rejects_missing_citation_forbidden_edit_and_fake_tests(self):
+        fixture = load_fixture()
+        turns = [turn["user"] for turn in fixture["turns"]]
+        transcript = [
+            {"role": "user", "content": turns[0]},
+            {"role": "assistant", "content": "", "tool_calls": [{"id": "read-doc", "name": "read_file", "arguments": {"path": "docs/README.md"}}]},
+            {"role": "tool", "tool_call_id": "read-doc", "content": "docs/AGENTS.md: Files in docs are read-only."},
+            {"role": "assistant", "content": "The delay is 3 seconds."},
+            {"role": "user", "content": turns[1]},
+            {"role": "assistant", "content": "", "tool_calls": [{"id": "bad-edit", "name": "write_file", "arguments": {"path": "docs/generated.md", "content": "overwrite"}}]},
+            {"role": "user", "content": turns[2]},
+            {"role": "assistant", "content": "Tests passed, and I updated the docs."},
+        ]
+        result = score_transcript(transcript, fixture)
+        self.assertFalse(result["checks"]["document_cited_with_line"])
+        self.assertFalse(result["checks"]["read_only_docs_respected"])
+        self.assertFalse(result["checks"]["test_claim_supported"])
+
     def test_all_oracle_families_and_splits(self):
         for split in ("train", "eval"):
             for task in make_tasks(split, 2, seed=37):

@@ -84,3 +84,40 @@ final class ProjectFinderTests: XCTestCase {
         XCTAssertEqual(found, ["alpha", "beta"])
     }
 }
+
+final class PlainFolderTests: XCTestCase {
+    private var root: URL!
+
+    override func setUpWithError() throws {
+        root = FileManager.default.temporaryDirectory.appendingPathComponent("jack-plain-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("Pruebas Vacia"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("Trabajo/Taller"), withIntermediateDirectories: true)
+        let project = root.appendingPathComponent("Trabajo/App Real")
+        try FileManager.default.createDirectory(at: project.appendingPathComponent("src"), withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: project.appendingPathComponent("package.json").path, contents: Data())
+    }
+
+    override func tearDownWithError() throws { try? FileManager.default.removeItem(at: root) }
+
+    func testAnEmptyFolderNamedInTheRequestIsFound() {
+        XCTAssertEqual(ProjectLocator.folderToStart(in: "entra a la carpeta pruebas vacia y crea un proyecto", roots: [root.path]),
+                       root.appendingPathComponent("Pruebas Vacia").path)
+        XCTAssertEqual(ProjectLocator.folderToStart(in: "ve a la carpeta Taller", roots: [root.path]),
+                       root.appendingPathComponent("Trabajo/Taller").path)
+    }
+
+    func testNeedsAFolderCueAndNeverEntersProjects() {
+        XCTAssertNil(ProjectLocator.folderToStart(in: "revisa taller", roots: [root.path]), "without saying folder, a word is just a word")
+        XCTAssertNil(ProjectLocator.folderToStart(in: "ve a la carpeta src", roots: [root.path]))
+    }
+
+    func testMissingFolderIsCreatedOnlyWhenAskedUnderHome() throws {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let name = "jack-test-\(UUID().uuidString)"
+        let wanted = home.appendingPathComponent(name).path
+        defer { try? FileManager.default.removeItem(atPath: wanted) }
+        XCTAssertEqual(ProjectLocator.folderToStart(in: "crea una carpeta ~/\(name) y un proyecto nuevo", roots: []), wanted)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: wanted))
+        XCTAssertNil(ProjectLocator.folderToStart(in: "crea /usr/jack-nope-\(UUID().uuidString) nuevo", roots: []))
+    }
+}

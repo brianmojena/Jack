@@ -1,7 +1,8 @@
-"""Python twin of Stellar Code (Sources/JackCore/StellarCode.swift).
+"""Legacy offline training environment for Stellar Code (Sources/JackCore/StellarCode.swift).
 
-Same system prompt, tool definitions, tool outputs and agent loop against Ollama's /api/chat, so a benchmark here
-measures what Jack actually sees. Keep it in sync when the Swift side changes.
+This environment keeps the oracle/trajectory format used by the training pipeline. It does not implement the newer
+Normal-mode prompt, scoped AGENTS.md delivery, context budgeting, or Normal-only recursive listing contract; benchmark
+results here must not be presented as a measurement of those Jack app behaviors.
 """
 from __future__ import annotations
 
