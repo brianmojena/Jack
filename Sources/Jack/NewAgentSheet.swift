@@ -9,6 +9,8 @@ struct NewAgentRequest {
     var firstMessage: String
     /// Runs the agent over SSH instead of locally. Only Claude Code supports it.
     var remote: ChatRemoteEndpoint? = nil
+    /// A folder the user chose by hand; without it Jack finds the project from the message.
+    var folder: String? = nil
 }
 
 /// Before the first message the composer logo chooses the agent. Once sent,

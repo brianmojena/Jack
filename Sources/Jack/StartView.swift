@@ -1,3 +1,4 @@
+import AppKit
 import JackCore
 import SwiftUI
 
@@ -23,6 +24,8 @@ struct StartView: View {
     @State private var remoteDestination = LastRemote.destination
     @State private var remotePath = LastRemote.path
     @State private var showingRemote = false
+    /// The folder chosen by hand. Nil: Jack finds it from the message.
+    @State private var folder: String?
     @FocusState private var focused: Bool
 
     private var provider: ChatProvider { ChatProvider(rawValue: providerValue) ?? .codex }
@@ -40,14 +43,17 @@ struct StartView: View {
     private var hasMessage: Bool { !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     private var canSend: Bool { hasMessage && (provider != .stellar || !selectedModel.isEmpty) }
     private var ice: Bool { interfaceStyle == .ice }
+    /// A remote agent's folder lives on the other machine, so the Mac's folder only applies to local agents.
+    private var folderUsed: String? { remoteEnabled && provider == .claude ? nil : folder }
 
     var body: some View {
         VStack(spacing: 0) {
             Spacer()
             VStack(spacing: 8) {
                 Text("¿En qué te ayudo?").font(.system(size: 24, weight: .medium))
-                Text("Dime qué quieres hacer. Encontraré el proyecto por ti.")
+                Text(folderUsed.map { "Trabajaré en \(($0 as NSString).abbreviatingWithTildeInPath)." } ?? "Dime qué quieres hacer. Encontraré el proyecto por ti, o elige la carpeta tú.")
                     .font(.system(size: 13)).foregroundStyle(JackPalette.muted)
+                    .lineLimit(2).multilineTextAlignment(.center)
             }
             .padding(24)
             Spacer()
@@ -104,6 +110,7 @@ struct StartView: View {
                     } label: { Text(ChatModelChoice.effortTitle(effort)) }
                     .menuStyle(.borderlessButton).fixedSize().help("Esfuerzo de razonamiento")
                 }
+                if !(remoteEnabled && provider == .claude) { folderMenu }
                 Spacer(minLength: 8)
                 if provider == .claude, let onResumeClaude {
                     Button(action: onResumeClaude) {
@@ -158,6 +165,55 @@ struct StartView: View {
         }
         .frame(maxWidth: MainWindowView.columnWidth).frame(maxWidth: .infinity)
         .padding(.horizontal, 22).padding(.top, 6).padding(.bottom, 12)
+    }
+
+    /// Project folders the user worked in lately, most recent first.
+    private var recentFolders: [String] {
+        var seen = Set<String>()
+        return store.conversations.sorted { $0.updatedAt > $1.updatedAt }.map(\.projectPath)
+            .filter { $0 != ProjectLocator.unplacedFolder && seen.insert($0).inserted && FileManager.default.fileExists(atPath: $0) }
+            .prefix(8).map { $0 }
+    }
+
+    private var folderMenu: some View {
+        Menu {
+            Button("Elegir carpeta…", systemImage: "folder") { chooseFolder() }
+            if folder != nil {
+                Button("Detectar por el mensaje", systemImage: "sparkle.magnifyingglass") { folder = nil }
+            }
+            let recents = recentFolders
+            if !recents.isEmpty {
+                Divider()
+                ForEach(recents, id: \.self) { path in
+                    Button { folder = path } label: {
+                        let name = (path as NSString).lastPathComponent
+                        if path == folder { Label(name, systemImage: "checkmark") } else { Text(name) }
+                    }
+                }
+            }
+        } label: {
+            Label(folder.map { ($0 as NSString).lastPathComponent } ?? "Carpeta", systemImage: folder == nil ? "folder" : "folder.fill")
+                .lineLimit(1).truncationMode(.middle).frame(maxWidth: 150, alignment: .leading)
+        }
+        .menuStyle(.borderlessButton).fixedSize()
+        .foregroundStyle(folder == nil ? JackPalette.muted : JackPalette.accent)
+        .help(folder.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? "Elegir la carpeta del proyecto, o déjalo y Jack la detecta por el mensaje")
+        .accessibilityLabel("Carpeta del proyecto")
+    }
+
+    private func chooseFolder() {
+        let panel = NSOpenPanel()
+        panel.title = "Carpeta del proyecto"
+        panel.message = "Elige la carpeta donde trabajará el agente. Puedes crear una nueva."
+        panel.prompt = "Elegir"
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = URL(fileURLWithPath: folder ?? recentFolders.first ?? NSHomeDirectory()).deletingLastPathComponent()
+        guard panel.runModal() == .OK, let url = panel.url else { focused = true; return }
+        folder = url.standardizedFileURL.path
+        focused = true
     }
 
     private var modelPicker: some View {
@@ -238,6 +294,6 @@ struct StartView: View {
         }
         onStart(NewAgentRequest(provider: provider, model: selectedModel, effort: effort,
                                 firstMessage: message.trimmingCharacters(in: .whitespacesAndNewlines),
-                                remote: remote))
+                                remote: remote, folder: folderUsed))
     }
 }

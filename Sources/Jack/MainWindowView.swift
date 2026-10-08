@@ -1105,6 +1105,15 @@ struct MainWindowView: View {
 
     private func createAgent(_ request: NewAgentRequest) {
         store.errorMessage = nil
+        // A folder chosen by hand needs no search: the agent starts there with the first message.
+        if let folder = request.folder, request.remote == nil {
+            if let id = store.create(projectPath: folder, provider: request.provider,
+                                     model: request.model.isEmpty ? nil : request.model, effort: request.effort) {
+                store.send(request.firstMessage, to: id)
+                focusedComposer = id
+            }
+            return
+        }
         if let id = store.createLocating(request.firstMessage, provider: request.provider,
                                         model: request.model.isEmpty ? nil : request.model, effort: request.effort,
                                         projects: ProjectIndex.shared.ordered(recent: recentSpaces),
