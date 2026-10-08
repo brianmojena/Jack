@@ -19,6 +19,7 @@ import SwiftUI
     @Published private(set) var selection: Selection?
     @Published private(set) var diff = ""
     @Published var message = ""
+    private var automaticTask: Task<Void, Never>?
     private var shownHead: String?? = .none
     private var shownBranch: String?? = .none
 
@@ -65,16 +66,40 @@ import SwiftUI
     }
 
     /// Runs a change, shows git's message if it fails and reads the new state.
-    func perform(_ label: String, _ operation: @escaping (String) async -> GitResult) {
-        guard busy == nil else { return }
+    func perform(_ label: String, allowed: (@MainActor () -> Bool)? = nil, _ operation: @escaping (String) async -> GitResult) {
+        guard busy == nil, allowed?() != false else { return }
         busy = label
         error = nil
         Task {
+            guard allowed?() != false else { busy = nil; return }
             let result = await operation(directory)
             busy = nil
             if !result.succeeded { error = result.message }
             shownHead = .none
-            await refresh()
+            if allowed?() != false { await refresh() }
+        }
+    }
+
+    func cancelAutomaticCommit() {
+        automaticTask?.cancel()
+    }
+
+    func automaticCommit(allowed: @escaping @MainActor () -> Bool) {
+        guard busy == nil, allowed() else { return }
+        busy = "Revisando cambios…"
+        error = nil
+        automaticTask = Task {
+            defer { busy = nil; automaticTask = nil }
+            do {
+                let result = try await GitCommitAutomation().commit(in: directory, allowed: allowed) { self.busy = $0 }
+                if !result.succeeded { error = result.message }
+            } catch is CancellationError {
+                error = "Commit automático cancelado."
+            } catch {
+                self.error = error.localizedDescription
+            }
+            shownHead = .none
+            if allowed(), !Task.isCancelled { await refresh() }
         }
     }
 
@@ -513,5 +538,45 @@ struct GitDiffView: View, Equatable {
         if line.hasPrefix("-") { return Color.red.opacity(0.14) }
         if line.hasPrefix("@@") { return JackPalette.accent.opacity(0.07) }
         return .clear
+    }
+}
+
+/// The Git button's right-click menu, shown only by the Normal workspace.
+struct GitQuickActionsMenu: View {
+    @ObservedObject var session: GitSession
+    let allowed: @MainActor () -> Bool
+    let onShowGit: () -> Void
+
+    var body: some View {
+        Group {
+            Button("Commit", systemImage: "checkmark.circle") {
+                guard allowed() else { return }
+                onShowGit()
+                session.automaticCommit(allowed: allowed)
+            }
+            .help("Genera el mensaje y hace commit con Gemma 4 31B Cloud. El diff se envía a Ollama Cloud.")
+            Button("Push", systemImage: "arrow.up") {
+                guard allowed() else { return }
+                onShowGit()
+                session.perform("Subiendo…", allowed: allowed) { directory in
+                    guard allowed() else { return GitResult(status: 1, output: "", error: "Acción cancelada.") }
+                    let status = await Git.status(in: directory)
+                    guard allowed(), status.isRepository, status.branch != nil else {
+                        return GitResult(status: 1, output: "", error: "Push requiere una rama de un repositorio Git en modo Normal.")
+                    }
+                    return await Git.push(status, in: directory)
+                }
+            }
+            Button("Pull", systemImage: "arrow.down") {
+                guard allowed() else { return }
+                onShowGit()
+                session.perform("Bajando…", allowed: allowed) { directory in
+                    guard allowed() else { return GitResult(status: 1, output: "", error: "Acción cancelada.") }
+                    return await Git.pull(in: directory)
+                }
+            }
+            .help("Descarga los cambios con pull --ff-only")
+        }
+        .disabled(session.busy != nil)
     }
 }

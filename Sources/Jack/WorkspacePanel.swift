@@ -151,7 +151,12 @@ struct WorkspaceTab: Identifiable, Equatable {
         }
     }
 
+    func cancelAutomaticGitCommits() {
+        gits.values.forEach { $0.cancelAutomaticCommit() }
+    }
+
     func terminateAll() {
+        cancelAutomaticGitCommits()
         terminals.values.forEach { $0.terminate() }
         simulatorSession?.shutdownOnQuit()
     }

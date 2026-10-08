@@ -50,6 +50,15 @@ struct MainWindowView: View {
 
     private var selectedConversation: ChatConversation? { store.selectedConversation }
     private var importedClaudeSessions: Set<String> { Set(store.conversations.compactMap { $0.provider == .claude ? $0.sessionID : nil }) }
+    private var selectedGitSession: GitSession? {
+        guard !store.lightModeEnabled, let conversation = selectedConversation, conversation.remote == nil else { return nil }
+        return workspace.git(for: conversation.projectPath)
+    }
+    private func showGitPanel() {
+        guard !store.lightModeEnabled, let id = store.selectedID else { return }
+        workspace.reveal(.git, for: id)
+        workspaceVisible = true
+    }
     private var ice: Bool { interfaceStyle == .ice }
     /// Identifies the plan the selected agent is putting forward, when it has steps to draw.
     private var planKey: String? {
@@ -109,7 +118,11 @@ struct MainWindowView: View {
             if drafts.isEmpty { drafts = memory.drafts }
             if attachments.isEmpty { attachments = memory.attachments }
         }
+        .onChange(of: store.lightModeEnabled) { _, light in
+            if light { workspace.cancelAutomaticGitCommits() }
+        }
         .onDisappear {
+            workspace.cancelAutomaticGitCommits()
             memory.drafts = drafts
             memory.attachments = attachments
         }
@@ -190,7 +203,8 @@ struct MainWindowView: View {
                 if #available(macOS 26, *) { ToolbarSpacer(.flexible) }
                 ToolbarItem {
                     WorkspaceToolbarButtons(sessions: workspace, conversationID: store.selectedID, paneVisible: workspaceVisible,
-                                            explorerVisible: explorerVisible, onToggle: toggleWorkspace, onToggleExplorer: toggleExplorer)
+                                            explorerVisible: explorerVisible, onToggle: toggleWorkspace, onToggleExplorer: toggleExplorer,
+                                            gitSession: selectedGitSession, gitActionsAllowed: { !store.lightModeEnabled }, onShowGit: showGitPanel)
                 }
                 ToolbarItem {
                     Button("Nuevo agente", systemImage: "square.and.pencil") { openNewConversation() }
@@ -278,7 +292,8 @@ struct MainWindowView: View {
                 .equatable()
                 .overlay(alignment: .trailing) {
                     WorkspaceToggles(sessions: workspace, conversationID: store.selectedID, paneVisible: workspaceVisible,
-                                     explorerVisible: explorerVisible, onToggle: toggleWorkspace, onToggleExplorer: toggleExplorer)
+                                     explorerVisible: explorerVisible, onToggle: toggleWorkspace, onToggleExplorer: toggleExplorer,
+                                     gitSession: selectedGitSession, gitActionsAllowed: { !store.lightModeEnabled }, onShowGit: showGitPanel)
                         .equatable()
                 }
             chatWithPanes
