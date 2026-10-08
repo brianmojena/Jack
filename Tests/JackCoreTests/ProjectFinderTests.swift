@@ -92,6 +92,7 @@ final class PlainFolderTests: XCTestCase {
         root = FileManager.default.temporaryDirectory.appendingPathComponent("jack-plain-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root.appendingPathComponent("Pruebas Vacia"), withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: root.appendingPathComponent("Trabajo/Taller"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("Proyectos Personales/Transfer"), withIntermediateDirectories: true)
         let project = root.appendingPathComponent("Trabajo/App Real")
         try FileManager.default.createDirectory(at: project.appendingPathComponent("src"), withIntermediateDirectories: true)
         FileManager.default.createFile(atPath: project.appendingPathComponent("package.json").path, contents: Data())
@@ -100,15 +101,28 @@ final class PlainFolderTests: XCTestCase {
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: root) }
 
     func testAnEmptyFolderNamedInTheRequestIsFound() {
-        XCTAssertEqual(ProjectLocator.folderToStart(in: "entra a la carpeta pruebas vacia y crea un proyecto", roots: [root.path]),
+        XCTAssertEqual(ProjectLocator.plainFolder(in: "entra a la carpeta pruebas vacia y crea un proyecto", roots: [root.path]),
                        root.appendingPathComponent("Pruebas Vacia").path)
-        XCTAssertEqual(ProjectLocator.folderToStart(in: "ve a la carpeta Taller", roots: [root.path]),
+        XCTAssertEqual(ProjectLocator.plainFolder(in: "ve a la carpeta Taller", roots: [root.path]),
                        root.appendingPathComponent("Trabajo/Taller").path)
     }
 
+    func testProjectCueAndRelativePathsFindAnEmptyFolder() {
+        XCTAssertEqual(ProjectLocator.plainFolder(in: "Entra al proyecto taller", roots: [root.path]), root.appendingPathComponent("Trabajo/Taller").path)
+        XCTAssertEqual(ProjectLocator.plainFolder(in: "la ruta es trabajo/taller", roots: [root.path]), root.appendingPathComponent("Trabajo/Taller").path)
+        XCTAssertEqual(ProjectLocator.plainFolder(in: "la ruta es Trabajo/Taller.", roots: [root.path]), root.appendingPathComponent("Trabajo/Taller").path)
+        XCTAssertEqual(ProjectLocator.plainFolder(in: "la ruta es pruebas/vacia", roots: [root.path]), nil, "a path must match whole folder names")
+        XCTAssertNil(ProjectLocator.plainFolder(in: "mejora el proyecto y revisa taller", roots: [root.path]), "the name must follow the cue")
+    }
+
+    func testRelativePathStartingMidName() {
+        XCTAssertEqual(ProjectLocator.plainFolder(in: "la ruta es proyectos personales/transfer", roots: [root.path]),
+                       root.appendingPathComponent("Proyectos Personales/Transfer").path)
+    }
+
     func testNeedsAFolderCueAndNeverEntersProjects() {
-        XCTAssertNil(ProjectLocator.folderToStart(in: "revisa taller", roots: [root.path]), "without saying folder, a word is just a word")
-        XCTAssertNil(ProjectLocator.folderToStart(in: "ve a la carpeta src", roots: [root.path]))
+        XCTAssertNil(ProjectLocator.plainFolder(in: "revisa taller", roots: [root.path]), "without saying folder, a word is just a word")
+        XCTAssertNil(ProjectLocator.plainFolder(in: "ve a la carpeta src", roots: [root.path]))
     }
 
     func testMissingFolderIsCreatedOnlyWhenAskedUnderHome() throws {
@@ -116,8 +130,8 @@ final class PlainFolderTests: XCTestCase {
         let name = "jack-test-\(UUID().uuidString)"
         let wanted = home.appendingPathComponent(name).path
         defer { try? FileManager.default.removeItem(atPath: wanted) }
-        XCTAssertEqual(ProjectLocator.folderToStart(in: "crea una carpeta ~/\(name) y un proyecto nuevo", roots: []), wanted)
+        XCTAssertEqual(ProjectLocator.createdFolder(in: "crea una carpeta ~/\(name) y un proyecto nuevo"), wanted)
         XCTAssertTrue(FileManager.default.fileExists(atPath: wanted))
-        XCTAssertNil(ProjectLocator.folderToStart(in: "crea /usr/jack-nope-\(UUID().uuidString) nuevo", roots: []))
+        XCTAssertNil(ProjectLocator.createdFolder(in: "crea /usr/jack-nope-\(UUID().uuidString) nuevo"))
     }
 }

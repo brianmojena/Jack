@@ -331,8 +331,8 @@ import Foundation
                 // Racing a timer: cancelling either way also ends the model's process.
                 if let knownPath {
                     path = knownPath
-                } else if normal, let folder = await Task.detached(priority: .userInitiated, operation: { ProjectLocator.folderToStart(in: request) }).value {
-                    // An empty or new folder is not in the project index, so the model could not choose it.
+                } else if normal, let folder = ProjectLocator.createdFolder(in: request) {
+                    // A folder the user asked for that does not exist yet: it is made, so the agent starts in it.
                     path = folder
                 } else {
                     path = try await withThrowingTaskGroup(of: String?.self) { group in
@@ -345,6 +345,11 @@ import Foundation
             } catch is CommandDeadlineExceeded {
                 failure = "el modelo tardó más de \(deadline.components.seconds) s en responder."
             } catch { failure = error.localizedDescription }
+            // An empty folder is not in the project index, so the model cannot have chosen it: look for it by name.
+            if path == nil, normal, !Task.isCancelled,
+               let folder = await Task.detached(priority: .userInitiated, operation: { ProjectLocator.plainFolder(in: request) }).value {
+                path = folder
+            }
             guard let self, !Task.isCancelled, !self.stopped else { return }
             self.locateTasks[id] = nil
             self.locating.remove(id)

@@ -28,17 +28,54 @@ public enum ProjectLocator {
         } ?? URL(fileURLWithPath: path).standardizedFileURL.path
     }
 
-    static let folderWords: Set<String> = ["carpeta", "carpetas", "folder", "directorio", "directory"]
+    /// Words that point at a folder when they come right before its name: "la carpeta X", "entra al proyecto X".
+    static let folderCues: Set<String> = [
+        "carpeta", "carpetas", "folder", "directorio", "directory", "proyecto", "project", "ruta", "path",
+        "entra", "entrar", "ve", "ir", "abre", "abrir", "enter", "open", "cd",
+    ]
+    static let articles: Set<String> = ["a", "al", "el", "la", "los", "las", "en", "de", "del", "to", "the", "in", "into"]
     static let creationWords: Set<String> = ["crea", "crear", "creala", "cree", "nueva", "nuevo", "create", "new", "mkdir", "haz", "genera"]
 
-    /// A folder the request asks for that is not a project yet: an empty folder, one that does not exist
-    /// and is to be created, or one without any project marker. Project folders are found by `knownPath`.
+    /// The folder to create when the request asks for a new one by path, such as "crea ~/Foo y un proyecto".
+    public static func createdFolder(in request: String) -> String? {
+        Set(ProjectFinder.tokens(request)).isDisjoint(with: creationWords) ? nil : newFolder(in: request)
+    }
+
+    /// A folder the request names that is not a project: empty or without any project marker, so the
+    /// project index never lists it. Project folders are found by `knownPath`.
     /// Does disk work, so call it off the main actor.
-    public static func folderToStart(in request: String, roots: [String] = ProjectFinder.defaultRoots) -> String? {
-        let words = Set(ProjectFinder.tokens(request))
-        if !words.isDisjoint(with: creationWords), let path = newFolder(in: request) { return path }
-        guard !words.isDisjoint(with: folderWords) else { return nil }
-        return ProjectFinder.resolve(request, projects: plainFolders(roots: roots)).match?.path
+    public static func plainFolder(in request: String, roots: [String] = ProjectFinder.defaultRoots) -> String? {
+        let words = ProjectFinder.tokens(request)
+        guard !Set(words).isDisjoint(with: folderCues) else { return nil }
+        let folders = plainFolders(roots: roots)
+        if let path = folder(endingWith: request, in: folders) { return path }
+        guard let match = ProjectFinder.resolve(request, projects: folders).match else { return nil }
+        // Only a name the request points at: "entra al proyecto transfer", not "mejora las fotos".
+        let name = ProjectFinder.tokens(URL(fileURLWithPath: match.path).lastPathComponent)
+        guard let start = words.indices.first(where: { words[$0...].starts(with: name) }) else { return nil }
+        var before = start - 1
+        while before >= 0, articles.contains(words[before]) { before -= 1 }
+        return before >= 0 && folderCues.contains(words[before]) ? match.path : nil
+    }
+
+    /// A relative path such as "proyectos personales/transfer": the folder whose path ends with it.
+    static func folder(endingWith request: String, in folders: [String]) -> String? {
+        func fold(_ text: String) -> String { text.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil).lowercased() }
+        let wanted = request.split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "`" || $0 == "\"" })
+            .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: ".,;:()'/")) }
+            .filter { $0.contains("/") && !$0.hasPrefix("~") }
+        for fragment in wanted {
+            // The fragment may start mid-name ("personales/transfer" for "Proyectos Personales/Transfer"), at a word.
+            let tail = fold(fragment)
+            let found = folders.filter { path in
+                let folded = fold(path)
+                guard folded.hasSuffix(tail) else { return false }
+                let before = folded.dropLast(tail.count).last
+                return before == "/" || before == " "
+            }
+            if found.count == 1 { return found[0] }
+        }
+        return nil
     }
 
     /// A path written in the request that does not exist yet, inside a folder that does, under the user's home.
