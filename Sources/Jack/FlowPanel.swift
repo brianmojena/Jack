@@ -189,24 +189,22 @@ private struct NativeFlowGraph: View {
                     for edge in graph.edges {
                         guard let from = positions[edge.from], let to = positions[edge.to] else { continue }
                         let route = diagramLayout.returnRoutes[edge.id]
-                        let start = CGPoint(x: from.x + nodeWidth, y: from.y + nodeHeight / 2)
-                        let end = CGPoint(x: to.x, y: to.y + nodeHeight / 2)
+                        let start = CGPoint(x: from.x + nodeWidth / 2, y: from.y + nodeHeight)
+                        let end = CGPoint(x: to.x + nodeWidth / 2, y: to.y)
                         var path = Path(); path.move(to: start)
                         if let route {
                             for point in route.points.dropFirst() { path.addLine(to: CGPoint(x: CGFloat(point.x), y: CGFloat(point.y))) }
                         } else {
-                            let forwardStart = start
-                            let forwardEnd = end
-                            path = Path(); path.move(to: forwardStart)
-                            path.addCurve(to: forwardEnd, control1: CGPoint(x: forwardStart.x + (forwardEnd.x - forwardStart.x) * 0.45, y: forwardStart.y), control2: CGPoint(x: forwardEnd.x - (forwardEnd.x - forwardStart.x) * 0.45, y: forwardEnd.y))
-                            context.stroke(path, with: .color(JackPalette.faint), lineWidth: 1.4)
-                            var arrow = Path(); arrow.move(to: forwardEnd); arrow.addLine(to: CGPoint(x: forwardEnd.x - 6, y: forwardEnd.y - 4)); arrow.move(to: forwardEnd); arrow.addLine(to: CGPoint(x: forwardEnd.x - 6, y: forwardEnd.y + 4))
-                            context.stroke(arrow, with: .color(JackPalette.faint), lineWidth: 1.4)
-                            continue
+                            let bend = (end.y - start.y) * 0.45
+                            path.addCurve(to: end, control1: CGPoint(x: start.x, y: start.y + bend), control2: CGPoint(x: end.x, y: end.y - bend))
                         }
                         context.stroke(path, with: .color(JackPalette.faint), lineWidth: 1.4)
-                        let points = route.map { $0.points.map { CGPoint(x: CGFloat($0.x), y: CGFloat($0.y)) } } ?? [start, end]
-                        let previous = CGPoint(x: points[points.count - 2].x, y: points[points.count - 2].y)
+                        let previous: CGPoint = {
+                            if let point = route?.points.dropLast().last {
+                                return CGPoint(x: CGFloat(point.x), y: CGFloat(point.y))
+                            }
+                            return CGPoint(x: end.x, y: end.y - 8)
+                        }()
                         let dx = end.x - previous.x, dy = end.y - previous.y
                         let length = max(1, hypot(dx, dy)), ux = dx / length, uy = dy / length
                         let base = CGPoint(x: end.x - ux * 8, y: end.y - uy * 8)
@@ -220,7 +218,7 @@ private struct NativeFlowGraph: View {
                         if let route = diagramLayout.returnRoutes[edge.id] {
                             return CGPoint(x: CGFloat(route.labelPoint.x), y: CGFloat(route.labelPoint.y))
                         }
-                        return CGPoint(x: (from.x + nodeWidth + to.x) / 2, y: (from.y + to.y + nodeHeight) / 2)
+                        return CGPoint(x: (from.x + to.x + nodeWidth) / 2, y: (from.y + nodeHeight + to.y) / 2)
                     }()
                     Text(edge.label ?? "").font(.system(size: 10, weight: .medium)).foregroundStyle(JackPalette.secondaryText)
                         .padding(.horizontal, 4).padding(.vertical, 2).background(JackPalette.canvas.opacity(0.92), in: RoundedRectangle(cornerRadius: 4))

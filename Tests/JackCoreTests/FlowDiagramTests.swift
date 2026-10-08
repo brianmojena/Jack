@@ -142,6 +142,7 @@ final class FlowDiagramTests: XCTestCase {
         try graph.validate()
         let parsed = graph
         let mermaid = parsed.mermaid
+        XCTAssertTrue(mermaid.hasPrefix("flowchart TD\n"))
         XCTAssertTrue(mermaid.contains("n0([\"Inicio\"])") )
         XCTAssertTrue(mermaid.contains("n1{\"¿Listo? #91;A#93; #quot;sí#quot; #35;35; #38; #60;b#62;#92;\"}"))
         XCTAssertTrue(mermaid.contains("n1 -->|\"Sí #124; #91;cita#93; #quot;ok#quot; #35;35; #38;\"| n2"))
@@ -314,23 +315,70 @@ final class FlowDiagramTests: XCTestCase {
         XCTAssertEqual(calls, 1, "Repair-cap failure must not make a second request")
     }
 
+    func testLayoutFlowsDownwardAndCentersBranchesInEachRow() throws {
+        let layout = FlowDiagramLayout(graph: validGraph, nodeWidth: 180, nodeHeight: 70, columnGap: 40, rowGap: 90)
+        let start = try XCTUnwrap(layout.frames["end"])
+        let decision = try XCTUnwrap(layout.frames["subgraph"])
+        let work = try XCTUnwrap(layout.frames["work"])
+        let finish = try XCTUnwrap(layout.frames["finish"])
+        XCTAssertEqual(start.midX, decision.midX)
+        XCTAssertGreaterThan(decision.y, start.maxY)
+        XCTAssertGreaterThan(work.y, decision.maxY)
+        XCTAssertEqual(work.y, finish.y, "Branches at the same depth sit side by side")
+        XCTAssertGreaterThan(finish.x, work.maxX)
+        XCTAssertEqual(start.midX, (work.midX + finish.midX) / 2)
+        for frame in layout.frames.values {
+            XCTAssertGreaterThanOrEqual(frame.x, 0)
+            XCTAssertGreaterThanOrEqual(frame.y, 0)
+            XCTAssertLessThan(frame.maxX, layout.size.width)
+            XCTAssertLessThan(frame.maxY, layout.size.height)
+        }
+    }
+
     func testLayoutRoutesBackEdgesAndSelfLoopsOutsideEveryNodeFrame() throws {
         let graph = FlowDiagram(title: "Loop", nodes: [
             .init(id: "s", label: "Start", kind: .start), .init(id: "d", label: "Check", kind: .decision),
             .init(id: "p", label: "Repeat", kind: .process), .init(id: "e", label: "Done", kind: .end),
         ], edges: [
             .init(from: "s", to: "d"), .init(from: "d", to: "p", label: "repeat"),
-            .init(from: "p", to: "p", label: "again"), .init(from: "d", to: "e", label: "finish"), .init(from: "p", to: "e"),
+            .init(from: "p", to: "p", label: "again"), .init(from: "d", to: "e", label: "finish"),
+            .init(from: "p", to: "e"), .init(from: "p", to: "d", label: "retry"),
         ])
         try graph.validate()
         let layout = FlowDiagramLayout(graph: graph)
-        let loop = try XCTUnwrap(layout.returnRoutes[graph.edges[2].id])
-        let loopNode = try XCTUnwrap(layout.frames["p"])
-        XCTAssertGreaterThan(loop.points[1].x, loopNode.maxX)
-        XCTAssertLessThan(loop.points[4].x, loopNode.x)
-        XCTAssertLessThan(loop.points[2].y, layout.frames.values.map(\.y).min() ?? .infinity)
-        for point in loop.points.dropFirst().dropLast() {
-            XCTAssertFalse(layout.frames.values.contains { point.x > $0.x && point.x < $0.maxX && point.y > $0.y && point.y < $0.maxY })
+        XCTAssertEqual(layout.returnRoutes.count, 3, "Self, same-row and backward edges each need a return lane")
+        var laneXs = Set<Double>()
+        for edge in [graph.edges[2], graph.edges[4], graph.edges[5]] {
+            let route = try XCTUnwrap(layout.returnRoutes[edge.id])
+            let from = try XCTUnwrap(layout.frames[edge.from])
+            let to = try XCTUnwrap(layout.frames[edge.to])
+            XCTAssertEqual(route.points.first, .init(x: from.midX, y: from.maxY))
+            XCTAssertEqual(route.points.last, .init(x: to.midX, y: to.y))
+            XCTAssertGreaterThan(route.points[1].y, from.maxY)
+            XCTAssertLessThan(route.points[4].y, to.y, "Every arrow enters from above")
+            XCTAssertLessThan(route.points[2].x, layout.frames.values.map(\.x).min() ?? .infinity)
+            XCTAssertTrue(laneXs.insert(route.points[2].x).inserted, "Return lanes stay separate")
+            XCTAssertEqual(route.labelPoint.x, route.points[2].x)
+            for point in route.points {
+                XCTAssertGreaterThanOrEqual(point.x, 0)
+                XCTAssertGreaterThanOrEqual(point.y, 0)
+                XCTAssertLessThan(point.x, layout.size.width)
+                XCTAssertLessThan(point.y, layout.size.height)
+            }
+            for (a, b) in zip(route.points, route.points.dropFirst()) {
+                XCTAssertTrue(a.x == b.x || a.y == b.y)
+                for frame in layout.frames.values {
+                    let crossesInterior: Bool
+                    if a.x == b.x {
+                        crossesInterior = a.x > frame.x && a.x < frame.maxX
+                            && max(a.y, b.y) > frame.y && min(a.y, b.y) < frame.maxY
+                    } else {
+                        crossesInterior = a.y > frame.y && a.y < frame.maxY
+                            && max(a.x, b.x) > frame.x && min(a.x, b.x) < frame.maxX
+                    }
+                    XCTAssertFalse(crossesInterior, "Return connections must avoid every node")
+                }
+            }
         }
     }
 

@@ -117,7 +117,7 @@ public struct FlowDiagram: Codable, Equatable {
     }
 
     public var mermaid: String {
-        var lines = ["flowchart LR", "%% \(Self.mermaidText(title))"]
+        var lines = ["flowchart TD", "%% \(Self.mermaidText(title))"]
         let safeID = Dictionary(uniqueKeysWithValues: nodes.enumerated().map { ($0.element.id, "n\($0.offset)") })
         for node in nodes {
             let label = Self.mermaidText(node.label)
@@ -184,13 +184,14 @@ public struct FlowDiagram: Codable, Equatable {
     }
 }
 
-/// Deterministic orthogonal routing for same-layer and backward edges; return lanes sit above every node.
+/// Top-to-bottom layers with orthogonal return lanes to the left of every node.
 public struct FlowDiagramLayout {
     public struct Point: Equatable { public var x: Double; public var y: Double }
     public struct Frame: Equatable {
         public var x: Double; public var y: Double; public var width: Double; public var height: Double
         public var maxX: Double { x + width }
         public var maxY: Double { y + height }
+        public var midX: Double { x + width / 2 }
         public var midY: Double { y + height / 2 }
     }
     public struct EdgeRoute: Equatable { public var points: [Point]; public var labelPoint: Point }
@@ -199,34 +200,36 @@ public struct FlowDiagramLayout {
     public let returnRoutes: [String: EdgeRoute]
     public let size: (width: Double, height: Double)
 
-    public init(graph: FlowDiagram, nodeWidth: Double = 224, nodeHeight: Double = 82, columnGap: Double = 96, rowGap: Double = 52, laneGap: Double = 24) {
+    public init(graph: FlowDiagram, nodeWidth: Double = 224, nodeHeight: Double = 82, columnGap: Double = 52, rowGap: Double = 96, laneGap: Double = 24) {
         let layers = graph.layers
-        let columns = Dictionary(uniqueKeysWithValues: layers.enumerated().flatMap { column, nodes in nodes.map { ($0.id, column) } })
-        let returns = graph.edges.filter { (columns[$0.to] ?? 0) <= (columns[$0.from] ?? 0) }
-        let top = 24 + Double(returns.count) * laneGap
+        let rows = Dictionary(uniqueKeysWithValues: layers.enumerated().flatMap { row, nodes in nodes.map { ($0.id, row) } })
+        let returns = graph.edges.filter { (rows[$0.to] ?? 0) <= (rows[$0.from] ?? 0) }
+        let left = 24 + Double(returns.count) * laneGap
+        let columnCount = max(1, layers.map(\.count).max() ?? 1)
         var frames: [String: Frame] = [:]
-        for (column, nodes) in layers.enumerated() {
-            for (row, node) in nodes.enumerated() {
-                frames[node.id] = Frame(x: Double(column) * (nodeWidth + columnGap), y: top + Double(row) * (nodeHeight + rowGap), width: nodeWidth, height: nodeHeight)
+        for (row, nodes) in layers.enumerated() {
+            let offset = Double(columnCount - nodes.count) * (nodeWidth + columnGap) / 2
+            for (column, node) in nodes.enumerated() {
+                frames[node.id] = Frame(x: left + offset + Double(column) * (nodeWidth + columnGap), y: 24 + Double(row) * (nodeHeight + rowGap), width: nodeWidth, height: nodeHeight)
             }
         }
         var routes: [String: EdgeRoute] = [:]
         for (index, edge) in returns.enumerated() {
             guard let from = frames[edge.from], let to = frames[edge.to] else { continue }
-            let laneY = 12 + Double(index) * laneGap
-            let rightPort = from.maxX + 18
-            let leftPort = to.x - 18
+            let laneX = 12 + Double(index) * laneGap
+            let bottomPort = from.maxY + 18
+            let topPort = to.y - 18
             let points = [
-                Point(x: from.maxX, y: from.midY), Point(x: rightPort, y: from.midY),
-                Point(x: rightPort, y: laneY), Point(x: leftPort, y: laneY),
-                Point(x: leftPort, y: to.midY), Point(x: to.x, y: to.midY),
+                Point(x: from.midX, y: from.maxY), Point(x: from.midX, y: bottomPort),
+                Point(x: laneX, y: bottomPort), Point(x: laneX, y: topPort),
+                Point(x: to.midX, y: topPort), Point(x: to.midX, y: to.y),
             ]
-            routes[edge.id] = EdgeRoute(points: points, labelPoint: Point(x: (rightPort + leftPort) / 2, y: laneY))
+            routes[edge.id] = EdgeRoute(points: points, labelPoint: Point(x: laneX, y: (bottomPort + topPort) / 2))
         }
         self.frames = frames
         returnRoutes = routes
-        let rowCount = max(1, layers.map(\.count).max() ?? 1)
-        size = (Double(max(1, layers.count)) * (nodeWidth + columnGap) + 24, top + Double(rowCount) * (nodeHeight + rowGap) + 24)
+        size = (left + Double(columnCount) * (nodeWidth + columnGap) - columnGap + 24,
+                24 + Double(max(1, layers.count)) * (nodeHeight + rowGap) - rowGap + 24)
     }
 }
 
