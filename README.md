@@ -4,7 +4,7 @@ Chat nativo y compacto para gestionar varios agentes de desarrollo en macOS. Int
 
 ## Versionado
 
-La versión actual es **0.3.45**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
+La versión actual es **0.3.46**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
 
 ## Construir
 
@@ -32,6 +32,8 @@ Para publicar una versión: sube `CFBundleShortVersionString` y `CFBundleVersion
 ## Uso
 
 En modo Normal, el menú de **Proyectos** permite ordenar manualmente, por nombre ascendente o descendente, por actividad reciente o por cantidad de agentes. En orden manual y sin una búsqueda activa, arrastra el tirador de puntos junto al nombre de la carpeta; el cursor muestra la carpeta y la línea marca dónde quedará. El orden se guarda al soltar y cancelar no lo cambia. Los atajos de navegación siguen el orden mostrado.
+
+En modo Normal, Ajustes > Agentes muestra la versión instalada de Codex, Claude Code y OpenCode y un botón **Actualizar** en cada uno. Jack detecta cómo se instaló (Homebrew cask o fórmula, npm global o el actualizador del propio agente) y ejecuta el comando correspondiente solo cuando lo pulsas; al terminar indica la versión anterior y la nueva. Si no sabe actualizar esa instalación, el botón queda desactivado. El modo Light no muestra versiones ni el botón.
 
 En modo Normal, la barra inferior compara **CPU de Jack** y **CPU del sistema** en la misma escala: porcentaje de la capacidad total del equipo, actualizado cada dos segundos. El sistema incluye Jack, agentes, servidores y las demás aplicaciones; la cifra de Jack incluye solo el proceso de la app. Por ejemplo, ocupar un núcleo de un equipo con ocho núcleos equivale a un 12,5 % de su capacidad total.
 

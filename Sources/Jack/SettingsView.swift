@@ -217,13 +217,13 @@ private struct AgentExecutablesSettings: View {
                     .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
             }
             Section {
-                ProviderExecutableRow(provider: .codex, path: $codexPath, allowsScan: !store.lightModeEnabled)
-                ProviderExecutableRow(provider: .claude, path: $claudePath, allowsScan: !store.lightModeEnabled)
-                ProviderExecutableRow(provider: .opencode, path: $opencodePath, allowsScan: !store.lightModeEnabled)
+                ProviderExecutableRow(provider: .codex, path: $codexPath, allowsScan: !store.lightModeEnabled, allowsUpdate: !store.lightModeEnabled)
+                ProviderExecutableRow(provider: .claude, path: $claudePath, allowsScan: !store.lightModeEnabled, allowsUpdate: !store.lightModeEnabled)
+                ProviderExecutableRow(provider: .opencode, path: $opencodePath, allowsScan: !store.lightModeEnabled, allowsUpdate: !store.lightModeEnabled)
             } header: {
                 Text("Ejecutables")
             } footer: {
-                Text("Jack busca cada agente en tu PATH. Elige una ruta solo si está instalado en otro sitio; no cambia la configuración global del agente.")
+                Text("Jack busca cada agente en tu PATH. Elige una ruta solo si está instalado en otro sitio; no cambia la configuración global del agente. En modo Normal, «Actualizar» usa el método con el que lo instalaste (Homebrew, npm o su propio actualizador) y no se ejecuta sin que lo pidas.")
                     .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
             }
             Section {
@@ -251,7 +251,12 @@ private struct ProviderExecutableRow: View {
     let provider: ChatProvider
     @Binding var path: String
     let allowsScan: Bool
+    /// Normal mode only: Light never shows an update button nor reads versions.
+    let allowsUpdate: Bool
     @State private var isScanning = false
+    @State private var version: String?
+    @State private var isUpdating = false
+    @State private var updateNote: (text: String, failed: Bool)?
     @State private var didScan = false
     @State private var scannedPath: String?
 
@@ -285,8 +290,26 @@ private struct ProviderExecutableRow: View {
                         .font(.system(size: 11))
                         .foregroundStyle(JackPalette.amber)
                 }
+                if let updateNote {
+                    Text(updateNote.text).font(.system(size: 11)).lineLimit(3)
+                        .foregroundStyle(updateNote.failed ? JackPalette.red : JackPalette.muted)
+                        .textSelection(.enabled)
+                }
             }
             Spacer()
+            if allowsUpdate, resolved != nil {
+                if let version { Text(version).font(.system(size: 11, design: .monospaced)).foregroundStyle(JackPalette.muted) }
+                Button(action: update) {
+                    if isUpdating {
+                        ProgressView().controlSize(.small).frame(width: 74)
+                    } else {
+                        Label("Actualizar", systemImage: "arrow.down.circle")
+                    }
+                }
+                .buttonStyle(.borderless)
+                .disabled(isUpdating || !AgentUpdater.canUpdate(provider, override: path.isEmpty ? nil : path))
+                .help("Actualiza \(provider.title) con el mismo método con el que lo instalaste")
+            }
             if !path.isEmpty {
                 Button("Restablecer") { path = ""; scannedPath = nil; didScan = false }.buttonStyle(.borderless)
             }
@@ -305,6 +328,29 @@ private struct ProviderExecutableRow: View {
             Button("Elegir…", action: choose)
         }
         .padding(.vertical, 3)
+        .task(id: resolved) {
+            guard allowsUpdate, resolved != nil else { return }
+            version = await AgentUpdater.installedVersion(of: provider, override: path.isEmpty ? nil : path)
+        }
+    }
+
+    private func update() {
+        guard !isUpdating else { return }
+        isUpdating = true
+        updateNote = nil
+        let override = path.isEmpty ? nil : path
+        Task {
+            do {
+                let result = try await AgentUpdater.update(provider, override: override)
+                version = result.after
+                updateNote = result.changed
+                    ? ("Actualizado de \(result.before ?? "?") a \(result.after ?? "?").", false)
+                    : ("Ya estaba en la última versión.", false)
+            } catch {
+                updateNote = (error.localizedDescription, true)
+            }
+            isUpdating = false
+        }
     }
 
     private func choose() {
