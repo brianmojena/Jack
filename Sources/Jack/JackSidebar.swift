@@ -175,6 +175,8 @@ struct JackSidebar: View {
     let onReloadFromClaude: (UUID) -> Void
     /// Opens the agent in a pane beside the selected one; rows can also be dragged to the chat.
     let onOpenInPane: (UUID) -> Void
+    let isImprovingChatNames: Bool
+    let onImproveChatNames: () -> Void
     let onHide: () -> Void
     /// Bumped by ⌘F to focus the search field.
     let searchRequest: Int
@@ -295,6 +297,7 @@ struct JackSidebar: View {
                     HStack {
                         Text("Proyectos").font(.system(size: 12, weight: .medium))
                         Spacer()
+                        improveNamesButton
                         projectOrderMenu
                     }
                     .listRowSeparator(.hidden)
@@ -416,6 +419,7 @@ struct JackSidebar: View {
                 HStack {
                     sectionLabel("Proyectos")
                     Spacer()
+                    improveNamesButton
                     projectOrderMenu
                     Button { onNewConversation(nil) } label: {
                         Image(systemName: "plus").font(.system(size: 11, weight: .medium)).frame(width: 22, height: 20).contentShape(Rectangle())
@@ -463,6 +467,24 @@ struct JackSidebar: View {
             }
         }
         .padding(.horizontal, 8).padding(.top, 12).padding(.bottom, 4)
+    }
+
+    private var improveNamesButton: some View {
+        Button(action: onImproveChatNames) {
+            Group {
+                if isImprovingChatNames {
+                    ProgressView().controlSize(.small).frame(width: 20, height: 20)
+                } else {
+                    Image(systemName: "sparkles").font(.system(size: 11, weight: .medium))
+                        .frame(width: 22, height: 20).contentShape(Rectangle())
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(JackPalette.muted)
+        .help(isImprovingChatNames ? "Mejorando nombres con Gemma 4 31B Cloud…" : "Mejorar nombres de chats con Gemma 4 31B Cloud")
+        .accessibilityLabel("Mejorar nombres de chats")
+        .disabled(isImprovingChatNames || rows.isEmpty)
     }
 
     private var projectOrderMenu: some View {
