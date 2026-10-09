@@ -241,6 +241,8 @@ struct MainWindowView: View {
             onContinueInTerminal: continueInTerminal,
             onReloadFromClaude: reloadFromClaude,
             onOpenInPane: openInPane,
+            isImprovingChatNames: store.improvingChatNames,
+            onImproveChatNames: store.improveChatNames,
             onHide: toggleSidebar,
             searchRequest: searchRequest
         )
