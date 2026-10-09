@@ -17,6 +17,8 @@ struct SidebarRowModel: Identifiable, Equatable {
     let canEdit: Bool
     var pinnedAt: Date? = nil
     var pending = false
+    /// Runs on another machine over SSH.
+    var isRemote = false
     /// The agent that delegated this one, if any.
     var parentID: UUID? = nil
     /// Shown when the row is listed away from its parent ("Necesita atención", another space).
@@ -825,6 +827,7 @@ struct SidebarRow: View, Equatable {
                     .foregroundStyle(selected || row.unread ? Color.primary : JackPalette.secondaryText)
                     .lineLimit(1)
                 if row.provider.isBeta { BetaBadge() }
+                if row.isRemote { SSHBadge() }
                 if row.pending {
                     Circle().fill(JackPalette.pending).frame(width: 8, height: 8)
                         .shadow(color: JackPalette.pending.opacity(0.9), radius: 3)

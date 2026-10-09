@@ -40,6 +40,7 @@
 		4D90663164D5102D213F6D5F /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 1385178F099D3E470B6B3D6E /* SwiftTerm */; };
 		4EE75C7A08BEA1C03B542683 /* ProgressViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F6561788FB990BD803A0FB9 /* ProgressViews.swift */; };
 		4EEE59F330E778DC3B2E53D1 /* ProgressMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF1118CA07727753620BBFEB /* ProgressMonitor.swift */; };
+		5074BA1370040975AAB81985 /* AgentUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFF06CBC57D40F317FC649F6 /* AgentUpdater.swift */; };
 		53306EA90065579DD4362D48 /* ApprovalViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E0312F9EF3FDF19D86B6340 /* ApprovalViews.swift */; };
 		56C38ADB49FAC17203F73ED4 /* ClaudeSessions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA9AEFCAF5C3EB12827473A9 /* ClaudeSessions.swift */; };
 		5A56C9CADC26642A0D180421 /* NotebookTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85DCC6EA3147FF905D955068 /* NotebookTools.swift */; };
@@ -251,6 +252,7 @@
 		EC1BBE9D45CBEC403EA22C82 /* AgentActivityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentActivityView.swift; sourceTree = "<group>"; };
 		EE20CBCE09336DFA3CA28709 /* BatterySaver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatterySaver.swift; sourceTree = "<group>"; };
 		EEB5D3C1C311E732214D3E5F /* ImagePlaygroundViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePlaygroundViews.swift; sourceTree = "<group>"; };
+		EFF06CBC57D40F317FC649F6 /* AgentUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentUpdater.swift; sourceTree = "<group>"; };
 		F40A187CE25E794DFACFD965 /* LightTranscript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LightTranscript.swift; sourceTree = "<group>"; };
 		F7BD885E59F4C6849E846404 /* MainWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowView.swift; sourceTree = "<group>"; };
 		F92F2637817F350152A1A81C /* UpdateChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateChecker.swift; sourceTree = "<group>"; };
@@ -292,6 +294,7 @@
 			isa = PBXGroup;
 			children = (
 				112E9D6E62140F40A3F29A21 /* AgentBridge.swift */,
+				EFF06CBC57D40F317FC649F6 /* AgentUpdater.swift */,
 				DB9EBFF77446878230D70940 /* AppInstaller.swift */,
 				D270EF82D7E479169076203B /* BrowserAddress.swift */,
 				99043DC6E87DB144C2ECE631 /* BrowserPick.swift */,
@@ -616,6 +619,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				26F33593401C4D6EF10CC974 /* AgentBridge.swift in Sources */,
+				5074BA1370040975AAB81985 /* AgentUpdater.swift in Sources */,
 				A2E8E05038BC1F06CFDD8C89 /* AppInstaller.swift in Sources */,
 				7E295FDBE4DB448AD14EB38C /* BrowserAddress.swift in Sources */,
 				1E413BE4FA305A05CFCDA372 /* BrowserPick.swift in Sources */,

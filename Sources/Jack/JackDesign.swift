@@ -280,6 +280,17 @@ struct BetaBadge: View {
     }
 }
 
+struct SSHBadge: View {
+    var body: some View {
+        Text("SSH").font(.system(size: 8, weight: .bold)).tracking(0.4)
+            .padding(.horizontal, 4).padding(.vertical, 1.5)
+            .foregroundStyle(JackPalette.accent)
+            .background(JackPalette.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: 3, style: .continuous))
+            .help("Se ejecuta en otra máquina por SSH")
+            .accessibilityLabel("Remoto por SSH")
+    }
+}
+
 func providerGlyph(_ provider: ChatProvider, size: CGFloat = 25) -> some View {
     ZStack {
         RoundedRectangle(cornerRadius: size * 0.28, style: .continuous).fill(providerColor(provider).opacity(0.14)).frame(width: size, height: size)

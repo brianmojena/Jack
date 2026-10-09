@@ -604,6 +604,7 @@ struct MainWindowView: View {
                 canEdit: !status.isActive,
                 pinnedAt: conversation.pinnedAt,
                 pending: conversation.isPending == true,
+                isRemote: conversation.remote != nil,
                 parentID: conversation.parentID,
                 parentTitle: conversation.parentID.flatMap { titles[$0] }
             )
@@ -821,11 +822,6 @@ struct MainWindowView: View {
                     .labelStyle(.iconOnly).buttonStyle(.plain)
                     .font(.system(size: 12)).foregroundStyle(JackPalette.muted)
                     .frame(width: 24, height: 24)
-                if conversation.provider == .claude, conversation.parentID == nil {
-                    RemoteAgentButton(store: store, conversation: conversation)
-                        .buttonStyle(.plain)
-                        .frame(width: 24, height: 24)
-                }
                 Button {
                     // With a message written it is asked as is, like ⌥↩; otherwise the card asks for one.
                     if !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { askAside(in: conversation) }

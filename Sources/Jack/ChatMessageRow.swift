@@ -586,9 +586,8 @@ struct DiffView: View {
             }
         }
         .padding(.vertical, 5)
-        .background(JackPalette.codeBackground, in: RoundedRectangle(cornerRadius: 7))
-        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(JackPalette.hairline, lineWidth: 0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .background(JackPalette.codeBackground)
+        .overlay(Rectangle().strokeBorder(JackPalette.hairline, lineWidth: 0.5))
         .contextMenu {
             Button("Copiar diff", systemImage: "doc.on.doc") {
                 let text = lines.map { marker($0.kind).trimmingCharacters(in: .whitespaces) + $0.text }.joined(separator: "\n")
