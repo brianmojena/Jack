@@ -31,6 +31,8 @@ struct MainWindowView: View {
     @AppStorage("transcriptMonospaced") private var monospaced = true
     @AppStorage(InterfaceStyle.key) private var interfaceStyle = InterfaceStyle.basic
     @State private var newChatID = UUID()
+    /// Automations mode replaces the chat area until an agent is chosen.
+    @State private var showingAutomations = false
     @State private var searchRequest = 0
     /// The composer being typed in: the main chat's or a pane's.
     @FocusState private var focusedComposer: UUID?
@@ -231,8 +233,8 @@ struct MainWindowView: View {
             rows: sidebarRows,
             projectPaths: Dictionary(uniqueKeysWithValues: store.conversations.map { ($0.id, $0.projectPath) }),
             selectedID: store.selectedID,
-            onNewConversation: { _ in openNewConversation() },
-            onSelect: store.select,
+            onNewConversation: { _ in showingAutomations = false; openNewConversation() },
+            onSelect: { showingAutomations = false; store.select($0) },
             onRename: { id in store.conversations.first { $0.id == id }.map(beginRename) },
             onDelete: { id in deletingConversation = store.conversations.first { $0.id == id } },
             onSetUnread: store.setUnread,
@@ -244,12 +246,28 @@ struct MainWindowView: View {
             isImprovingChatNames: store.improvingChatNames,
             onImproveChatNames: store.improveChatNames,
             onHide: toggleSidebar,
-            searchRequest: searchRequest
+            searchRequest: searchRequest,
+            onShowAutomations: { showingAutomations = true },
+            automationsActive: showingAutomations
         )
     }
 
     /// The chat with the workspace and file panes beside it.
-    private var detailPanes: some View {
+    @ViewBuilder private var detailPanes: some View {
+        if showingAutomations {
+            AutomationsView(schedules: store.schedules, projectPaths: automationProjectPaths)
+        } else {
+            chatPanes
+        }
+    }
+
+    /// Folders of the user's chats, most recently used first, for automations to choose from.
+    private var automationProjectPaths: [String] {
+        var seen = Set<String>()
+        return store.conversations.sorted { $0.updatedAt > $1.updatedAt }.map(\.projectPath).filter { seen.insert($0).inserted }
+    }
+
+    private var chatPanes: some View {
         let conversation = selectedConversation
         return PaneSplit(.trailing, visible: explorerVisible && conversation != nil, widthKey: "explorerWidth", defaultWidth: 250,
                          range: 180...440, flexibleMinimum: 380) {
@@ -820,6 +838,9 @@ struct MainWindowView: View {
                     Text(store.maxConcurrent == 0 ? "En cola" : "En cola · máximo \(store.maxConcurrent) a la vez")
                         .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
                 }
+                ScheduleMessageButton(schedules: store.schedules, conversationID: conversation.id, canSchedule: hasContent) { date in
+                    scheduleDraft(in: conversation, at: date)
+                }
                 AgentFoldersButton(store: store, conversation: conversation)
                     .labelStyle(.iconOnly).buttonStyle(.plain)
                     .font(.system(size: 12)).foregroundStyle(JackPalette.muted)
@@ -989,6 +1010,16 @@ struct MainWindowView: View {
         store.errorMessage = nil
         store.send(text, attachments: files, to: conversation.id, interrupting: interrupting)
         guard store.errorMessage == nil else { return }
+        drafts[conversation.id] = ""
+        resetHistory(for: conversation.id)
+        attachments[conversation.id] = nil
+    }
+
+    private func scheduleDraft(in conversation: ChatConversation, at date: Date) {
+        let text = (drafts[conversation.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let files = attachments[conversation.id] ?? []
+        guard !text.isEmpty || !files.isEmpty else { return }
+        store.schedules.schedule(text, attachments: files, in: conversation.id, at: date)
         drafts[conversation.id] = ""
         resetHistory(for: conversation.id)
         attachments[conversation.id] = nil

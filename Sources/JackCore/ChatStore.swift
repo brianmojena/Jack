@@ -88,6 +88,35 @@ import Foundation
         notebookWorkspace = workspace
         return workspace
     }
+    /// Messages left for later and automations. Normal mode only: Light never creates or starts it.
+    private var scheduleCenter: ScheduleCenter?
+    public var schedules: ScheduleCenter {
+        if let scheduleCenter { return scheduleCenter }
+        let center = ScheduleCenter(directory: archive.directory)
+        center.deliver = { [weak self] message in
+            guard let self, self.conversations.contains(where: { $0.id == message.conversationID }) else { return false }
+            self.send(message.text, attachments: message.attachments, to: message.conversationID)
+            return true
+        }
+        center.launch = { [weak self] automation in
+            guard let self else { return .failure(.init("Jack se está cerrando")) }
+            self.errorMessage = nil
+            guard let id = self.create(projectPath: automation.projectPath, provider: automation.provider,
+                                       model: automation.model.isEmpty ? nil : automation.model,
+                                       title: automation.name, select: false) else {
+                return .failure(.init("la carpeta «\(automation.projectPath)» no existe"))
+            }
+            self.send(automation.prompt, to: id)
+            return .success(id)
+        }
+        center.onError = { [weak self] in self?.errorMessage = $0 }
+        scheduleCenter = center
+        return center
+    }
+    /// Starts checking schedules in Normal; stops in Light.
+    public func applySchedules() {
+        if lightModeEnabled { scheduleCenter?.stop() } else { schedules.start() }
+    }
     /// Progress bars agents report with `jack-progress`; created on first use so tests don't watch the real folder.
     private var progressMonitor: ProgressMonitor?
     public var progress: ProgressMonitor {
@@ -1192,6 +1221,7 @@ import Foundation
         conversations.removeAll { $0.id == id }; loaded.remove(id); statuses.removeValue(forKey: id); approvals.removeValue(forKey: id)
         waiting.removeValue(forKey: id); recalled.removeValue(forKey: id)
         suggestions.removeValue(forKey: id); asides.dismiss(id)
+        scheduleCenter?.discardMessages(of: id)
         archive.save(index: conversations, removedID: id)
         if selectedID == id { selectedID = nil; if let next = conversations.first { select(next.id) } }
     }

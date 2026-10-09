@@ -182,6 +182,9 @@ struct JackSidebar: View {
     let onHide: () -> Void
     /// Bumped by ⌘F to focus the search field.
     let searchRequest: Int
+    /// Opens Automations mode; nil hides the entry.
+    var onShowAutomations: (() -> Void)? = nil
+    var automationsActive = false
     @State private var query = ""
     @FocusState private var searchFocused: Bool
     /// Folded spaces, stored as newline-separated project paths.
@@ -254,6 +257,10 @@ struct JackSidebar: View {
             header
             VStack(spacing: 1) {
                 navButton("square.and.pencil", "Nuevo agente", shortcut: "⌘N") { onNewConversation(nil) }
+                if let onShowAutomations {
+                    navButton("clock.arrow.2.circlepath", "Automatizaciones", shortcut: "", action: onShowAutomations)
+                        .background(automationsActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
+                }
                 searchField
             }
             .padding(.horizontal, 8).padding(.bottom, 6)
@@ -336,6 +343,11 @@ struct JackSidebar: View {
             HStack {
                 SettingsLink { Label("Ajustes", systemImage: "gearshape") }
                     .help("Ajustes (⌘,)")
+                if let onShowAutomations {
+                    Button("Automatizaciones", systemImage: "clock.arrow.2.circlepath", action: onShowAutomations)
+                        .foregroundStyle(automationsActive ? JackPalette.accent : JackPalette.muted)
+                        .help("Automatizaciones")
+                }
                 Spacer()
                 Button("Nuevo agente", systemImage: "plus") { onNewConversation(nil) }
                     .help("Nuevo agente (⌘N)")
