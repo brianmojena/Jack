@@ -20,7 +20,7 @@ final class SidebarPreviewTests: XCTestCase {
         let view = JackSidebar(rows: rows, projectPaths: Dictionary(uniqueKeysWithValues: rows.map { ($0.id, "/work/" + $0.projectName) }),
                                selectedID: rows.first?.id, onNewConversation: { _ in }, onSelect: { _ in }, onRename: { _ in },
                                onDelete: { _ in }, onSetUnread: { _, _ in }, onSetPinned: { _, _ in }, onSetPending: { _, _ in },
-                               onContinueInTerminal: { _ in }, onReloadFromClaude: { _ in }, onOpenInPane: { _ in }, onHide: {}, searchRequest: 0)
+                               onContinueInTerminal: { _ in }, onReloadFromClaude: { _ in }, onOpenInPane: { _ in }, isImprovingChatNames: false, onImproveChatNames: {}, onHide: {}, searchRequest: 0)
             .defaultAppStorage(defaults).environment(\.interfaceStyle, .basic).preferredColorScheme(.dark)
         let host = NSHostingView(rootView: view)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 540), styleMask: [.borderless], backing: .buffered, defer: false)
