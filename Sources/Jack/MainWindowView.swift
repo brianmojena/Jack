@@ -16,6 +16,7 @@ struct MainWindowView: View {
     /// The conversation whose side-question card is waiting for a question typed in it.
     @State private var composingAside: UUID?
     @State private var attachments: [UUID: [String]] = [:]
+    @StateObject private var dictation = VoiceDictation()
     /// Where the main chat and the agents opened beside it sit: columns of chats stacked one above another.
     @AppStorage("agentPaneLayout") private var paneLayoutValue = ""
     /// How many columns fit at the window's width.
@@ -866,6 +867,9 @@ struct MainWindowView: View {
                 .buttonStyle(.plain).foregroundStyle(JackPalette.muted)
                 .help("Adjuntar archivos (también puedes arrastrarlos al chat)")
                 .accessibilityLabel("Adjuntar archivos")
+                VoiceDictationButton(dictation: dictation, conversationID: conversation.id) { text in
+                    insertDictation(text, into: conversation.id)
+                } report: { store.errorMessage = $0 }
                 if busy {
                     Button { store.stop(conversation.id) } label: {
                         Image(systemName: "stop.fill").font(.system(size: 9, weight: .bold))
@@ -1096,6 +1100,13 @@ struct MainWindowView: View {
         let current = drafts[id] ?? ""
         drafts[id] = [current, text].filter { !$0.isEmpty }.joined(separator: "\n\n")
         attach(files, to: id)
+        focusedComposer = id
+    }
+
+    /// Dictated text goes after what is already written, in the composer, unsent.
+    private func insertDictation(_ text: String, into id: UUID) {
+        let current = drafts[id] ?? ""
+        drafts[id] = current.isEmpty || current.last?.isWhitespace == true ? current + text : current + " " + text
         focusedComposer = id
     }
 

@@ -7,3 +7,4 @@ xcuserdata/
 __pycache__/
 *.pyc
 Training/stellar/stellar-colab.zip
+Sources/JackCore/VoiceKey.swift
