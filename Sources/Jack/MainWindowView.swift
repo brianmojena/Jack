@@ -236,6 +236,7 @@ struct MainWindowView: View {
             onNewConversation: { _ in showingAutomations = false; openNewConversation() },
             onSelect: { showingAutomations = false; store.select($0) },
             onRename: { id in store.conversations.first { $0.id == id }.map(beginRename) },
+            onImproveNameWithAI: store.improveChatName(withAI:),
             onDelete: { id in deletingConversation = store.conversations.first { $0.id == id } },
             onSetUnread: store.setUnread,
             onSetPinned: { id, pinned in store.setPinned(id, pinned) },
