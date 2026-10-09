@@ -806,12 +806,16 @@ import Foundation
         loadTranscript(id)
         guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
         conversations[index].messages.append(ChatMessage(role: "user", text: ordinaryText, attachments: attachments.isEmpty ? nil : attachments))
+        let firstMessageForOllamaAgent = !lightModeEnabled && !ordinaryText.isEmpty
+            && conversations[index].title == "Nuevo agente" && conversations[index].provider == .stellar
+            && conversations[index].model.lowercased().hasPrefix("ollama/")
         if conversations[index].title == "Nuevo agente" {
             let title = text.isEmpty ? attachments.map { URL(fileURLWithPath: $0).lastPathComponent }.joined(separator: ", ") : text
             conversations[index].title = String(title.prefix(55)).replacingOccurrences(of: "\n", with: " ")
         }
         conversations[index].updatedAt = Date()
         save(id)
+        if firstMessageForOllamaAgent { improveChatName(withAI: id) }
         statuses[id] = .queued
         queue.append((id, ordinaryText))
         drainQueue()
@@ -1066,7 +1070,22 @@ import Foundation
     /// Explicitly improves titles for chats with a user transcript, using Ollama Cloud only in Normal.
     public func improveChatNames() {
         guard !stopped, !lightModeEnabled, !improvingChatNames else { return }
-        let candidates = conversations.map { (id: $0.id, title: $0.title) }
+        let candidates = conversations.map { (id: $0.id, title: $0.title, context: Self.titleContext(from: transcript(of: $0.id))) }
+            .filter { !$0.context.isEmpty }
+        startChatNameImprovement(candidates)
+    }
+
+    /// Improves just one title, used by the sidebar menu and new Ollama conversations.
+    public func improveChatName(withAI id: UUID) {
+        guard !stopped, !lightModeEnabled, !improvingChatNames,
+              let conversation = conversations.first(where: { $0.id == id }) else { return }
+        let context = Self.titleContext(from: transcript(of: id))
+        guard !context.isEmpty else { return }
+        startChatNameImprovement([(id: id, title: conversation.title, context: context)])
+    }
+
+    private func startChatNameImprovement(_ candidates: [(id: UUID, title: String, context: [StellarMessage])]) {
+        guard !candidates.isEmpty else { return }
         let requestModeGeneration = modeGeneration
         improvingChatNames = true
         chatNameImprovementTask = Task { [weak self] in
@@ -1080,10 +1099,7 @@ import Foundation
                     try Task.checkCancellation()
                     guard !self.lightModeEnabled, self.modeGeneration == requestModeGeneration,
                           let current = self.conversations.first(where: { $0.id == candidate.id }), current.title == candidate.title else { continue }
-                    let history = self.transcript(of: candidate.id)
-                    let context = Self.titleContext(from: history)
-                    guard !context.isEmpty else { continue }
-                    let title = try await Self.improvedTitle(context: context, model: model)
+                    let title = try await Self.improvedTitle(context: candidate.context, model: model)
                     try Task.checkCancellation()
                     guard !self.lightModeEnabled, self.modeGeneration == requestModeGeneration,
                           self.conversations.first(where: { $0.id == candidate.id })?.title == candidate.title else { continue }

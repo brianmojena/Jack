@@ -166,6 +166,7 @@ struct JackSidebar: View {
     let onNewConversation: (String?) -> Void
     let onSelect: (UUID) -> Void
     let onRename: (UUID) -> Void
+    let onImproveNameWithAI: (UUID) -> Void
     let onDelete: (UUID) -> Void
     let onSetUnread: (UUID, Bool) -> Void
     let onSetPinned: (UUID, Bool) -> Void
@@ -543,6 +544,8 @@ struct JackSidebar: View {
                 .disabled(!row.canEdit)
         }
         Divider()
+        Button("Renombrar con IA", systemImage: "sparkles") { onImproveNameWithAI(row.id) }
+            .disabled(!row.canEdit || isImprovingChatNames)
         Button("Renombrar…", systemImage: "pencil") { onRename(row.id) }
             .disabled(!row.canEdit)
         Button("Eliminar conversación…", systemImage: "trash", role: .destructive) { onDelete(row.id) }
