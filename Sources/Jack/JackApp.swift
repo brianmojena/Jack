@@ -28,6 +28,7 @@ struct JackApp: App {
                 .onChange(of: lightMode, initial: true) { _, enabled in
                     if enabled { appDelegate.workspace.suspendTerminalInterface() }
                     store.setLightMode(enabled)
+                    store.applySchedules()
                     store.applyRemote(enabled: UserDefaults.standard.bool(forKey: "jackRemoteEnabled"))
                 }
                 .task(id: lightMode) {
