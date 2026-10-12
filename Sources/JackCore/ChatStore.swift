@@ -81,6 +81,15 @@ import Foundation
     public lazy var bridge = AgentBridge(store: self)
     /// Jack Remote for Pixel; created on first use, and never in Light mode.
     var remoteServer: JackRemoteServer?
+    @Published public var artifactRevealRequest: ArtifactRevealRequest?
+    private var artifactLibrary: ArtifactLibrary?
+    public var artifacts: ArtifactLibrary {
+        if let artifactLibrary { return artifactLibrary }
+        let library = ArtifactLibrary(directory: archive.directory.appendingPathComponent("Artifacts"),
+                                      enabled: { [weak self] in self?.lightModeEnabled == false })
+        artifactLibrary = library
+        return library
+    }
     private var notebookWorkspace: NotebookWorkspace?
     public var notebooks: NotebookWorkspace {
         if let notebookWorkspace { return notebookWorkspace }
@@ -316,6 +325,9 @@ import Foundation
         }
         let effort = effort ?? defaultEffort(for: provider)
         var conversation = ChatConversation(projectPath: projectPath, provider: provider, model: model, effort: effort)
+        if provider == .stellar {
+            conversation.model = StellarModels.canonicalID(conversation.model, allowOllamaName: !lightModeEnabled)
+        }
         // SSH remote agents only exist for top-level Claude Code chats.
         if provider == .claude, parentID == nil, let remote, remote.isValid { conversation.remote = remote }
         // Stellar Code has no default model: the first local one that can use tools.
@@ -784,7 +796,7 @@ import Foundation
     /// Whether the agent reads waiting messages while it works, rather than after its turn.
     public func readsWhileWorking(_ id: UUID) -> Bool { drivers[id]?.keepsAlive == true || liveDrivers[id] != nil }
     /// `interrupting` stops the turn so the agent reads the message right away, like Ctrl+Enter.
-    public func send(_ prompt: String, attachments: [String] = [], to id: UUID, interrupting: Bool = false) {
+    public func send(_ prompt: String, attachments: [String] = [], to id: UUID, interrupting: Bool = false, preservingApproval: Bool = false) {
         if !lightModeEnabled, let c = conversations.first(where: { $0.id == id }), c.provider == .claude,
            let session = c.sessionID.flatMap(UUID.init(uuidString:)), terminalClaudeSessions.contains(session) {
             errorMessage = "Esta sesión está abierta en la interfaz Terminal. Cierra su proceso antes de usar el chat."
@@ -804,7 +816,7 @@ import Foundation
             return
         }
         if isBusy(id), JackCommandCatalog.parse(text) == nil {
-            wait(text.hasPrefix("!!") ? String(text.dropFirst()) : text, attachments: attachments, to: id)
+            wait(text.hasPrefix("!!") ? String(text.dropFirst()) : text, attachments: attachments, to: id, preservingApproval: preservingApproval)
             if interrupting { sendWaitingNow(id) }
             return
         }
@@ -850,6 +862,58 @@ import Foundation
         drainQueue()
     }
 
+    /// Routes an explicit leading @mention from a top-level Normal chat. Provider mentions create a
+    /// child; conversation mentions can address only a same-project agent the user explicitly chose.
+    public func routeMention(_ prompt: String, attachments: [String] = [], from id: UUID) -> AgentMentionRouteResult? {
+        guard !lightModeEnabled, delegationEnabled,
+              let source = conversations.first(where: { $0.id == id }), source.parentID == nil,
+              let route = AgentMentions.leadingRoute(in: prompt) else { return nil }
+        guard !stopped else { return .rejected("Jack se está cerrando; no se pudo enviar la tarea.") }
+        guard !route.message.isEmpty || !attachments.isEmpty else { return .rejected("Escribe la tarea después de la mención.") }
+        guard JackCommandCatalog.parse(route.message) == nil else {
+            return .rejected("Los comandos ! no se ejecutan como tareas delegadas. Envíalo como texto de tarea o ejecútalo en el chat destino.")
+        }
+
+        if let provider = ChatProvider(rawValue: route.reference), AgentMentions.providers.contains(provider) {
+            let children = conversations.filter { $0.parentID == source.id }
+            guard children.count < AgentBridge.maxChildren else {
+                return .rejected("Este agente ya tiene el máximo de subagentes. Menciona uno existente para reutilizarlo.")
+            }
+            guard let childID = create(projectPath: source.projectPath, provider: provider, parentID: source.id,
+                                       title: provider.title, select: false) else {
+                return .rejected("No se pudo crear el subagente en la carpeta de este proyecto.")
+            }
+            errorMessage = nil
+            send(route.message + "\n\n" + ChatDelegation.subAgentGuidance, attachments: attachments, to: childID)
+            if let errorMessage { return .rejected(errorMessage) }
+            return .created(conversationID: childID, delivery: statuses[childID] == .queued ? .queuedForSlot : .started)
+        }
+
+        guard AgentMentions.isAgentReference(route.reference) else { return nil }
+        let matches = conversations.filter {
+            $0.id != id && $0.projectPath == source.projectPath
+                && $0.id.uuidString.lowercased().hasPrefix(route.reference)
+        }
+        guard matches.count == 1, let target = matches.first else {
+            return .rejected("La referencia @\(route.reference) no identifica un agente único de este proyecto.")
+        }
+        let wasBusy = isBusy(target.id)
+        let declinesApproval = wasBusy && drivers[target.id]?.keepsAlive == true && !route.message.isEmpty && attachments.isEmpty
+            && approvals[target.id]?.contains(where: { $0.questions.isEmpty }) == true
+        errorMessage = nil
+        send(route.message, attachments: attachments, to: target.id)
+        if let errorMessage { return .rejected(errorMessage) }
+        let delivery: AgentMentionDelivery
+        if declinesApproval {
+            delivery = .declinedApproval
+        } else if wasBusy {
+            delivery = waiting[target.id]?.last?.sent == true ? .handedToDriver : .queuedUntilTurnEnds
+        } else {
+            delivery = statuses[target.id] == .queued ? .queuedForSlot : .started
+        }
+        return .reused(conversationID: target.id, delivery: delivery)
+    }
+
     private static func stellarCompactTarget(_ text: String) -> Int? {
         let parts = text.split(whereSeparator: \.isWhitespace).map(String.init)
         guard let command = parts.first?.lowercased(), command == "/compact" else { return nil }
@@ -861,10 +925,10 @@ import Foundation
     /// A message for an agent that is working. A pending permission request is rejected with it as the reason,
     /// as typing does in Claude Code; otherwise it waits: agents that read messages mid-turn get it at once and
     /// read it after their current step, and the rest get it when the turn ends.
-    private func wait(_ text: String, attachments: [String], to id: UUID) {
+    private func wait(_ text: String, attachments: [String], to id: UUID, preservingApproval: Bool = false) {
         clearSuggestion(id)
         guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
-        if let driver = drivers[id], driver.keepsAlive, attachments.isEmpty, let request = approvals[id]?.first(where: { $0.questions.isEmpty }) {
+        if !preservingApproval, let driver = drivers[id], driver.keepsAlive, attachments.isEmpty, let request = approvals[id]?.first(where: { $0.questions.isEmpty }) {
             conversations[index].messages.append(ChatMessage(role: "user", text: text))
             conversations[index].updatedAt = Date()
             save(id)
@@ -872,7 +936,7 @@ import Foundation
             return
         }
         var message = ChatQueuedMessage(text: text, attachments: attachments)
-        if runs[id] != nil, let driver = drivers[id], driver.keepsAlive { message.sent = driver.inject(message, conversation: conversations[index]) }
+        if !preservingApproval, runs[id] != nil, let driver = drivers[id], driver.keepsAlive { message.sent = driver.inject(message, conversation: conversations[index]) }
         waiting[id, default: []].append(message)
     }
     /// Interrupts the turn so the agent reads the waiting messages now.
@@ -1245,7 +1309,9 @@ import Foundation
         guard runs[id] == nil, !queue.contains(where: { $0.0 == id }), let index = conversations.firstIndex(where: { $0.id == id }) else { return }
         let provider = conversations[index].provider
         let trimmed = model.trimmingCharacters(in: .whitespacesAndNewlines)
-        let selected = trimmed.isEmpty ? provider.defaultModel : trimmed
+        let rawSelected = trimmed.isEmpty ? provider.defaultModel : trimmed
+        let selected = provider == .stellar
+            ? StellarModels.canonicalID(rawSelected, allowOllamaName: !lightModeEnabled) : rawSelected
         if provider == .opencode, conversations[index].model != selected { conversations[index].variant = nil }
         // A different model may have a different window; the next request reports it.
         if conversations[index].model != selected { conversations[index].contextUsage?.window = nil }
@@ -1379,6 +1445,16 @@ import Foundation
         let id = conversation.id
         if let live = liveDrivers[id] { return live }
         let driver = makeDriver(conversation.provider)
+        if !lightModeEnabled, let stellar = driver as? StellarChatDriver {
+            stellar.artifactHandler = { [weak self] name, arguments, current in
+                guard let self, !self.lightModeEnabled else { return ("Artifacts are available only in Normal mode.", true) }
+                let result = self.bridge.artifactCall(name, arguments: arguments, conversation: current, library: self.artifacts)
+                if !result.1, name == "artifact_create" || name == "artifact_update" {
+                    self.artifactRevealRequest = ArtifactRevealRequest(conversationID: current.id)
+                }
+                return result
+            }
+        }
         if lightModeEnabled { driver.setEnergySaving(true) }
         if driver.keepsAlive {
             liveDrivers[id] = driver

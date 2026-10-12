@@ -49,6 +49,9 @@ struct MainWindowView: View {
     /// Claude Code chats found on first launch, offered once.
     @State private var firstImport: [ClaudeSessionSummary]?
     @State private var commandSelection = 0
+    @State private var mentionSelection = 0
+    @State private var mentionNotices: [UUID: String] = [:]
+    @State private var dismissedMentionDraft: String?
     /// Draft for which the user closed the command list with Esc.
     @State private var dismissedCommandDraft: String?
     /// The image request open in Image Playground.
@@ -121,6 +124,13 @@ struct MainWindowView: View {
                 workspace.reveal(.flow, for: id)
                 workspaceVisible = true
             }
+        }
+        .onChange(of: store.artifactRevealRequest) { _, request in
+            guard !store.lightModeEnabled, let request, let current = store.selectedID,
+                  let origin = store.conversations.first(where: { $0.id == request.conversationID }),
+                  store.conversations.first(where: { $0.id == current })?.projectPath == origin.projectPath else { return }
+            workspace.reveal(.artifacts, for: current)
+            workspaceVisible = true
         }
         .onChange(of: paneLayoutValue, initial: true) { _, _ in store.showInPanes(paneLayout.agents) }
         .onChange(of: store.imageRequests.filter(\.isPending).count) { before, now in
@@ -708,10 +718,50 @@ struct MainWindowView: View {
         // Claude Code takes messages while it works, as in its terminal.
         let steerable = busy && store.canSend(to: conversation.id)
         let hasContent = !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attached.isEmpty
+        let mentionOptions = mentionOptions(for: conversation)
         let canSend = (!busy || steerable) && hasContent
         let design: Font.Design = monospaced ? .monospaced : .default
         let textSize: CGFloat = monospaced ? 12.5 : 13
         return VStack(alignment: .leading, spacing: 6) {
+            if let notice = mentionNotices[conversation.id], conversation.parentID == nil {
+                HStack(spacing: 7) {
+                    Image(systemName: "arrowshape.turn.up.right.fill").foregroundStyle(JackPalette.accent)
+                    Text(notice).font(.system(size: 10.5)).foregroundStyle(JackPalette.secondaryText).lineLimit(2)
+                    Spacer(minLength: 2)
+                    Button { mentionNotices[conversation.id] = nil } label: {
+                        Image(systemName: "xmark").font(.system(size: 9, weight: .semibold))
+                    }.buttonStyle(.plain).foregroundStyle(JackPalette.muted).help("Cerrar")
+                }
+                .padding(.horizontal, 8).padding(.vertical, 6)
+                .background(JackPalette.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+            }
+            if !mentionOptions.isEmpty, AgentMentions.query(in: draft) != nil,
+               dismissedMentionDraft != draft {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("ENVIAR A · elige un destino").font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(JackPalette.muted).padding(.horizontal, 8).padding(.top, 5)
+                    ForEach(Array(mentionOptions.enumerated()), id: \.element.id) { index, option in
+                        Button { completeMention(option, in: conversation) } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: option.id.hasPrefix("provider:") ? "plus.circle" : "arrow.turn.up.right")
+                                    .foregroundStyle(JackPalette.accent).frame(width: 14)
+                                Text(option.title).font(.system(size: 11, weight: .medium)).lineLimit(1)
+                                Spacer(minLength: 4)
+                                Text(option.subtitle).font(.system(size: 9.5)).foregroundStyle(JackPalette.muted).lineLimit(1)
+                                Text(option.insertion.trimmingCharacters(in: .whitespaces))
+                                    .font(.system(size: 9, design: .monospaced)).foregroundStyle(JackPalette.faint)
+                            }
+                            .padding(.horizontal, 8).padding(.vertical, 5)
+                            .background(index == mentionSelection ? JackPalette.panelStrong : .clear, in: RoundedRectangle(cornerRadius: 5))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.bottom, 4)
+                .background(JackPalette.panel.opacity(0.7), in: RoundedRectangle(cornerRadius: 7))
+                .accessibilityLabel("Destinos de agentes")
+            }
             if !attached.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
@@ -787,6 +837,18 @@ struct MainWindowView: View {
                         return .handled
                     }
                     .onKeyPress(keys: [.upArrow, .downArrow, .tab, .escape], phases: .down) { press in
+                        if !mentionOptions.isEmpty, AgentMentions.query(in: draft) != nil,
+                           dismissedMentionDraft != draft {
+                            switch press.key {
+                            case .upArrow: mentionSelection = max(0, mentionSelection - 1)
+                            case .downArrow: mentionSelection = min(mentionOptions.count - 1, mentionSelection + 1)
+                            case .tab:
+                                completeMention(mentionOptions[min(mentionSelection, mentionOptions.count - 1)], in: conversation)
+                            case .escape: dismissedMentionDraft = draft
+                            default: break
+                            }
+                            return .handled
+                        }
                         if let query = commandQuery(for: conversation) {
                             let count = CommandSuggestions.matches(availableComposerCommands(conversation), query: query).count
                             switch press.key {
@@ -987,6 +1049,21 @@ struct MainWindowView: View {
         historyDrafts.removeValue(forKey: id)
     }
 
+    private func mentionOptions(for conversation: ChatConversation) -> [AgentMentionOption] {
+        guard !store.lightModeEnabled, store.delegationEnabled, conversation.parentID == nil,
+              let query = AgentMentions.query(in: drafts[conversation.id] ?? "") else { return [] }
+        return AgentMentions.options(for: query, conversations: store.conversations,
+                                     projectPath: conversation.projectPath, excluding: conversation.id)
+    }
+
+    private func completeMention(_ option: AgentMentionOption, in conversation: ChatConversation) {
+        drafts[conversation.id] = AgentMentions.completing(drafts[conversation.id] ?? "", with: option.insertion)
+        dismissedMentionDraft = nil
+        mentionSelection = 0
+        resetHistory(for: conversation.id)
+        focusedComposer = conversation.id
+    }
+
     private func errorBanner(_ text: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(JackPalette.red)
@@ -1013,11 +1090,41 @@ struct MainWindowView: View {
         let files = attachments[conversation.id] ?? []
         guard !text.isEmpty || !files.isEmpty, store.canSend(to: conversation.id) else { return }
         store.errorMessage = nil
+        if let route = store.routeMention(drafts[conversation.id] ?? "", attachments: files, from: conversation.id) {
+            switch route {
+            case let .created(id, delivery):
+                mentionNotices[conversation.id] = routeNotice(for: id, action: "Creé", delivery: delivery)
+            case let .reused(id, delivery):
+                mentionNotices[conversation.id] = routeNotice(for: id, action: "Envié a", delivery: delivery)
+            case let .rejected(message):
+                store.errorMessage = message
+                return
+            }
+            drafts[conversation.id] = ""
+            resetHistory(for: conversation.id)
+            attachments[conversation.id] = nil
+            dismissedMentionDraft = nil
+            return
+        }
         store.send(text, attachments: files, to: conversation.id, interrupting: interrupting)
         guard store.errorMessage == nil else { return }
         drafts[conversation.id] = ""
         resetHistory(for: conversation.id)
         attachments[conversation.id] = nil
+    }
+
+    private func routeNotice(for id: UUID, action: String, delivery: AgentMentionDelivery) -> String {
+        let agent = store.conversations.first { $0.id == id }
+        let name = agent?.title ?? String(id.uuidString.prefix(8))
+        let state: String
+        switch delivery {
+        case .started: state = "empezó a trabajar"
+        case .queuedForSlot: state = "espera un cupo de ejecución"
+        case .handedToDriver: state = "el driver la tiene en cola; aún no confirmó que el agente la leyó"
+        case .queuedUntilTurnEnds: state = "Jack la guardó hasta que termine el turno actual"
+        case .declinedApproval: state = "el mensaje respondió a la aprobación pendiente y no quedó en cola"
+        }
+        return "\(action) «\(name)» (\(id.uuidString.prefix(8).lowercased())); \(state)."
     }
 
     private func scheduleDraft(in conversation: ChatConversation, at date: Date) {

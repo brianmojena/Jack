@@ -294,6 +294,7 @@ struct WorkspaceToolbarButtons: View {
                     if let gitSession { GitQuickActionsMenu(session: gitSession, allowed: gitActionsAllowed, onShowGit: onShowGit) }
                 }
             toggle("Flujo", "flowchart", on: current == .flow, help: "Diagrama de flujo") { onToggle(.flow) }
+            toggle("Artefactos", "square.stack.3d.up", on: current == .artifacts, help: "Artefactos del proyecto") { onToggle(.artifacts) }
             toggle("Archivos", "sidebar.right", on: explorerVisible, help: "Archivos del proyecto (⇧⌘E)", action: onToggleExplorer)
         }
         .disabled(conversationID == nil)

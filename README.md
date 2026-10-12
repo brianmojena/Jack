@@ -4,7 +4,7 @@ Chat nativo y compacto para gestionar varios agentes de desarrollo en macOS. Int
 
 ## Versionado
 
-La versión actual es **0.3.49**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
+La versión actual es **0.3.50**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
 
 ## Construir
 
@@ -85,6 +85,16 @@ Cada agente tiene además un terminal y un navegador propios en el panel lateral
 El valor inicial es cuatro conversaciones a la vez. Puedes cambiarlo desde el menú de paralelismo de la barra lateral o en Ajustes: de 1 a 64, o sin límite. Las conversaciones que exceden el valor elegido esperan en cola. Reducirlo no interrumpe las que ya están trabajando. **Detener** interrumpe únicamente la conversación indicada. Al salir se detienen los procesos creados por Jack; el historial guardado permite continuar después. Las sesiones existentes de Herdr siguen siendo independientes.
 
 Instala y autentica los proveedores con sus propias CLI antes de usarlos. Jack aprovecha esos accesos existentes; no administra credenciales ni cuentas. Los nombres de modelos dependen de tu proveedor y acceso. OpenCode usa el formato `proveedor/modelo`, o su modelo configurado si dejas el campo vacío.
+
+## Artefactos (modo Normal)
+
+El botón **Artefactos** abre la biblioteca del proyecto en el panel lateral. Puedes crear HTML, Markdown, SVG o código; importar archivos de hasta 8 MB (también imágenes y PDF); consultar versiones, editar el código, guardar una copia, restaurar una revisión como nueva versión y exportar el archivo. La biblioteca conserva snapshots: importar no cambia el archivo original. Los borradores del editor se conservan en memoria al cambiar de chat o cerrar el panel; guarda una versión para conservarlos tras salir de Jack.
+
+**Importar → Enlace de Claude** guarda una referencia al artefacto alojado y permite abrirlo en el navegador de Jack, donde puede requerir iniciar sesión. **Desde una sesión de Claude Code** ofrece los enlaces y archivos mencionados en su historial local; tú eliges cuáles importar. Si un archivo temporal ya no existe, importa una descarga/exportación desde Claude. No hay sincronización automática de cuenta ni migración del almacenamiento, conectores o backend de Claude.
+
+Codex, Claude Code y OpenCode reciben `artifact_create`, `artifact_list`, `artifact_read` y `artifact_update` a través del MCP de Jack. Stellar Code ofrece esas herramientas a modelos que soportan llamadas de herramientas, con sus permisos normales de edición. Todos comparten los artefactos de su proyecto. `artifact_update` exige `expected_version` para detectar conflictos; `artifact_read` devuelve texto por fragmentos acotados. Los agentes remotos pueden enviar contenido, pero no importar rutas remotas como si fueran archivos locales.
+
+La vista HTML admite JavaScript inline y recursos incluidos como datos, sin red, popups ni puente nativo de Jack. SVG no ejecuta scripts. Para React/JSX importa primero un HTML compilado y autónomo. Los artefactos se cargan bajo demanda y no se habilitan herramientas, controles ni tareas nuevas en Light.
 
 ## Progreso y descargas
 

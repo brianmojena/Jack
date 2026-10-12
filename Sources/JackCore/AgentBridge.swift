@@ -10,8 +10,10 @@ public struct ChatDelegation: Equatable {
     /// The agent may create images with Image Playground.
     public var images: Bool
     public var notebooks: Bool
-    public init(url: URL, token: String, delegates: Bool = true, images: Bool = false, notebooks: Bool = false) {
-        self.url = url; self.token = token; self.delegates = delegates; self.images = images; self.notebooks = notebooks
+    /// Enables the structured reference and selective context guidance used only in Normal mode.
+    public var normalMode: Bool
+    public init(url: URL, token: String, delegates: Bool = true, images: Bool = false, notebooks: Bool = false, normalMode: Bool = false) {
+        self.url = url; self.token = token; self.delegates = delegates; self.images = images; self.notebooks = notebooks; self.normalMode = normalMode
     }
 
     /// Tells every agent with the `jack` tools when to create an image.
@@ -42,6 +44,15 @@ public struct ChatDelegation: Equatable {
     - If a sub-agent is waiting for the user's permission, tell the user to review it in Jack.
     """
 
+    /// Added only to Normal runs. A task is the boundary of shared context: never copy this conversation's history.
+    public static let normalDelegationInstructions = """
+    Normal-mode delegation rules:
+    - Treat every agent_id returned by Jack as a structured reference. Keep it and use that ID with send_message, get_agent_result and stop_agent; do not identify agents by title.
+    - Give create_agent a self-contained task and only the short, relevant facts or paths it needs in its optional context field. Jack does not share your transcript with it.
+    - Reuse an existing agent only when the user explicitly names one with an @ mention, or when that agent is already one of your children. Never search or expose unrelated conversations.
+    - send_message may queue a follow-up while your child is busy. Report whether Jack queued it, handed it to the driver, or the driver confirmed delivery; these states are different.
+    """
+
     /// Appended to every delegated task so sub-agents play safe in a shared folder, whatever the orchestrator wrote.
     public static let subAgentGuidance = """
     ---
@@ -64,7 +75,7 @@ public struct ChatDelegation: Equatable {
     private var callers: [String: UUID] = [:]
     private var tokens: [UUID: String] = [:]
     /// What each caller may do: the token stays the same, so a later run can change it.
-    private var permissions: [UUID: (delegates: Bool, images: Bool, notebooks: Bool)] = [:]
+    private var permissions: [UUID: (delegates: Bool, images: Bool, notebooks: Bool, normalMode: Bool)] = [:]
 
     init(store: ChatStore) { self.store = store }
 
@@ -76,8 +87,8 @@ public struct ChatDelegation: Equatable {
             tokens[conversationID] = value; callers[value] = conversationID
             return value
         }()
-        permissions[conversationID] = (delegates, images, notebooks)
-        return ChatDelegation(url: URL(string: "http://127.0.0.1:\(port)/mcp")!, token: token, delegates: delegates, images: images, notebooks: notebooks)
+        permissions[conversationID] = (delegates, images, notebooks, store?.lightModeEnabled == false)
+        return ChatDelegation(url: URL(string: "http://127.0.0.1:\(port)/mcp")!, token: token, delegates: delegates, images: images, notebooks: notebooks, normalMode: store?.lightModeEnabled == false)
     }
 
     public func stop() {
@@ -170,9 +181,11 @@ public struct ChatDelegation: Equatable {
         case "ping":
             return Self.result(id: id, [:])
         case "tools/list":
-            let allowed = permissions[caller] ?? (true, false, false)
-            let tools = (allowed.delegates ? Self.tools : []) + (allowed.images ? [Self.imageTool] : [])
+            let allowed = permissions[caller] ?? (true, false, false, false)
+            let delegationTools = allowed.normalMode ? Self.normalTools : Self.tools
+            let tools = (allowed.delegates ? delegationTools : []) + (allowed.images ? [Self.imageTool] : [])
                 + (allowed.notebooks && store?.lightModeEnabled == false ? Self.notebookTools : [])
+                + (allowed.normalMode && store?.lightModeEnabled == false ? Self.artifactTools : [])
             return Self.result(id: id, ["tools": tools])
         case "tools/call":
             let name = params["name"] as? String ?? ""
@@ -219,6 +232,23 @@ public struct ChatDelegation: Equatable {
         ], required: ["agent_id"]),
     ]
 
+    /// Enhanced schema only for Normal. Light retains its previous tools and prompts.
+    static let normalTools: [[String: Any]] = tools.map { original in
+        var tool = original
+        guard let name = tool["name"] as? String,
+              var schema = tool["inputSchema"] as? [String: Any],
+              var properties = schema["properties"] as? [String: Any] else { return tool }
+        if name == "create_agent" {
+            tool["description"] = "Create a sub-agent in Jack and start it on a task right away. Returns its agent_id. It runs in parallel with you and does not see this conversation, so the task must be self-contained. Use context only for the minimal facts or paths this task needs."
+            properties["context"] = ["type": "string", "description": "Optional, concise, task-specific facts or paths. Jack never copies the caller's transcript."]
+        } else if name == "send_message" {
+            tool["description"] = "Send a follow-up message to one of your sub-agents. A busy agent may hold it until its next step or until its turn ends; the response reports whether it was queued or handed to the driver."
+        }
+        schema["properties"] = properties
+        tool["inputSchema"] = schema
+        return tool
+    }
+
     static let imageTool = tool("generate_image", "Create an image with Apple's Image Playground on this Mac and save it to a file. The user sees Image Playground with your prompt and picks a result, so the call waits for them (up to 15 minutes). Photorealistic unless you pass another style. If it returns that Image Playground closed without an image, the prompt was probably refused: write a different one and try again.", [
         "prompt": ["type": "string", "description": "Short, concrete description of what the image shows: subject, setting, light, framing. No real people's names, brands or text."],
         "style": ["type": "string", "enum": ChatImageRequest.Style.allCases.map(\.rawValue), "description": "Defaults to realistic."],
@@ -235,6 +265,16 @@ public struct ChatDelegation: Equatable {
     func call(_ name: String, arguments: [String: Any], caller: UUID) async -> (String, Bool) {
         guard let store else { return ("Jack is closing.", true) }
         guard let parent = store.conversations.first(where: { $0.id == caller }) else { return ("The calling conversation no longer exists.", true) }
+        if name.hasPrefix("artifact_") {
+            guard permissions[caller]?.normalMode == true, !store.lightModeEnabled else {
+                return ("Artifact tools are available only in Normal mode.", true)
+            }
+            let result = artifactCall(name, arguments: arguments, conversation: parent, library: store.artifacts)
+            if !result.1, name == "artifact_create" || name == "artifact_update" {
+                store.artifactRevealRequest = ArtifactRevealRequest(conversationID: caller)
+            }
+            return result
+        }
         if name.hasPrefix("notebook_") {
             guard permissions[caller]?.notebooks == true, !store.lightModeEnabled else {
                 return ("Notebook tools are available only in Normal mode.", true)
@@ -247,7 +287,12 @@ public struct ChatDelegation: Equatable {
 
         func child(_ value: Any?) -> ChatConversation? {
             guard let text = (value as? String)?.trimmingCharacters(in: .whitespaces).lowercased(), !text.isEmpty else { return nil }
-            return children.first { $0.id.uuidString.lowercased().hasPrefix(text) }
+            let matches = children.filter { $0.id.uuidString.lowercased().hasPrefix(text) }
+            if permissions[caller]?.normalMode == true {
+                guard text.count >= 8, matches.count == 1 else { return nil }
+                return matches.first
+            }
+            return matches.first
         }
         func notFound(_ value: Any?) -> (String, Bool) {
             ("No sub-agent with id \(value as? String ?? "(missing)"). Call list_agents to see your sub-agents.", true)
@@ -261,6 +306,11 @@ public struct ChatDelegation: Equatable {
             guard let task = (arguments["task"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !task.isEmpty else {
                 return ("task is required.", true)
             }
+            let context = (arguments["context"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard permissions[caller]?.normalMode == true || context.isEmpty else {
+                return ("The context field is available only in Normal mode.", true)
+            }
+            guard context.count <= 10_000 else { return ("context must be 10000 characters or less.", true) }
             guard children.count < Self.maxChildren else {
                 return ("You already have \(children.count) sub-agents, the maximum. Reuse one with send_message.", true)
             }
@@ -272,21 +322,51 @@ public struct ChatDelegation: Equatable {
                 projectPath: directory, provider: provider, model: model?.isEmpty == false ? model : nil, effort: effort,
                 parentID: caller, title: title?.isEmpty == false ? title : nil, select: false
             ) else { return ("Could not create the agent: \(directory) is not an existing folder.", true) }
-            store.send(task + "\n\n" + ChatDelegation.subAgentGuidance, to: id)
+            let scopedTask = context.isEmpty ? task : task + "\n\nRelevant context (provided selectively by the orchestrator):\n" + context
+            store.send(scopedTask + "\n\n" + ChatDelegation.subAgentGuidance, to: id)
             let queued = store.statuses[id] == .queued
-            return ("Created \(provider.title) agent \(Self.shortID(id))\(queued ? ". It is queued until a slot frees up (Jack runs at most \(store.maxConcurrent) agents at once)" : " and it started working"). Call wait_for_agents to wait for it.", false)
+            let reference = permissions[caller]?.normalMode == true ? "agent_id=\(id.uuidString.lowercased()) (\(Self.shortID(id)))" : Self.shortID(id)
+            return ("Created \(provider.title) agent \(reference)\(queued ? ". It is queued until a slot frees up (Jack runs at most \(store.maxConcurrent) agents at once)" : " and it started working"). Call wait_for_agents to wait for it.", false)
 
         case "send_message":
             guard let agent = child(arguments["agent_id"]) else { return notFound(arguments["agent_id"]) }
             guard let text = (arguments["message"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return ("message is required.", true) }
-            guard !(store.statuses[agent.id] ?? .idle).isBusy else { return ("Agent \(Self.shortID(agent.id)) is still working. Wait for it first.", true) }
-            store.send(text, to: agent.id)
-            return ("Sent to \(Self.shortID(agent.id)).", false)
+            let normalMode = permissions[caller]?.normalMode == true
+            if normalMode, JackCommandCatalog.parse(text) != nil {
+                return ("Jack commands cannot be sent as agent follow-up messages. Send a task message instead.", true)
+            }
+            guard store.canSend(to: agent.id) else { return ("Jack is closing; the message was not sent.", true) }
+            let statusBefore = store.statuses[agent.id] ?? .idle
+            let busy = store.isBusy(agent.id)
+            if busy, store.lightModeEnabled { return ("Agent \(Self.shortID(agent.id)) is still working. Wait for it first.", true) }
+            let pendingApproval = busy && normalMode && store.readsWhileWorking(agent.id)
+                && store.approvals[agent.id]?.contains(where: { $0.questions.isEmpty }) == true
+            store.errorMessage = nil
+            store.send(text, to: agent.id, preservingApproval: pendingApproval)
+            if let error = store.errorMessage { return (error, true) }
+            if busy {
+                if pendingApproval {
+                    return ("Queued in Jack for agent_id=\(agent.id.uuidString.lowercased()) (\(Self.shortID(agent.id))). Its pending permission request remains unchanged; the follow-up will wait until the current turn ends.", false)
+                }
+                if statusBefore == .queued {
+                    return ("Queued in Jack for agent_id=\(agent.id.uuidString.lowercased()) (\(Self.shortID(agent.id))). Its current turn is waiting for a free concurrency slot; this follow-up will wait until that turn ends.", false)
+                }
+                let handedToDriver = store.waiting[agent.id]?.last?.sent == true
+                return handedToDriver
+                    ? ("Queued for agent_id=\(agent.id.uuidString.lowercased()) (\(Self.shortID(agent.id))) and handed to its driver. The driver has not confirmed that the agent read it yet.", false)
+                    : ("Queued in Jack for agent_id=\(agent.id.uuidString.lowercased()) (\(Self.shortID(agent.id))). It will be sent when the current turn ends; it has not been delivered yet.", false)
+            }
+            if normalMode, store.statuses[agent.id] == .queued {
+                return ("Queued in Jack for agent_id=\(agent.id.uuidString.lowercased()) (\(Self.shortID(agent.id))) until a concurrency slot is free. It has not started yet.", false)
+            }
+            return (permissions[caller]?.normalMode == true
+                    ? "Sent to agent_id=\(agent.id.uuidString.lowercased()) (\(Self.shortID(agent.id)))."
+                    : "Sent to \(Self.shortID(agent.id)).", false)
 
         case "wait_for_agents":
             let requested = (arguments["agent_ids"] as? [Any])?.compactMap(child) ?? []
             let targets = requested.isEmpty ? children.filter { (store.statuses[$0.id] ?? .idle).isBusy } : requested
-            guard !targets.isEmpty else { return (children.isEmpty ? "You have no sub-agents yet." : "None of your sub-agents is working.\n\n" + summary(children), false) }
+            guard !targets.isEmpty else { return (children.isEmpty ? "You have no sub-agents yet." : "None of your sub-agents is working.\n\n" + summary(children, structured: permissions[caller]?.normalMode == true), false) }
             let waitAny = arguments["mode"] as? String == "any"
             let timeout = min(max((arguments["timeout_seconds"] as? Int) ?? 600, 10), 900)
             let deadline = Date().addingTimeInterval(TimeInterval(timeout))
@@ -300,11 +380,12 @@ public struct ChatDelegation: Equatable {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
             }
             let timedOut = targets.contains { (store.statuses[$0.id] ?? .idle).isBusy } && !waitAny
-            return ((timedOut ? "Timed out; some agents are still working.\n\n" : "") + summary(targets), false)
+            return ((timedOut ? "Timed out; some agents are still working.\n\n" : "") + summary(targets, structured: permissions[caller]?.normalMode == true), false)
 
         case "get_agent_result":
             guard let agent = child(arguments["agent_id"]) else { return notFound(arguments["agent_id"]) }
-            var text = line(agent)
+            let structured = permissions[caller]?.normalMode == true
+            var text = line(agent, structured: structured)
             if (arguments["include_activity"] as? Bool) != false {
                 let activity = store.recentActivity(of: agent.id, limit: 20)
                 if !activity.isEmpty { text += "\n\nRecent activity:\n" + activity.map { "- " + $0 }.joined(separator: "\n") }
@@ -314,7 +395,7 @@ public struct ChatDelegation: Equatable {
             return (text, false)
 
         case "list_agents":
-            return (children.isEmpty ? "You have no sub-agents yet." : summary(children), false)
+            return (children.isEmpty ? "You have no sub-agents yet." : summary(children, structured: permissions[caller]?.normalMode == true), false)
 
         case "stop_agent":
             guard let agent = child(arguments["agent_id"]) else { return notFound(arguments["agent_id"]) }
@@ -361,11 +442,11 @@ public struct ChatDelegation: Equatable {
         return (store.imageRequest(id) ?? store.endedImage(id) ?? request).resultText
     }
 
-    private func summary(_ agents: [ChatConversation]) -> String {
-        agents.map(line).joined(separator: "\n")
+    private func summary(_ agents: [ChatConversation], structured: Bool) -> String {
+        agents.map { line($0, structured: structured) }.joined(separator: "\n")
     }
 
-    private func line(_ agent: ChatConversation) -> String {
+    private func line(_ agent: ChatConversation, structured: Bool) -> String {
         let status = store?.statuses[agent.id] ?? .idle
         let state: String
         switch status {
@@ -376,7 +457,8 @@ public struct ChatDelegation: Equatable {
         case .idle: state = store?.lastReply(of: agent.id) == nil ? "idle" : "finished"
         }
         let model = agent.model.isEmpty ? "" : " (\(agent.model))"
-        return "- \(Self.shortID(agent.id)) · \(agent.provider.title)\(model) · \(state) · \"\(agent.title)\" · \(agent.projectPath)"
+        let reference = structured ? "agent_id=\(agent.id.uuidString.lowercased()) (\(Self.shortID(agent.id)))" : Self.shortID(agent.id)
+        return "- \(reference) · \(agent.provider.title)\(model) · \(state) · \"\(agent.title)\" · \(agent.projectPath)"
     }
 
     static func shortID(_ id: UUID) -> String { String(id.uuidString.lowercased().prefix(8)) }

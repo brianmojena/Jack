@@ -19,6 +19,27 @@ final class StellarCodeTests: XCTestCase {
         XCTAssertNil(StellarModels.resolve("ollama/"))
     }
 
+    func testNormalResolvesBareOllamaTagWithoutChangingLight() throws {
+        let name = "gemma4:31b-cloud"
+        XCTAssertNil(StellarModels.resolve(name))
+        XCTAssertEqual(StellarModels.resolve(name, allowOllamaName: true)?.name, name)
+        XCTAssertEqual(StellarModels.resolve(name, allowOllamaName: true)?.server, StellarServer.builtIn[0])
+        XCTAssertEqual(StellarModels.canonicalID("  \(name)  ", allowOllamaName: true), "ollama/\(name)")
+        XCTAssertEqual(StellarModels.canonicalID("mlx/account/model:tag", allowOllamaName: true), "mlx/account/model:tag")
+        XCTAssertNil(StellarModels.resolve("unknown/model:tag", allowOllamaName: true))
+        XCTAssertNil(StellarModels.resolve("https://example.com/model:tag", allowOllamaName: true))
+        XCTAssertNil(StellarModels.resolve("model with spaces:tag", allowOllamaName: true))
+        // Actual /api/show shape: Cloud can be recognized by its tag without remote_host.
+        let model = try StellarModels.linkedCloudModel(named: name, show: [
+            "capabilities": ["completion", "thinking", "tools", "vision"],
+            "model_info": ["gemma4.context_length": 262_144]
+        ])
+        XCTAssertTrue(model.isCloud)
+        XCTAssertTrue(model.tools)
+        XCTAssertEqual(model.contextLength, 262_144)
+        XCTAssertThrowsError(try StellarModels.requireCloudAllowed(name: name, includeCloud: false))
+    }
+
     @MainActor func testOllamaCloudMetadataLinkingAndLightGates() throws {
         let localServer = StellarServer.builtIn[0]
         let local = try StellarModels.ollamaModel(named: "gemma4:e2b", show: ["capabilities": ["completion", "tools"]])

@@ -167,6 +167,21 @@ final class ChatStoreTests: XCTestCase {
         XCTAssertEqual(store.conversations.first { $0.id == id }?.jackContext?.seed, "resumen de sesión existente")
     }
 
+    @MainActor func testBareOllamaModelIsStoredWithServerInNormalOnly() throws {
+        let (store, _, folder, _) = fixture()
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let id = try XCTUnwrap(store.create(projectPath: folder.path, provider: .stellar, model: "gemma4:31b-cloud"))
+        XCTAssertEqual(store.conversations.first { $0.id == id }?.model, "ollama/gemma4:31b-cloud")
+        store.updateSettings(id: id, model: "gemma4:e2b", effort: "high")
+        XCTAssertEqual(store.conversations.first { $0.id == id }?.model, "ollama/gemma4:e2b")
+        store.setLightMode(true)
+        store.updateSettings(id: id, model: "gemma4:e2b", effort: "high")
+        XCTAssertEqual(store.conversations.first { $0.id == id }?.model, "gemma4:e2b")
+        let lightID = try XCTUnwrap(store.create(projectPath: folder.path, provider: .stellar, model: "gemma4:e2b"))
+        XCTAssertEqual(store.conversations.first { $0.id == lightID }?.model, "gemma4:e2b")
+    }
+
     @MainActor func testStellarCloudCatalogAndRecentModelsAreRemovedFromLightAndDiscoveryRace() async throws {
         let (store, _, folder, _) = fixture()
         defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }

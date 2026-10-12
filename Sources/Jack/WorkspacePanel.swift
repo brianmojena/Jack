@@ -5,7 +5,7 @@ import SwiftUI
 import WebKit
 
 enum WorkspaceTool: String, CaseIterable, Identifiable {
-    case terminal, browser, simulator, git, flow
+    case terminal, browser, simulator, git, flow, artifacts
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -14,6 +14,7 @@ enum WorkspaceTool: String, CaseIterable, Identifiable {
         case .simulator: "Simulador"
         case .git: "Git"
         case .flow: "Diagrama de flujo"
+        case .artifacts: "Artefactos"
         }
     }
     var symbol: String {
@@ -23,6 +24,7 @@ enum WorkspaceTool: String, CaseIterable, Identifiable {
         case .simulator: "iphone"
         case .git: "arrow.triangle.branch"
         case .flow: "flowchart"
+        case .artifacts: "square.stack.3d.up"
         }
     }
 }
@@ -79,7 +81,7 @@ struct WorkspaceTab: Identifiable, Equatable {
     func open(_ kind: WorkspaceTool, for conversation: UUID) -> WorkspaceTab {
         let list = tabs(for: conversation)
         // One simulator, Git or flow tab per agent is enough: they show the same device, project and plan.
-        if kind == .simulator || kind == .git || kind == .flow, let existing = list.first(where: { $0.kind == kind }) {
+        if kind == .simulator || kind == .git || kind == .flow || kind == .artifacts, let existing = list.first(where: { $0.kind == kind }) {
             selection[conversation] = existing.id
             return existing
         }
@@ -220,6 +222,7 @@ struct WorkspacePane: View, Equatable {
                     Button("Simulador de iOS", systemImage: "iphone") { sessions.open(.simulator, for: conversationID) }
                     Button("Git", systemImage: "arrow.triangle.branch") { sessions.open(.git, for: conversationID) }
                     Button("Diagrama de flujo", systemImage: "flowchart") { sessions.open(.flow, for: conversationID) }
+                    if !store.lightModeEnabled { Button("Artefactos", systemImage: "square.stack.3d.up") { sessions.open(.artifacts, for: conversationID) } }
                 } label: {
                     Image(systemName: "plus").font(.system(size: 12, weight: .medium))
                 } primaryAction: {
@@ -251,6 +254,12 @@ struct WorkspacePane: View, Equatable {
                         GitPanel(session: sessions.git(for: projectPath)) { text in sessions.sendToAgent?(conversationID, text, [], true) }
                     case .flow:
                         FlowPanel(store: store, conversationID: conversationID)
+                    case .artifacts:
+                        if !store.lightModeEnabled, let conversation = store.conversations.first(where: { $0.id == conversationID }) {
+                            ArtifactPanel(library: store.artifacts, conversation: conversation,
+                                          openLink: { sessions.openLink($0, for: conversationID) },
+                                          askAgent: { sessions.sendToAgent?(conversationID, $0, [], false) })
+                        }
                     }
                 } else {
                     emptyState
@@ -293,6 +302,7 @@ private struct WorkspaceTabTitle: View {
             case .simulator: Text("Simulador")
             case .git: Text("Git")
             case .flow: Text("Diagrama de flujo")
+            case .artifacts: Text("Artefactos")
             }
         }
     }

@@ -24,6 +24,7 @@
 		1E413BE4FA305A05CFCDA372 /* BrowserPick.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99043DC6E87DB144C2ECE631 /* BrowserPick.swift */; };
 		1E4B9916484367A33AC3D959 /* ChatUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D0A660EF197200211C217B4 /* ChatUsage.swift */; };
 		214E82491A5D4351F45187E4 /* SimulatorDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87F75EF25C24256C43529DFF /* SimulatorDisplay.swift */; };
+		22D3BF00FE3AD394A5774F43 /* ArtifactPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61D2267782A3D3E8EBBD9FE6 /* ArtifactPanel.swift */; };
 		26F33593401C4D6EF10CC974 /* AgentBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 112E9D6E62140F40A3F29A21 /* AgentBridge.swift */; };
 		28950F3713B14C7E4449B984 /* ProviderUsageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB76527AA8274E1DC203B419 /* ProviderUsageView.swift */; };
 		28AC8F651C192396167D8317 /* AttachmentViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8AC5CBAB71E44192E8AF824 /* AttachmentViews.swift */; };
@@ -34,6 +35,7 @@
 		2CD3AE84E731F84635B040B6 /* NotebookDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CCF40FF45B214513A23886B /* NotebookDocument.swift */; };
 		2F603788E2314A82B075A85A /* ServerViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1ABE22C8EB6AC06EEB29920D /* ServerViews.swift */; };
 		31A450B8426DD2E2BEF42A41 /* SSHTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD2509598C4FC1C9E886108E /* SSHTransport.swift */; };
+		31E3313DC51961979D4DFD8D /* AgentMentions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9864BADC2C8516EF2CD7C854 /* AgentMentions.swift */; };
 		34BC32CE33FE4D40341CCE4D /* AgentFoldersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67147764C7E299C6400683A6 /* AgentFoldersView.swift */; };
 		399CD8D588217F962CE06C5D /* AgentTabs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3621003C5F85DF2D65EFC584 /* AgentTabs.swift */; };
 		4554A60DE0E5512B0E29B1B4 /* AutomationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCFCEC6A2BE443EE8AB64111 /* AutomationsView.swift */; };
@@ -43,6 +45,7 @@
 		4EE75C7A08BEA1C03B542683 /* ProgressViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F6561788FB990BD803A0FB9 /* ProgressViews.swift */; };
 		4EEE59F330E778DC3B2E53D1 /* ProgressMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF1118CA07727753620BBFEB /* ProgressMonitor.swift */; };
 		5074BA1370040975AAB81985 /* AgentUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFF06CBC57D40F317FC649F6 /* AgentUpdater.swift */; };
+		50B143FC44D72601C56EA034 /* Artifacts.swift in Sources */ = {isa = PBXBuildFile; fileRef = C25E6C8DB178859ECD873C96 /* Artifacts.swift */; };
 		53306EA90065579DD4362D48 /* ApprovalViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E0312F9EF3FDF19D86B6340 /* ApprovalViews.swift */; };
 		56C38ADB49FAC17203F73ED4 /* ClaudeSessions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA9AEFCAF5C3EB12827473A9 /* ClaudeSessions.swift */; };
 		5A56C9CADC26642A0D180421 /* NotebookTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85DCC6EA3147FF905D955068 /* NotebookTools.swift */; };
@@ -66,6 +69,7 @@
 		8CFA9AFD04527815E8EC6FC0 /* ClaudeSessionPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3789D85F443A38492640A492 /* ClaudeSessionPicker.swift */; };
 		8D901B967A33198662F4A94B /* ChatMessageRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504E39FB7DA22A1B9933C4A5 /* ChatMessageRow.swift */; };
 		945101B1264E34154DC79876 /* WorkspacePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6164E34644769C64B3E867B1 /* WorkspacePanel.swift */; };
+		961257F1331631473551DE16 /* ArtifactTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CFA10CB841F5A058AC09FE4 /* ArtifactTools.swift */; };
 		96AB78C25512D6E21C9AA45B /* ChatStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55789284D46B10B50C316C86 /* ChatStore.swift */; };
 		978EF068AE97ED7910AE84DB /* UpdateViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1E7A7878DA866A5D263950D /* UpdateViews.swift */; };
 		987806B9522EFBAD726C800D /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35E06A7FE63EA77BDC8FA29C /* main.swift */; };
@@ -181,6 +185,7 @@
 		21FADA6FCE0D89345442C744 /* SSHKeySetup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHKeySetup.swift; sourceTree = "<group>"; };
 		23A3C12F03AEFEE7243BF5C8 /* FlowDiagram.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowDiagram.swift; sourceTree = "<group>"; };
 		2C9731344B7463E74671F52C /* StellarCode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StellarCode.swift; sourceTree = "<group>"; };
+		2CFA10CB841F5A058AC09FE4 /* ArtifactTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactTools.swift; sourceTree = "<group>"; };
 		3130A5E80CADC1AE5B40976C /* TerminalInterfaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalInterfaceView.swift; sourceTree = "<group>"; };
 		32B0BA461A610CE350B86967 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		35E06A7FE63EA77BDC8FA29C /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
@@ -203,6 +208,7 @@
 		6085927C746749BAD3504F03 /* ServerScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerScanner.swift; sourceTree = "<group>"; };
 		6143A83A4EEEBF4CC0FE7C86 /* ProjectLocator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectLocator.swift; sourceTree = "<group>"; };
 		6164E34644769C64B3E867B1 /* WorkspacePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspacePanel.swift; sourceTree = "<group>"; };
+		61D2267782A3D3E8EBBD9FE6 /* ArtifactPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactPanel.swift; sourceTree = "<group>"; };
 		67147764C7E299C6400683A6 /* AgentFoldersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentFoldersView.swift; sourceTree = "<group>"; };
 		6AA8C81C6A84E8DDF53B0226 /* AsideView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AsideView.swift; sourceTree = "<group>"; };
 		6B8F35219BDD3B6F10A58137 /* JackCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JackCommands.swift; sourceTree = "<group>"; };
@@ -221,6 +227,7 @@
 		8F6561788FB990BD803A0FB9 /* ProgressViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressViews.swift; sourceTree = "<group>"; };
 		94A395B75510E22A65D43219 /* VoiceDictationButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceDictationButton.swift; sourceTree = "<group>"; };
 		96265CFED9209661366D40C0 /* AgentPanes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPanes.swift; sourceTree = "<group>"; };
+		9864BADC2C8516EF2CD7C854 /* AgentMentions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMentions.swift; sourceTree = "<group>"; };
 		98F544C4351BBB12FEBCCF2B /* LightNativeText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LightNativeText.swift; sourceTree = "<group>"; };
 		99043DC6E87DB144C2ECE631 /* BrowserPick.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserPick.swift; sourceTree = "<group>"; };
 		9BF3FCA24BA069D694B0B6F5 /* MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownText.swift; sourceTree = "<group>"; };
@@ -240,6 +247,7 @@
 		BC3731337F76E3D2A95FDCE0 /* ScheduleViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleViews.swift; sourceTree = "<group>"; };
 		BD49B26FBE95D7FD23912D74 /* Git.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Git.swift; sourceTree = "<group>"; };
 		BECA119E22381166808B5690 /* PaneSplit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaneSplit.swift; sourceTree = "<group>"; };
+		C25E6C8DB178859ECD873C96 /* Artifacts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Artifacts.swift; sourceTree = "<group>"; };
 		C3D8A6CBC10C08DC5BE8F996 /* ChatModelPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModelPicker.swift; sourceTree = "<group>"; };
 		C4E64BB6ED15B3A579DB97CE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		C5A12922F7A4E1E7A3623821 /* MarkdownTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownTableView.swift; sourceTree = "<group>"; };
@@ -306,8 +314,11 @@
 			isa = PBXGroup;
 			children = (
 				112E9D6E62140F40A3F29A21 /* AgentBridge.swift */,
+				9864BADC2C8516EF2CD7C854 /* AgentMentions.swift */,
 				EFF06CBC57D40F317FC649F6 /* AgentUpdater.swift */,
 				DB9EBFF77446878230D70940 /* AppInstaller.swift */,
+				C25E6C8DB178859ECD873C96 /* Artifacts.swift */,
+				2CFA10CB841F5A058AC09FE4 /* ArtifactTools.swift */,
 				D270EF82D7E479169076203B /* BrowserAddress.swift */,
 				99043DC6E87DB144C2ECE631 /* BrowserPick.swift */,
 				094C42C6DC4B76FE4E66E40D /* ChatArchive.swift */,
@@ -401,6 +412,7 @@
 				96265CFED9209661366D40C0 /* AgentPanes.swift */,
 				3621003C5F85DF2D65EFC584 /* AgentTabs.swift */,
 				0E0312F9EF3FDF19D86B6340 /* ApprovalViews.swift */,
+				61D2267782A3D3E8EBBD9FE6 /* ArtifactPanel.swift */,
 				6AA8C81C6A84E8DDF53B0226 /* AsideView.swift */,
 				A8AC5CBAB71E44192E8AF824 /* AttachmentViews.swift */,
 				CCFCEC6A2BE443EE8AB64111 /* AutomationsView.swift */,
@@ -587,6 +599,7 @@
 				47D12EA07E650A82BF186198 /* AgentPanes.swift in Sources */,
 				399CD8D588217F962CE06C5D /* AgentTabs.swift in Sources */,
 				53306EA90065579DD4362D48 /* ApprovalViews.swift in Sources */,
+				22D3BF00FE3AD394A5774F43 /* ArtifactPanel.swift in Sources */,
 				166A26F7D4105C984E303849 /* AsideView.swift in Sources */,
 				28AC8F651C192396167D8317 /* AttachmentViews.swift in Sources */,
 				4554A60DE0E5512B0E29B1B4 /* AutomationsView.swift in Sources */,
@@ -640,8 +653,11 @@
 			buildActionMask = 2147483647;
 			files = (
 				26F33593401C4D6EF10CC974 /* AgentBridge.swift in Sources */,
+				31E3313DC51961979D4DFD8D /* AgentMentions.swift in Sources */,
 				5074BA1370040975AAB81985 /* AgentUpdater.swift in Sources */,
 				A2E8E05038BC1F06CFDD8C89 /* AppInstaller.swift in Sources */,
+				961257F1331631473551DE16 /* ArtifactTools.swift in Sources */,
+				50B143FC44D72601C56EA034 /* Artifacts.swift in Sources */,
 				7E295FDBE4DB448AD14EB38C /* BrowserAddress.swift in Sources */,
 				1E413BE4FA305A05CFCDA372 /* BrowserPick.swift in Sources */,
 				02B83CB51FECD80B94438A2F /* ChatArchive.swift in Sources */,

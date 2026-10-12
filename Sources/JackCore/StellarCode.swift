@@ -71,7 +71,17 @@ public enum StellarModels {
         }
     }
 
-    public static func resolve(_ modelID: String) -> (server: StellarServer, name: String)? {
+    /// Normal also accepts Ollama's tagged names, as entered in the custom-model field.
+    /// Keep untagged names and unknown server prefixes ambiguous rather than guessing.
+    static func canonicalID(_ rawID: String, allowOllamaName: Bool) -> String {
+        guard allowOllamaName else { return rawID }
+        let id = rawID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.contains("/"), id.contains(":"), (try? validateOllamaName(id)) != nil else { return id }
+        return "ollama/\(id)"
+    }
+
+    public static func resolve(_ modelID: String, allowOllamaName: Bool = false) -> (server: StellarServer, name: String)? {
+        let modelID = canonicalID(modelID, allowOllamaName: allowOllamaName)
         guard let slash = modelID.firstIndex(of: "/") else { return nil }
         let prefix = String(modelID[..<slash])
         guard let server = StellarServer.all.first(where: { $0.id == prefix }) else { return nil }
@@ -865,6 +875,14 @@ final class StellarChatDriver: ChatDriver {
         try await StellarModels.selectedOllamaModel(named: name, includeCloud: includeCloud)
     }
     var streamRequest: StreamFactory = StellarClient.stream
+    var artifactHandler: ((String, [String: Any], ChatConversation) -> (String, Bool))?
+    private var artifactInstructions: String { !energySaving && artifactHandler != nil ? "\n\n" + ArtifactLibrary.agentInstructions : "" }
+    var artifactDefinitions: [[String: Any]] {
+        guard !energySaving, artifactHandler != nil else { return [] }
+        return AgentBridge.artifactTools.map { tool in
+            ["type": "function", "function": ["name": tool["name"]!, "description": tool["description"]!, "parameters": tool["inputSchema"]!]]
+        }
+    }
 
     func setEnergySaving(_ enabled: Bool) {
         energySaving = enabled
@@ -881,7 +899,7 @@ final class StellarChatDriver: ChatDriver {
     private func loop(_ conversation: ChatConversation, prompt: String, onEvent: @escaping @MainActor (ChatEvent) -> Void) async throws {
         deliveredInstructions.removeAll()
         rootInstructionsUnavailable = !energySaving && StellarInstructions.rootIsUnavailable(projectPath: conversation.projectPath)
-        guard let (server, model) = StellarModels.resolve(conversation.model) else {
+        guard let (server, model) = StellarModels.resolve(conversation.model, allowOllamaName: !energySaving) else {
             if energySaving {
                 throw StellarError.message(conversation.model.isEmpty ? "Elige un modelo local para Stellar Code." : "«\(conversation.model)» no es un modelo local de Stellar Code.")
             }
@@ -907,7 +925,7 @@ final class StellarChatDriver: ChatDriver {
         if conversation.sessionID != sessionID { onEvent(.session(sessionID)) }
         var history = StellarSessions.load(sessionID)
         history.removeAll { $0.role == "system" }
-        var system = StellarMessage(role: "system", content: StellarPrompt.system(conversation, tools: useTools, normalMode: !energySaving, instructions: energySaving ? nil : StellarInstructions.root(projectPath: conversation.projectPath)))
+        var system = StellarMessage(role: "system", content: StellarPrompt.system(conversation, tools: useTools, normalMode: !energySaving, instructions: energySaving ? nil : StellarInstructions.root(projectPath: conversation.projectPath)) + artifactInstructions)
         history.append(StellarMessage(role: "user", content: ChatAttachments.promptText(prompt, attachments: conversation.turnAttachments)))
         StellarSessions.save(history, id: sessionID)
 
@@ -922,7 +940,7 @@ final class StellarChatDriver: ChatDriver {
             let textID = "stellar-\(UUID().uuidString)"
             let reasoningID = textID + ":reasoning"
             var text = "", calls: [StellarToolCall] = []
-            let toolDefinitions = useTools ? (energySaving ? StellarTools.definitions : StellarTools.normalDefinitions) : nil
+            let toolDefinitions = useTools ? (energySaving ? StellarTools.definitions : StellarTools.normalDefinitions + artifactDefinitions) : nil
             let bounded = energySaving ? (history, nil) : Self.contextBounded(history, system: system, contextLength: contextLength, toolDefinitions: toolDefinitions ?? [])
             if let notice = bounded.1, !contextNoticeSent {
                 contextNoticeSent = true
@@ -960,7 +978,7 @@ final class StellarChatDriver: ChatDriver {
                     deliveredInstructions.removeAll()
                     rootInstructionsUnavailable = StellarInstructions.rootIsUnavailable(projectPath: conversation.projectPath)
                     system.content = StellarPrompt.system(conversation, tools: useTools, normalMode: !energySaving,
-                                                         instructions: energySaving ? nil : StellarInstructions.root(projectPath: conversation.projectPath))
+                                                         instructions: energySaving ? nil : StellarInstructions.root(projectPath: conversation.projectPath)) + artifactInstructions
                 }
                 StellarSessions.save(history, id: sessionID)
             }
@@ -984,6 +1002,26 @@ final class StellarChatDriver: ChatDriver {
     private var deliveredInstructions: [String: String] = [:]
 
     private func perform(_ call: StellarToolCall, conversation: ChatConversation, roots: [String], onEvent: @escaping @MainActor (ChatEvent) -> Void) async -> ToolResult {
+        if !energySaving, call.name.hasPrefix("artifact_"), let artifactHandler {
+            let toolID = "stellar-artifact-\(UUID().uuidString)"
+            let input = boundedJSON(call.input)
+            onEvent(.tool(id: toolID, title: call.name, detail: input, status: "running"))
+            if ["artifact_create", "artifact_update"].contains(call.name), mode != "acceptEdits", mode != "auto" {
+                let approvalID = "stellar-\(UUID().uuidString)"
+                var approval = ChatApproval(id: approvalID, title: "Guardar artefacto", detail: input)
+                approval.tool = call.name
+                onEvent(.approval(approval))
+                let allowed = await withCheckedContinuation { approvals[approvalID] = $0 }
+                onEvent(.approvalResolved(approvalID))
+                guard allowed, !energySaving else {
+                    onEvent(.tool(id: toolID, title: call.name, detail: "No se guardó el artefacto.", status: "failed"))
+                    return ToolResult(text: "The user rejected the action or Normal mode ended.", failed: true)
+                }
+            }
+            let (output, failed) = artifactHandler(call.name, call.input, conversation)
+            onEvent(.tool(id: toolID, title: call.name, detail: input + "\n" + output, status: failed ? "failed" : "completed"))
+            return ToolResult(text: output, failed: failed)
+        }
         let spec = StellarTools.specs.first { $0.name == call.name }
         let toolID = "stellar-tool-\(UUID().uuidString)"
         let title = spec?.title ?? call.name
@@ -1129,7 +1167,7 @@ enum StellarAside {
                     inspectModel: ((String, Bool) async throws -> StellarModel)? = nil,
                     streamRequest: StellarChatDriver.StreamFactory? = nil,
                     partial: @escaping @MainActor (String) -> Void) async throws -> String {
-        guard let (server, model) = StellarModels.resolve(conversation.model) else {
+        guard let (server, model) = StellarModels.resolve(conversation.model, allowOllamaName: allowCloud) else {
             throw StellarError.message(allowCloud ? "Elige un modelo local o vincula uno de Ollama Cloud para Stellar Code." : "Elige un modelo local para Stellar Code.")
         }
         let cloudIsAllowed = { cloudAllowed?() ?? allowCloud }

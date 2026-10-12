@@ -43,7 +43,7 @@ final class AgentBridgeTests: XCTestCase {
         XCTAssertEqual(notification.status, 202)
         let tools = try await post(delegation, ["jsonrpc": "2.0", "id": 2, "method": "tools/list"])
         let names = ((tools.json?["result"] as? [String: Any])?["tools"] as? [[String: Any]])?.compactMap { $0["name"] as? String }
-        XCTAssertEqual(Set(names ?? []), ["create_agent", "send_message", "wait_for_agents", "get_agent_result", "list_agents", "stop_agent", "notebook_open", "notebook_run", "notebook_edit_cell", "notebook_kernel"])
+        XCTAssertEqual(Set(names ?? []), ["create_agent", "send_message", "wait_for_agents", "get_agent_result", "list_agents", "stop_agent", "notebook_open", "notebook_run", "notebook_edit_cell", "notebook_kernel", "artifact_create", "artifact_list", "artifact_read", "artifact_update"])
 
         let created = try await callTool(delegation, "create_agent", ["provider": "codex", "task": "Write the tests", "title": "Tests"])
         XCTAssertTrue(created.contains("queued"), created)
