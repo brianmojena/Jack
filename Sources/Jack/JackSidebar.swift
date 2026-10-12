@@ -186,6 +186,8 @@ struct JackSidebar: View {
     /// Opens Automations mode; nil hides the entry.
     var onShowAutomations: (() -> Void)? = nil
     var automationsActive = false
+    var onShowArtifacts: (() -> Void)? = nil
+    var artifactsActive = false
     @State private var query = ""
     @FocusState private var searchFocused: Bool
     /// Folded spaces, stored as newline-separated project paths.
@@ -261,6 +263,10 @@ struct JackSidebar: View {
                 if let onShowAutomations {
                     navButton("clock.arrow.2.circlepath", "Automatizaciones", shortcut: "", action: onShowAutomations)
                         .background(automationsActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
+                }
+                if let onShowArtifacts {
+                    navButton("square.stack.3d.up", "Artefactos", shortcut: "", action: onShowArtifacts)
+                        .background(artifactsActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
                 }
                 searchField
             }
@@ -341,22 +347,23 @@ struct JackSidebar: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            HStack {
-                SettingsLink { Label("Ajustes", systemImage: "gearshape") }
-                    .help("Ajustes (⌘,)")
+            VStack(spacing: 2) {
                 if let onShowAutomations {
-                    Button("Automatizaciones", systemImage: "clock.arrow.2.circlepath", action: onShowAutomations)
-                        .foregroundStyle(automationsActive ? JackPalette.accent : JackPalette.muted)
-                        .help("Automatizaciones")
+                    navButton("clock.arrow.2.circlepath", "Automatizaciones", shortcut: "", action: onShowAutomations)
+                        .background(automationsActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
                 }
-                Spacer()
-                Button("Nuevo agente", systemImage: "plus") { onNewConversation(nil) }
-                    .help("Nuevo agente (⌘N)")
-            }
-            .labelStyle(.iconOnly)
-            .buttonStyle(.borderless)
-            .controlSize(.large)
-            .padding(.horizontal, 14).padding(.vertical, 10)
+                if let onShowArtifacts {
+                    navButton("square.stack.3d.up", "Artefactos", shortcut: "", action: onShowArtifacts)
+                        .background(artifactsActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
+                }
+                HStack {
+                    SettingsLink { Label("Ajustes", systemImage: "gearshape") }.help("Ajustes (⌘,)")
+                    Spacer()
+                    Button("Nuevo agente", systemImage: "plus") { onNewConversation(nil) }.help("Nuevo agente (⌘N)")
+                }
+                .labelStyle(.iconOnly).buttonStyle(.borderless).controlSize(.large)
+                .padding(.horizontal, 6).padding(.top, 6)
+            }.padding(.horizontal, 8).padding(.vertical, 10)
         }
         .onChange(of: searchRequest) { _, _ in searchFocused = true }
     }

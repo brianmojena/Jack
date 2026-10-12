@@ -4,7 +4,7 @@ Chat nativo y compacto para gestionar varios agentes de desarrollo en macOS. Int
 
 ## Versionado
 
-La versión actual es **0.3.50**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
+La versión actual es **0.3.51**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
 
 ## Construir
 
@@ -88,7 +88,7 @@ Instala y autentica los proveedores con sus propias CLI antes de usarlos. Jack a
 
 ## Artefactos (modo Normal)
 
-El botón **Artefactos** abre la biblioteca del proyecto en el panel lateral. Puedes crear HTML, Markdown, SVG o código; importar archivos de hasta 8 MB (también imágenes y PDF); consultar versiones, editar el código, guardar una copia, restaurar una revisión como nueva versión y exportar el archivo. La biblioteca conserva snapshots: importar no cambia el archivo original. Los borradores del editor se conservan en memoria al cambiar de chat o cerrar el panel; guarda una versión para conservarlos tras salir de Jack.
+La entrada **Artefactos**, debajo de **Automatizaciones** en la barra lateral, abre la biblioteca con selector de proyecto, incluso sin un chat abierto. El botón **Artefactos** de la barra superior mantiene el acceso desde el panel lateral del chat. Puedes crear HTML, Markdown, SVG o código; importar archivos de hasta 8 MB (también imágenes y PDF); consultar versiones, editar el código, guardar una copia, restaurar una revisión como nueva versión y exportar el archivo. La biblioteca conserva snapshots: importar no cambia el archivo original. Los borradores del editor se conservan en memoria al cambiar de chat o cerrar el panel; guarda una versión para conservarlos tras salir de Jack.
 
 **Importar → Enlace de Claude** guarda una referencia al artefacto alojado y permite abrirlo en el navegador de Jack, donde puede requerir iniciar sesión. **Desde una sesión de Claude Code** ofrece los enlaces y archivos mencionados en su historial local; tú eliges cuáles importar. Si un archivo temporal ya no existe, importa una descarga/exportación desde Claude. No hay sincronización automática de cuenta ni migración del almacenamiento, conectores o backend de Claude.
 

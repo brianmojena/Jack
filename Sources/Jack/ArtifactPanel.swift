@@ -4,6 +4,51 @@ import SwiftUI
 import WebKit
 import PDFKit
 
+/// A sidebar destination, independent of an open chat or workspace pane.
+struct ArtifactLibraryScreen: View {
+    @ObservedObject var store: ChatStore
+    @ObservedObject var library: ArtifactLibrary
+    let askAgent: (ChatConversation, String) -> Void
+    @State private var project = ""
+    private var projects: [String] {
+        Array(Set(store.conversations.map(\.projectPath) + library.items.map(\.projectPath) + (project.isEmpty ? [] : [project]))).sorted()
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("Artefactos", systemImage: "square.stack.3d.up").font(.title2.weight(.semibold))
+                Spacer()
+                Button("Elegir carpeta…") {
+                    let panel = NSOpenPanel(); panel.canChooseFiles = false; panel.canChooseDirectories = true
+                    if panel.runModal() == .OK, let url = panel.url { project = url.path }
+                }
+            }
+            if !projects.isEmpty {
+                Picker("Proyecto", selection: $project) {
+                    ForEach(projects, id: \.self) { path in Text(URL(fileURLWithPath: path).lastPathComponent).tag(path) }
+                }.help(project)
+            }
+            if !project.isEmpty {
+                let conversation = store.conversations.first { $0.id == store.selectedID && $0.projectPath == project }
+                    ?? store.conversations.first { $0.projectPath == project }
+                    ?? ChatConversation(title: "Artefactos", projectPath: project)
+                ArtifactPanel(library: library, conversation: conversation,
+                              openLink: { NSWorkspace.shared.open($0) }, askAgent: { askAgent(conversation, $0) })
+                    .id(project)
+            } else {
+                Text("Elige una carpeta para crear o importar artefactos.")
+                    .foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .padding(20)
+        .onAppear {
+            if project.isEmpty {
+                project = store.conversations.first { $0.id == store.selectedID }?.projectPath ?? projects.first ?? ""
+            }
+        }
+    }
+}
+
 struct ArtifactPanel: View {
     @ObservedObject var library: ArtifactLibrary
     let conversation: ChatConversation
