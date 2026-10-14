@@ -344,7 +344,8 @@ struct MainWindowView: View {
     private var basicCenterColumn: some View {
         VStack(spacing: 0) {
             AgentTabStrip(tabs: tabModels, selectedID: store.selectedID, sidebarVisible: sidebarVisible,
-                          onSelect: store.select, onClose: closeTab, onNew: { openNewConversation() }, onShowSidebar: toggleSidebar)
+                          onSelect: store.select, onClose: closeTab, onNew: { openNewConversation() }, onShowSidebar: toggleSidebar,
+                          onCloseAll: store.lightModeEnabled ? nil : closeAllTabs)
                 .equatable()
                 .overlay(alignment: .trailing) {
                     WorkspaceToggles(sessions: workspace, conversationID: store.selectedID, paneVisible: workspaceVisible,
@@ -527,6 +528,14 @@ struct MainWindowView: View {
         return openTabIDs.compactMap { id in
             byID[id].map { AgentTabModel(id: id, title: $0.title, provider: $0.provider, status: store.statuses[id] ?? .idle, unread: $0.hasUnread == true) }
         }
+    }
+
+    /// Closes every open tab and pane; the chats stay in the sidebar.
+    private func closeAllTabs() {
+        openTabsValue = OpenTabs.encode([])
+        setLayout(PaneLayout())
+        focusedComposer = nil
+        store.selectedID = nil
     }
 
     /// Closing the selected tab moves to its neighbour, as in a browser.

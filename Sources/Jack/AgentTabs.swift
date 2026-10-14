@@ -192,9 +192,12 @@ struct AgentTabStrip: View, Equatable {
     let onClose: (UUID) -> Void
     let onNew: () -> Void
     let onShowSidebar: () -> Void
+    /// Closes every open tab at once; nil hides the button.
+    var onCloseAll: (() -> Void)?
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.tabs == rhs.tabs && lhs.selectedID == rhs.selectedID && lhs.sidebarVisible == rhs.sidebarVisible
+            && (lhs.onCloseAll == nil) == (rhs.onCloseAll == nil)
     }
 
     var body: some View {
@@ -207,6 +210,9 @@ struct AgentTabStrip: View, Equatable {
             }
             AdaptiveAgentTabs(tabs: tabs, selectedID: selectedID, onSelect: onSelect, onClose: onClose)
             StripIconButton(symbol: "plus", help: "Nuevo agente (⌘N)", action: onNew).padding(.horizontal, 4)
+            if let onCloseAll, tabs.count > 1 {
+                StripIconButton(symbol: "xmark.square", help: "Cerrar todos los chats abiertos", action: onCloseAll).padding(.trailing, 4)
+            }
             // The pane switches sit on top of this space; see `WorkspaceToggles`.
             Color.clear.frame(width: WorkspaceToggles.width)
         }
