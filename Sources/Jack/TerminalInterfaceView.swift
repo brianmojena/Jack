@@ -142,6 +142,8 @@ struct TerminalInterfaceView: View {
     @State private var renaming: TerminalWorkspaceEntry?
     @State private var renameText = ""
     @State private var importingClaude = false
+    @State private var showingClaudeCloud = false
+    @State private var cloudSession: ClaudeCloudSession?
     @FocusState private var searchFocused: Bool
 
     private var normal: Bool { !store.lightModeEnabled }
@@ -197,6 +199,15 @@ struct TerminalInterfaceView: View {
                 workspace.rename(entry.id, title: renameText); renaming = nil
             } onCancel: { renaming = nil }
         }
+        .sheet(isPresented: $showingClaudeCloud) {
+            if let cloudSession {
+                VStack(spacing: 0) {
+                    HStack { Spacer(); Button("Cerrar") { showingClaudeCloud = false } }.padding(10)
+                    ClaudeCloudPanel(session: cloudSession)
+                }.frame(minWidth: 900, minHeight: 620)
+            }
+        }
+        .onDisappear { cloudSession?.stop(); cloudSession = nil }
         .sheet(isPresented: $importingClaude) {
             ClaudeSessionPicker(imported: Set(entries.map { $0.claudeSessionID.uuidString.lowercased() })) { session in
                 importingClaude = false
@@ -284,6 +295,11 @@ struct TerminalInterfaceView: View {
             }
             Button("Claude Code en otra carpeta…") { chooseFolder(.claude) }
             Button("Terminal libre en otra carpeta…") { chooseFolder(.shell) }
+            Button("Claude Code Cloud…") {
+                guard normal else { return }
+                if cloudSession == nil { cloudSession = ClaudeCloudSession() }
+                showingClaudeCloud = true
+            }
             Button("Retomar sesión de Claude Code…") { importingClaude = true }
         } label: { Image(systemName: "plus") }.menuStyle(.borderlessButton).fixedSize().help("Nueva terminal")
     }

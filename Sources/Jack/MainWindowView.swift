@@ -35,6 +35,8 @@ struct MainWindowView: View {
     /// Automations mode replaces the chat area until an agent is chosen.
     @State private var showingAutomations = false
     @State private var showingArtifacts = false
+    @State private var showingClaudeCloud = false
+    @State private var showingOffice = false
     @State private var searchRequest = 0
     /// The composer being typed in: the main chat's or a pane's.
     @FocusState private var focusedComposer: UUID?
@@ -109,7 +111,7 @@ struct MainWindowView: View {
             setLayout(layout)
         }
         .onChange(of: store.selectedID, initial: true) { previous, id in
-            if previous != id { showingArtifacts = false }
+            if previous != id { showingArtifacts = false; showingClaudeCloud = false; showingOffice = false }
             guard let id else { return }
             // A plan already there when the agent is selected is not news.
             if let key = planKey { seenPlans.insert(key) }
@@ -246,8 +248,8 @@ struct MainWindowView: View {
             rows: sidebarRows,
             projectPaths: Dictionary(uniqueKeysWithValues: store.conversations.map { ($0.id, $0.projectPath) }),
             selectedID: store.selectedID,
-            onNewConversation: { _ in showingAutomations = false; showingArtifacts = false; openNewConversation() },
-            onSelect: { showingAutomations = false; showingArtifacts = false; store.select($0) },
+            onNewConversation: { _ in showingAutomations = false; showingArtifacts = false; showingClaudeCloud = false; showingOffice = false; openNewConversation() },
+            onSelect: { showingAutomations = false; showingArtifacts = false; showingClaudeCloud = false; showingOffice = false; store.select($0) },
             onRename: { id in store.conversations.first { $0.id == id }.map(beginRename) },
             onImproveNameWithAI: store.improveChatName(withAI:),
             onDelete: { id in deletingConversation = store.conversations.first { $0.id == id } },
@@ -261,16 +263,26 @@ struct MainWindowView: View {
             onImproveChatNames: store.improveChatNames,
             onHide: toggleSidebar,
             searchRequest: searchRequest,
-            onShowAutomations: { showingArtifacts = false; showingAutomations = true },
+            onShowAutomations: { showingClaudeCloud = false; showingArtifacts = false; showingOffice = false; showingAutomations = true },
             automationsActive: showingAutomations,
-            onShowArtifacts: store.lightModeEnabled ? nil : { showingAutomations = false; showingArtifacts = true },
-            artifactsActive: showingArtifacts
+            onShowArtifacts: store.lightModeEnabled ? nil : { showingClaudeCloud = false; showingAutomations = false; showingOffice = false; showingArtifacts = true },
+            artifactsActive: showingArtifacts,
+            onShowOffice: store.lightModeEnabled ? nil : {
+                showingClaudeCloud = false; showingArtifacts = false; showingAutomations = false; showingOffice = true
+            },
+            officeActive: showingOffice,
+            onShowClaudeCloud: store.lightModeEnabled ? nil : {
+                showingArtifacts = false; showingAutomations = false; showingOffice = false; showingClaudeCloud = true
+            },
+            claudeCloudActive: showingClaudeCloud
         )
     }
 
     /// The chat with the workspace and file panes beside it.
     @ViewBuilder private var detailPanes: some View {
-        if showingArtifacts, !store.lightModeEnabled {
+        if showingClaudeCloud, !store.lightModeEnabled {
+            ClaudeCloudPanel(session: workspace.claudeCloud())
+        } else if showingArtifacts, !store.lightModeEnabled {
             ArtifactLibraryScreen(store: store, library: store.artifacts) { conversation, text in
                 let id = store.conversations.contains(where: { $0.id == conversation.id })
                     ? conversation.id : store.create(projectPath: conversation.projectPath, provider: .codex)
@@ -278,6 +290,11 @@ struct MainWindowView: View {
                 showingArtifacts = false
                 store.select(id)
                 sendToAgent(text, files: [], to: id, now: false)
+            }
+        } else if showingOffice, !store.lightModeEnabled {
+            OfficeView(store: store, batterySaver: batterySaver) { id in
+                showingOffice = false
+                store.select(id)
             }
         } else if showingAutomations {
             AutomationsView(schedules: store.schedules, projectPaths: automationProjectPaths)

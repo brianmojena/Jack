@@ -188,6 +188,10 @@ struct JackSidebar: View {
     var automationsActive = false
     var onShowArtifacts: (() -> Void)? = nil
     var artifactsActive = false
+    var onShowOffice: (() -> Void)? = nil
+    var officeActive = false
+    var onShowClaudeCloud: (() -> Void)? = nil
+    var claudeCloudActive = false
     @State private var query = ""
     @FocusState private var searchFocused: Bool
     /// Folded spaces, stored as newline-separated project paths.
@@ -264,9 +268,17 @@ struct JackSidebar: View {
                     navButton("clock.arrow.2.circlepath", "Automatizaciones", shortcut: "", action: onShowAutomations)
                         .background(automationsActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
                 }
+                if let onShowClaudeCloud {
+                    navButton("cloud", "Claude Code Cloud", shortcut: "", action: onShowClaudeCloud)
+                        .background(claudeCloudActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
+                }
                 if let onShowArtifacts {
                     navButton("square.stack.3d.up", "Artefactos", shortcut: "", action: onShowArtifacts)
                         .background(artifactsActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
+                }
+                if let onShowOffice {
+                    navButton("building.2.crop.circle", "Oficina", shortcut: "", action: onShowOffice)
+                        .background(officeActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
                 }
                 searchField
             }
@@ -352,9 +364,17 @@ struct JackSidebar: View {
                     navButton("clock.arrow.2.circlepath", "Automatizaciones", shortcut: "", action: onShowAutomations)
                         .background(automationsActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
                 }
+                if let onShowClaudeCloud {
+                    navButton("cloud", "Claude Code Cloud", shortcut: "", action: onShowClaudeCloud)
+                        .background(claudeCloudActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
+                }
                 if let onShowArtifacts {
                     navButton("square.stack.3d.up", "Artefactos", shortcut: "", action: onShowArtifacts)
                         .background(artifactsActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
+                }
+                if let onShowOffice {
+                    navButton("building.2.crop.circle", "Oficina", shortcut: "", action: onShowOffice)
+                        .background(officeActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
                 }
                 HStack {
                     SettingsLink { Label("Ajustes", systemImage: "gearshape") }.help("Ajustes (⌘,)")

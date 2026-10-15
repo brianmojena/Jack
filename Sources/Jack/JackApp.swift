@@ -26,7 +26,10 @@ struct JackApp: App {
                     store.imageGenerationSupported = ImagePlaygroundSupport.isAvailable
                 }
                 .onChange(of: lightMode, initial: true) { _, enabled in
-                    if enabled { appDelegate.workspace.suspendTerminalInterface() }
+                    if enabled {
+                        appDelegate.workspace.suspendTerminalInterface()
+                        appDelegate.workspace.suspendClaudeCloud()
+                    }
                     store.setLightMode(enabled)
                     store.applySchedules()
                     store.applyRemote(enabled: UserDefaults.standard.bool(forKey: "jackRemoteEnabled"))

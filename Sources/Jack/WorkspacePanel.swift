@@ -43,6 +43,18 @@ struct WorkspaceTab: Identifiable, Equatable {
     @Published private(set) var selection: [UUID: UUID] = [:]
     private var terminals: [UUID: TerminalSession] = [:]
     private var browsers: [UUID: BrowserSession] = [:]
+    // Cloud is created only by an explicit Normal-mode action.
+    private var cloudSession: ClaudeCloudSession?
+    func claudeCloud() -> ClaudeCloudSession {
+        if let cloudSession { return cloudSession }
+        let session = ClaudeCloudSession()
+        cloudSession = session
+        return session
+    }
+    func suspendClaudeCloud() {
+        cloudSession?.stop()
+        cloudSession = nil
+    }
     private var explorers: [String: FileTreeModel] = [:]
     private var gits: [String: GitSession] = [:]
     /// Shared by every agent: there is one set of simulators on the Mac.
@@ -168,6 +180,7 @@ struct WorkspaceTab: Identifiable, Equatable {
     }
 
     func terminateAll() {
+        suspendClaudeCloud()
         suspendTerminalInterface()
         cancelAutomaticGitCommits()
         terminals.values.forEach { $0.terminate() }

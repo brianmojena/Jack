@@ -4,7 +4,7 @@ Chat nativo y compacto para gestionar varios agentes de desarrollo en macOS. Int
 
 ## Versionado
 
-La versión actual es **0.3.52**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
+La versión actual es **0.3.53**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
 
 ## Construir
 
@@ -95,6 +95,12 @@ La entrada **Artefactos**, debajo de **Automatizaciones** en la barra lateral, a
 Codex, Claude Code y OpenCode reciben `artifact_create`, `artifact_list`, `artifact_read` y `artifact_update` a través del MCP de Jack. Stellar Code ofrece esas herramientas a modelos que soportan llamadas de herramientas, con sus permisos normales de edición. Todos comparten los artefactos de su proyecto. `artifact_update` exige `expected_version` para detectar conflictos; `artifact_read` devuelve texto por fragmentos acotados. Los agentes remotos pueden enviar contenido, pero no importar rutas remotas como si fueran archivos locales.
 
 La vista HTML admite JavaScript inline y recursos incluidos como datos, sin red, popups ni puente nativo de Jack. SVG no ejecuta scripts. Para React/JSX importa primero un HTML compilado y autónomo. Los artefactos se cargan bajo demanda y no se habilitan herramientas, controles ni tareas nuevas en Light.
+
+## Oficina (modo Normal)
+
+La entrada **Oficina** de la barra lateral muestra los agentes activos como personajes en una oficina animada, dibujada de forma nativa con SwiftUI. Cada agente tiene su escritorio: cuando trabaja teclea y muestra su actividad real (por ejemplo «Editando main.swift»); cuando espera tu respuesta o una aprobación levanta la mano; sin tarea se va a la zona de descanso. Al pasar el ratón ves su nombre y actividad, y un clic abre su sesión. La cabecera cuenta cuántos trabajan, esperan o descansan.
+
+La animación se pausa cuando la vista no se ve, la ventana no está activa, el ahorro de batería está activo o el sistema pide reducir movimiento. La Oficina no existe en Light.
 
 ## Progreso y descargas
 
@@ -213,3 +219,11 @@ Claude Code se ejecuta de forma interactiva en un PTY de SwiftTerm, directamente
 Jack guarda únicamente nombres, carpetas, selección e identificadores de sesión. Claude conserva sus propios registros y se reanuda cuando existe su transcript. Al reiniciar la app, las entradas se restauran sin ejecutar comandos automáticamente; pulsa **Abrir Claude Code** o **Abrir terminal** para continuar. El scrollback de los shells libres no se guarda. Las terminales permanecen abiertas al cambiar de pestaña o de interfaz en Normal. Una sesión transferida no puede recibir mensajes en el chat al mismo tiempo: termina el proceso de su terminal para devolverla al chat. No se transfieren agentes con trabajo pendiente. Las terminales de esta interfaz se terminan al activar Light o salir de Jack; Light mantiene su interfaz anterior.
 
 La interfaz Terminal no proporciona los paneles de navegador, simulador ni Git del chat. Puedes usar esas herramientas en Basic/Ice o ejecutar sus comandos desde el shell. Usar el CLI directamente elimina la integración de chat, pero no garantiza un porcentaje de ahorro: Claude sigue contando modelo, contexto, herramientas y respuestas contra la cuota.
+
+### Claude Code Cloud (modo Normal)
+
+Abre **Claude Code Cloud** desde la barra lateral de las interfaces Básica o Ice. En la interfaz Terminal, usa **+ → Claude Code Cloud…**. Jack muestra `https://claude.ai/code` dentro de la app: inicia sesión, selecciona el repositorio y el entorno, y crea o continúa sesiones desde la interfaz oficial. El acceso depende de que tu cuenta y organización tengan Cloud habilitado.
+
+El inicio de sesión se conserva en un almacén WebKit propio, separado del navegador general y de las vistas de artefactos. Las ventanas de autenticación y la selección de archivos se abren dentro de Jack. También hay un botón para abrir la página en el navegador del sistema, que utiliza su propio inicio de sesión.
+
+Las tareas se ejecutan en la infraestructura configurada en Claude, no en el directorio local del chat seleccionado. Este espacio usa la interfaz web oficial; no es el driver de chat local ni importa sus conversaciones. Se crea únicamente al abrirlo y se destruye al entrar en Light; las tareas remotas siguen existiendo en Claude.

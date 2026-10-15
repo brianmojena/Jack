@@ -157,7 +157,9 @@ public struct ArtifactError: LocalizedError {
 
     public static func isClaudeArtifactURL(_ url: URL) -> Bool {
         url.scheme == "https" && url.host?.lowercased() == "claude.ai" && url.user == nil && url.password == nil
-            && (url.path.hasPrefix("/public/artifacts/") || url.path.hasPrefix("/code/artifact/") || url.path.hasPrefix("/artifacts/"))
+            && (url.path.hasPrefix("/public/artifacts/") || url.path.hasPrefix("/code/artifact/") || url.path.hasPrefix("/artifacts/")
+                || (url.path.hasPrefix("/chat/") && UUID(uuidString: String(url.path.dropFirst(6))) != nil
+                    && URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.contains(where: { $0.name == "artifact" && !($0.value ?? "").isEmpty }) == true))
     }
 
     public static func claudeLinks(in messages: [ChatMessage]) -> [URL] {
