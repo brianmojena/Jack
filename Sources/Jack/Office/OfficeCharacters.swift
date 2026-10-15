@@ -1,132 +1,78 @@
 import JackCore
 import SwiftUI
 
-/// Keeps each agent's current destination and deterministic walking route.
-/// The view asks for placements at its own TimelineView cadence; this type owns
-/// no timers and never advances state while placement(for:now:) is being read.
+/// Deterministic motion for the SVG office translated into world coordinates.
 @MainActor
 final class OfficeChoreographer: ObservableObject {
     private struct Motion {
         var start: CGPoint
         var destination: CGPoint
         var route: [CGPoint]
+        var segmentLengths: [CGFloat]
+        var routeLength: CGFloat
         var startTime: Date
-        var duration: TimeInterval
         var pose: OfficePose
         var facingLeft: Bool
         var scale: CGFloat
         var agent: OfficeAgent
-        var loungeIndex: Int?
-        var loungePose: OfficePose = .standingCoffee
-        var nextLoungeChange: Date = .distantFuture
-        var celebrationUntil: Date?
         var desiredState: OfficeAgentState
+        var celebrationUntil: Date?
+        var loungeIndex: Int?
     }
 
     var reduceMotion = false
     private var motions: [String: Motion] = [:]
-    private var order: [String] = []
 
     func update(agents: [OfficeAgent], layout: OfficeLayout, now: Date) {
-        let retained = Set(agents.map(\.id))
-        motions = motions.filter { retained.contains($0.key) }
-        order = agents.map(\.id)
-
+        let ids = Set(agents.map(\.id))
+        motions = motions.filter { ids.contains($0.key) }
         for (index, agent) in agents.enumerated() {
-            guard let desk = layout.desks[safe: index] else { continue }
-            let previous = motions[agent.id]
-            let isNew = previous == nil
-            var motion = previous ?? Motion(
-                start: desk.seat, destination: desk.seat, route: [], startTime: now,
-                duration: 0, pose: pose(for: agent.state), facingLeft: false,
-                scale: desk.scale, agent: agent, loungeIndex: nil,
-                desiredState: agent.state
-            )
-            motion.agent = agent
-
-            if isNew {
-                motion.destination = desk.seat
-                motion.start = motion.destination
-                motion.pose = pose(for: agent.state)
-                motion.scale = desk.scale
-                if agent.state == .idle, !layout.loungeSpots.isEmpty {
-                    motion.loungePose = loungePose(for: agent.seed, cycle: 0)
-                    if let loungeIndex = chooseLoungeSpot(agent: agent, layout: layout, excluding: nil, order: index) {
-                        motion.loungeIndex = loungeIndex
-                        motion.destination = layout.loungeSpots[loungeIndex]
-                        motion.start = motion.destination
-                        motion.pose = motion.loungePose
-                        motion.nextLoungeChange = now.addingTimeInterval(loungeInterval(seed: agent.seed, cycle: 0))
-                    } else {
-                        motion.pose = motion.loungePose
-                    }
-                }
-                motion.desiredState = agent.state
-                motions[agent.id] = motion
+            guard layout.desks.indices.contains(index) else { continue }
+            let desk = layout.desks[index]
+            guard var motion = motions[agent.id] else {
+                let idle = agent.state == .idle
+                let spotIndex = idle && !OfficeNav.spots.isEmpty ? Int(agent.seed % UInt64(OfficeNav.spots.count)) : nil
+                let destination = spotIndex.map(OfficeNav.spot) ?? desk.seat
+                let pose = idle ? loungePose(for: spotIndex ?? 0) : Self.pose(for: agent.state)
+                // New agents appear at their desk, like the office's first settled frame.
+                motions[agent.id] = Motion(start: destination, destination: destination, route: [], segmentLengths: [], routeLength: 0,
+                    startTime: now, pose: pose, facingLeft: false, scale: desk.scale, agent: agent,
+                    desiredState: agent.state, celebrationUntil: nil, loungeIndex: spotIndex)
                 continue
             }
-
-            let stateChanged = motion.desiredState != agent.state
+            motion.agent = agent
             motion.scale = desk.scale
+            let changed = motion.desiredState != agent.state
             if agent.state == .idle {
-                if stateChanged {
-                    motion.desiredState = .idle
-                    if motion.pose == .seatedTyping || motion.pose == .seatedThinking {
-                        motion.pose = .celebrating
-                        motion.celebrationUntil = now.addingTimeInterval(0.85)
-                        motion.loungeIndex = chooseLoungeSpot(agent: agent, layout: layout, excluding: motion.loungeIndex, order: index)
-                    } else if motion.loungeIndex == nil, !layout.loungeSpots.isEmpty {
-                        motion.loungeIndex = chooseLoungeSpot(agent: agent, layout: layout, excluding: nil, order: index)
-                        motion.loungePose = loungePose(for: agent.seed, cycle: 0)
-                        motion.nextLoungeChange = now.addingTimeInterval(loungeInterval(seed: agent.seed, cycle: 0))
-                        if motion.loungeIndex == nil { motion.pose = motion.loungePose }
-                    }
-                }
-                if let celebrationUntil = motion.celebrationUntil, now >= celebrationUntil {
+                if changed && motion.desiredState == .working {
+                    motion.pose = .celebrating
+                    motion.celebrationUntil = now.addingTimeInterval(1.3)
+                } else if changed || motion.pose == .walking {
                     motion.celebrationUntil = nil
-                    if let spotIndex = motion.loungeIndex, layout.loungeSpots.indices.contains(spotIndex) {
-                        move(&motion, to: layout.loungeSpots[spotIndex], pose: motion.loungePose, layout: layout, now: now)
-                        motion.nextLoungeChange = now.addingTimeInterval(loungeInterval(seed: agent.seed, cycle: 0))
-                    } else {
-                        motion.pose = motion.loungePose
-                    }
-                } else if motion.celebrationUntil == nil, isLoungePose(motion.pose), now >= motion.nextLoungeChange,
-                          !layout.loungeSpots.isEmpty {
-                    let cycle = Int(now.timeIntervalSince1970 / 30)
-                    let newIndex = chooseLoungeSpot(agent: agent, layout: layout, excluding: motion.loungeIndex, order: cycle)
-                    motion.loungeIndex = newIndex
-                    motion.loungePose = loungePose(for: agent.seed, cycle: cycle)
-                    if let newIndex, layout.loungeSpots.indices.contains(newIndex) {
-                        move(&motion, to: layout.loungeSpots[newIndex], pose: motion.loungePose, layout: layout, now: now)
-                    }
-                    motion.nextLoungeChange = now.addingTimeInterval(loungeInterval(seed: agent.seed, cycle: cycle))
-                } else if motion.celebrationUntil == nil, !isLoungePose(motion.pose), motion.pose != .walking {
-                    if let spotIndex = motion.loungeIndex, layout.loungeSpots.indices.contains(spotIndex) {
-                        move(&motion, to: layout.loungeSpots[spotIndex], pose: motion.loungePose, layout: layout, now: now)
-                    }
+                    let spots = OfficeNav.spots
+                    let spot = spots.isEmpty ? desk.seat : spots[Int(agent.seed % UInt64(spots.count))]
+                    motion.loungeIndex = spots.isEmpty ? nil : Int(agent.seed % UInt64(spots.count))
+                    beginMove(&motion, to: spot, pose: loungePose(for: motion.loungeIndex ?? 0), desks: layout.desks, now: now)
+                }
+                if let until = motion.celebrationUntil, now >= until {
+                    motion.celebrationUntil = nil
+                    let spots = OfficeNav.spots
+                    let idx = spots.isEmpty ? nil : Int(agent.seed % UInt64(spots.count))
+                    motion.loungeIndex = idx
+                    beginMove(&motion, to: idx.map { spots[$0] } ?? desk.seat, pose: loungePose(for: idx ?? 0), desks: layout.desks, now: now)
                 }
             } else {
                 motion.celebrationUntil = nil
-                motion.desiredState = agent.state
-                let targetPose = pose(for: agent.state)
-                let atSeat = distance(currentPosition(of: motion, now: now), desk.seat) < 4
-                if stateChanged || motion.loungeIndex != nil || (!atSeat && motion.pose != .walking) || (motion.pose != targetPose && motion.pose != .walking) {
-                    motion.loungeIndex = nil
-                    move(&motion, to: desk.seat, pose: targetPose, layout: layout, now: now)
+                let target = Self.pose(for: agent.state)
+                let here = currentPosition(motion, now: now)
+                if changed || distance(here, desk.seat) > 2 || (motion.pose != target && motion.pose != .walking) {
+                    beginMove(&motion, to: desk.seat, pose: target, desks: layout.desks, now: now)
                 } else if motion.pose != .walking {
-                    motion.pose = targetPose
-                    motion.destination = desk.seat
+                    motion.pose = target
                 }
+                motion.loungeIndex = nil
             }
-
-            // Keep a character visually stable when the window is resized. Its
-            // new target is approached from its interpolated position.
-            if previous?.scale != desk.scale || previous?.destination != desk.seat && agent.state != .idle {
-                if agent.state != .idle {
-                    let here = currentPosition(of: motion, now: now)
-                    move(&motion, from: here, to: desk.seat, pose: pose(for: agent.state), layout: layout, now: now)
-                }
-            }
+            motion.desiredState = agent.state
             motions[agent.id] = motion
         }
     }
@@ -134,98 +80,58 @@ final class OfficeChoreographer: ObservableObject {
     func placement(for id: String, now: Date) -> OfficePlacement? {
         guard var motion = motions[id] else { return nil }
         if reduceMotion {
-            return OfficePlacement(position: motion.destination, pose: motion.pose == .walking ? settledPose(for: motion) : motion.pose,
+            return OfficePlacement(position: motion.destination, pose: motion.pose == .walking ? settledPose(motion) : motion.pose,
                                    facingLeft: motion.facingLeft, scale: motion.scale)
         }
-        let point = currentPosition(of: motion, now: now)
-        if motion.pose == .walking, now.timeIntervalSince(motion.startTime) >= motion.duration {
-            motion.start = motion.destination
-            motion.route = []
-            motion.pose = settledPose(for: motion)
-            motion.startTime = now
-            motion.duration = 0
+        let point = currentPosition(motion, now: now)
+        if motion.pose == .walking, now.timeIntervalSince(motion.startTime) >= motion.routeLength / 150 {
+            motion.start = motion.destination; motion.route = []; motion.segmentLengths = []; motion.routeLength = 0
+            motion.pose = settledPose(motion); motion.startTime = now
             motions[id] = motion
         }
         return OfficePlacement(position: point, pose: motion.pose, facingLeft: motion.facingLeft, scale: motion.scale)
     }
 
-    private func move(_ motion: inout Motion, to point: CGPoint, pose: OfficePose, layout: OfficeLayout, now: Date) {
-        move(&motion, from: currentPosition(of: motion, now: now), to: point, pose: pose, layout: layout, now: now)
+    private func beginMove(_ motion: inout Motion, to point: CGPoint, pose: OfficePose, desks: [OfficeDeskSlot], now: Date) {
+        let from = currentPosition(motion, now: now)
+        motion.start = from; motion.destination = point; motion.startTime = now
+        motion.pose = distance(from, point) < 1 ? pose : .walking
+        motion.route = motion.pose == .walking ? OfficeNav.buildPath(from: from, to: point, desks: desks) : []
+        motion.route = motion.route.filter { distance($0, from) > 0.5 }
+        if let last = motion.route.last, distance(last, point) > 0.5 { motion.route.append(point) }
+        if motion.route.isEmpty && motion.pose == .walking { motion.route = [point] }
+        let points = [from] + motion.route
+        motion.segmentLengths = zip(points, points.dropFirst()).map { distance($0, $1) }
+        motion.routeLength = motion.segmentLengths.reduce(0, +)
+        if let first = motion.route.first { motion.facingLeft = first.x < from.x }
     }
 
-    private func move(_ motion: inout Motion, from start: CGPoint, to point: CGPoint, pose: OfficePose, layout: OfficeLayout, now: Date) {
-        motion.start = start
-        motion.destination = point
-        motion.startTime = now
-        motion.scale = max(0.45, motion.scale)
-        motion.pose = start == point ? pose : .walking
-        motion.route = start == point ? [] : hallwayRoute(from: start, to: point, layout: layout, scale: motion.scale)
-        let points = [start] + motion.route
-        let length = zip(points, points.dropFirst()).reduce(CGFloat.zero) { $0 + distance($1.0, $1.1) }
-        motion.duration = TimeInterval(length / max(20, 90 * motion.scale))
-        if let first = motion.route.first { motion.facingLeft = first.x < start.x }
-        else { motion.facingLeft = point.x < start.x }
-    }
-
-    private func hallwayRoute(from start: CGPoint, to end: CGPoint, layout: OfficeLayout, scale: CGFloat) -> [CGPoint] {
-        let lowerLimit = layout.floorY + 32 * scale
-        let beyondFeet = max(start.y, end.y) + 18 * scale
-        let upperLimit = layout.size.height - 12 * scale
-        let corridorY = min(upperLimit, max(lowerLimit, beyondFeet))
-        let candidates = [CGPoint(x: start.x, y: corridorY), CGPoint(x: end.x, y: corridorY), end]
-        return candidates.enumerated().compactMap { idx, point in
-            let prior = idx == 0 ? start : candidates[idx - 1]
-            return distance(prior, point) < 1 ? nil : point
-        }
-    }
-
-    private func currentPosition(of motion: Motion, now: Date) -> CGPoint {
-        guard motion.pose == .walking, motion.duration > 0 else { return motion.destination }
-        let progress = min(1, max(0, now.timeIntervalSince(motion.startTime) / motion.duration))
-        let full = [motion.start] + motion.route
-        guard full.count > 1 else { return motion.destination }
-        let lengths = zip(full, full.dropFirst()).map { distance($0.0, $0.1) }
-        let total = lengths.reduce(0, +)
-        guard total > 0 else { return motion.destination }
-        var remaining = CGFloat(progress) * total
-        for (index, length) in lengths.enumerated() {
-            if remaining <= length || index == lengths.count - 1 {
-                let a = full[index], b = full[index + 1]
+    private func currentPosition(_ motion: Motion, now: Date) -> CGPoint {
+        guard motion.pose == .walking, motion.routeLength > 0 else { return motion.destination }
+        var remaining = min(1, max(0, now.timeIntervalSince(motion.startTime) * 150))
+        let points = [motion.start] + motion.route
+        for (i, length) in motion.segmentLengths.enumerated() {
+            if remaining <= length || i == motion.segmentLengths.count - 1 {
                 let t = length > 0 ? remaining / length : 1
-                return CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)
+                return CGPoint(x: points[i].x + (points[i + 1].x - points[i].x) * t,
+                               y: points[i].y + (points[i + 1].y - points[i].y) * t)
             }
             remaining -= length
         }
         return motion.destination
     }
-
-    private func chooseLoungeSpot(agent: OfficeAgent, layout: OfficeLayout, excluding: Int?, order: Int) -> Int? {
-        guard !layout.loungeSpots.isEmpty else { return nil }
-        let occupied = Set(motions.filter { $0.key != agent.id }.compactMap { $0.value.loungeIndex })
-        let free = layout.loungeSpots.indices.filter { !occupied.contains($0) }
-        let alternatives = free.filter { $0 != excluding }
-        let pool = alternatives.isEmpty ? free : alternatives
-        guard !pool.isEmpty else { return nil }
-        return pool[deterministicIndex(agent.seed &+ UInt64(bitPattern: Int64(order)), count: pool.count)]
-    }
-    private func deterministicIndex(_ seed: UInt64, count: Int) -> Int { count > 0 ? Int((seed ^ (seed >> 17) &* 0x9E3779B97F4A7C15) % UInt64(count)) : 0 }
-    private func loungePose(for seed: UInt64, cycle: Int) -> OfficePose { ((seed &+ UInt64(bitPattern: Int64(cycle))) & 1) == 0 ? .standingCoffee : .sittingSofa }
-    private func loungeInterval(seed: UInt64, cycle: Int) -> TimeInterval { 20 + Double((seed &+ UInt64(bitPattern: Int64(cycle * 13))) % 21) }
-    private func isLoungePose(_ pose: OfficePose) -> Bool { pose == .standingCoffee || pose == .sittingSofa }
-    private func pose(for state: OfficeAgentState) -> OfficePose {
-        switch state { case .working: .seatedTyping; case .thinking: .seatedThinking; case .waiting, .blocked: .raisedHand; case .idle: .standingCoffee; case .failed: .slumped }
-    }
-    private func settledPose(for motion: Motion) -> OfficePose { motion.desiredState == .idle ? motion.loungePose : pose(for: motion.desiredState) }
+    private func settledPose(_ motion: Motion) -> OfficePose { motion.desiredState == .idle ? loungePose(for: motion.loungeIndex ?? 0) : Self.pose(for: motion.desiredState) }
+    private func loungePose(for i: Int) -> OfficePose { i < 2 ? .standingCoffee : .sittingSofa }
     private func distance(_ a: CGPoint, _ b: CGPoint) -> CGFloat { hypot(a.x - b.x, a.y - b.y) }
+    private static func pose(for state: OfficeAgentState) -> OfficePose {
+        switch state {
+        case .working, .thinking: .seatedTyping
+        case .waiting, .blocked, .failed: .raisedHand
+        case .idle: .standingCoffee
+        }
+    }
 }
 
-private extension Collection {
-    subscript(safe index: Index) -> Element? { indices.contains(index) ? self[index] : nil }
-}
-
-/// The character is drawn in an 80 × 120 pt box. Its feet sit at the bottom
-/// centre (local point 40, 120); the supplied scene position is that anchor.
-/// The frame helper returns the scaled visual hit target in scene coordinates.
 struct OfficeCharacterView: View {
     let agent: OfficeAgent
     let placement: OfficePlacement
@@ -234,194 +140,300 @@ struct OfficeCharacterView: View {
     let isSelected: Bool
     let isHovered: Bool
 
-    private var phase: CGFloat { animate ? CGFloat(date.timeIntervalSinceReferenceDate) : 0 }
-    private var skin: Color { Self.skinColor(seed: agent.seed) }
-    private var hair: Color { Self.hairColor(seed: agent.seed) }
-    private var shirt: Color { OfficePalette.agentColor(seed: agent.seed) }
-    private var blink: Bool { animate && Int(date.timeIntervalSinceReferenceDate * 3 + Double(agent.seed % 7)) % 37 == 0 }
+    private var t: Double { animate ? date.timeIntervalSinceReferenceDate : 0 }
+    private var motionEnabled: Bool { animate && placement.pose != .walking }
+    private var role: String { Self.role(for: agent.kind) }
+    private var accent: Color { OfficePalette.ROLE_COLORS[role] ?? OfficePalette.ROLE_COLORS["Developer"]! }
+    private var shirt: Color { OfficePalette.SHIRTS[Int(agent.seed % UInt64(OfficePalette.SHIRTS.count))] }
+    private var skin: Color { OfficePalette.SKINS[Int((agent.seed % 7) % UInt64(OfficePalette.SKINS.count))] }
+    private var hair: Color { OfficePalette.HAIRS[Int((agent.seed >> 3) % UInt64(OfficePalette.HAIRS.count))] }
+    private var hairStyle: Int { Int((agent.seed >> 7) % 3) }
+    private var seedPhase: Double { Double(agent.seed % 1000) }
+    private var activityTool: (String, Color)? {
+        guard let activity = agent.activity?.lowercased(), !activity.isEmpty else { return nil }
+        let tools: [(String, [String], String)] = [
+            ("Edit", ["edit", "editing", "editando"], "fbbf24"),
+            ("Bash", ["bash", "shell", "terminal", "running command", "ejecutando"], "34d399"),
+            ("Read", ["read", "reading", "leyendo"], "38bdf8"),
+            ("Grep", ["grep", "search", "buscar", "buscando"], "a78bfa"),
+            ("Write", ["write", "writing", "escribiendo"], "f472b6"),
+            ("Test", ["test", "testing", "prueba"], "a3e635"),
+            ("Web", ["browse", "web", "browsing", "navegando"], "60a5fa")
+        ]
+        guard let match = tools.first(where: { $0.1.contains(where: { activity.contains($0) }) }) else { return nil }
+        return (match.0, Color(hex: match.2))
+    }
+    private var shortActivity: String {
+        let value = agent.activity?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let value, !value.isEmpty else { return agent.state == .idle ? "Idle" : "Trabajando" }
+        return value.count > 24 ? String(value.prefix(23)) + "…" : value
+    }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            characterCanvas
-                .frame(width: 80, height: 120)
-                .scaleEffect(x: placement.facingLeft ? -1 : 1, y: 1)
-                .overlay(alignment: .top) { statusAdornment.offset(y: -14) }
-                .overlay(alignment: .top) { activityChip.offset(y: -31) }
-                .overlay(alignment: .bottom) { nameTag.offset(y: 21) }
-                .overlay { if isSelected { RoundedRectangle(cornerRadius: 30).stroke(.white.opacity(0.9), lineWidth: 2).shadow(color: .cyan, radius: 8).padding(5) } }
+        ZStack(alignment: .topLeading) {
+            Canvas { context, size in
+                context.translateBy(x: size.width / 2, y: 120)
+                context.scaleBy(x: placement.facingLeft ? -1 : 1, y: 1)
+                drawCharacter(&context)
+            }
+            .frame(width: 80, height: 120)
+            .overlay(alignment: .top) {
+                if needsDeskRowAvoidance {
+                    VStack(spacing: 3) {
+                        if let activityTool, isWorking { toolChip(activityTool) }
+                        bubble
+                    }
+                    .fixedSize()
+                    .offset(x: 110, y: 12)
+                    .zIndex(10)
+                } else {
+                    HStack(spacing: 5) {
+                        if let activityTool, isWorking { toolChip(activityTool) }
+                        bubble
+                    }
+                    .fixedSize()
+                    .layoutPriority(1)
+                    .offset(y: -15 + CGFloat(isSelected ? -6 : 0))
+                    .zIndex(10)
+                }
+            }
+            if placement.pose == .walking, animate { walkingSparkles }
+            if isSelected { selectionMark }
+            if isHovered || isSelected { nameTag.offset(x: 40, y: 118) }
         }
-        .frame(width: 80, height: 120, alignment: .bottom)
+        .frame(width: 80, height: 120)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(agent.name), \(agent.state.rawValue)")
     }
 
-    private var characterCanvas: some View {
-        Canvas { context, size in
-            let t = phase
-            let bob: CGFloat = animate && placement.pose == .walking ? sin(t * 9) * 2.2 : (animate && placement.pose == .seatedTyping ? sin(t * 3) * 0.8 : 0)
-            let jump: CGFloat = animate && placement.pose == .celebrating ? abs(sin(t * 8)) * 7 : 0
-            let skinTone = skin, hairTone = hair, shirtTone = shirt
-            func ellipse(_ rect: CGRect, _ color: Color, stroke: Color? = nil, width: CGFloat = 1) {
-                let p = Path(ellipseIn: rect); context.fill(p, with: .color(color)); if let stroke { context.stroke(p, with: .color(stroke), lineWidth: width) }
-            }
-            func roundRect(_ rect: CGRect, _ radius: CGFloat, _ color: Color) { context.fill(Path(roundedRect: rect, cornerRadius: radius), with: .color(color)) }
-            let baseY = 119 - bob - jump
-            let isSitting = placement.pose == .seatedTyping || placement.pose == .seatedThinking || placement.pose == .raisedHand || placement.pose == .sittingSofa
-            let legShift: CGFloat = placement.pose == .walking && animate ? sin(t * 9) * 7 : 0
-            // Legs and shoes
-            if isSitting {
-                var legs = Path(); legs.move(to: CGPoint(x: 34, y: baseY - 22)); legs.addQuadCurve(to: CGPoint(x: 18, y: baseY - 7), control: CGPoint(x: 17, y: baseY - 20)); legs.move(to: CGPoint(x: 47, y: baseY - 22)); legs.addQuadCurve(to: CGPoint(x: 63, y: baseY - 7), control: CGPoint(x: 62, y: baseY - 20))
-                context.stroke(legs, with: .color(Color(red: 0.20, green: 0.24, blue: 0.34)), style: StrokeStyle(lineWidth: 8, lineCap: .round))
-                ellipse(CGRect(x: 8, y: baseY - 11, width: 17, height: 10), .black.opacity(0.74)); ellipse(CGRect(x: 56, y: baseY - 11, width: 17, height: 10), .black.opacity(0.74))
+    private func drawCharacter(_ ctx: inout GraphicsContext) {
+        let walking = placement.pose == .walking
+        let desk = placement.pose == .seatedTyping || placement.pose == .seatedThinking || placement.pose == .raisedHand
+        let sofa = placement.pose == .sittingSofa
+        let blocked = agent.state == .waiting || agent.state == .blocked || agent.state == .failed
+        let phase = t * 18.75
+        let sw = sin(phase)
+        let bob: CGFloat = walking ? -abs(sin(phase)) * 2.6 : desk ? CGFloat(sin(t * 2 + seedPhase)) * 0.6 : sofa ? CGFloat(sin(t * 1.3 + seedPhase)) * 0.6 : CGFloat(sin(t * 1.6 + seedPhase)) * 0.8
+        let shift: CGFloat = desk ? 20 : sofa ? 16 : 0
+        let hop: CGFloat = placement.pose == .celebrating && animate ? -abs(sin(t * 9)) * 7 : 0
+        let S = shift + bob + hop
+        let hipY = -34 + shift + bob * 0.5
+        let fL: CGPoint = walking ? CGPoint(x: -8 + sw * 11, y: -max(0, -cos(phase)) * 5) : CGPoint(x: -8, y: 0)
+        let fR: CGPoint = walking ? CGPoint(x: 8 - sw * 11, y: -max(0, cos(phase)) * 5) : CGPoint(x: 8, y: 0)
+        let hL: CGPoint
+        let hR: CGPoint
+        var look: CGFloat = 0
+        var tilt: CGFloat = 0
+        var mood = "smile"
+        var cup = false
+        var sweat = false
+        if walking {
+            hL = CGPoint(x: -15 + sin(-sw * 0.75) * 25, y: -58 + S + bob + cos(-sw * 0.75) * 25)
+            hR = CGPoint(x: 15 + sin(sw * 0.75) * 25, y: -58 + S + bob + cos(sw * 0.75) * 25)
+            look = sw < 0 ? -2.2 : 2.2; tilt = CGFloat(sw) * 3
+        } else if desk {
+            hL = CGPoint(x: -9 + sin(t * 15 + seedPhase) * 1.3, y: -12 + sin(t * 21 + seedPhase) * 2)
+            if blocked {
+                hR = CGPoint(x: 28 + sin(t * 9) * 6, y: -78); look = CGFloat(sin(t * 2.5)) * 3
+                tilt = CGFloat(sin(t * 7)) * 3; mood = "frown"; sweat = true
             } else {
-                let stride = placement.pose == .walking ? legShift : 0
-                var legs = Path(); legs.move(to: CGPoint(x: 34, y: baseY - 25)); legs.addLine(to: CGPoint(x: 31 + stride, y: baseY - 6)); legs.move(to: CGPoint(x: 46, y: baseY - 25)); legs.addLine(to: CGPoint(x: 49 - stride, y: baseY - 6))
-                context.stroke(legs, with: .color(Color(red: 0.20, green: 0.24, blue: 0.34)), style: StrokeStyle(lineWidth: 8, lineCap: .round))
-                ellipse(CGRect(x: 22 + stride, y: baseY - 10, width: 17, height: 9), .black.opacity(0.76)); ellipse(CGRect(x: 42 - stride, y: baseY - 10, width: 17, height: 9), .black.opacity(0.76))
+                hR = CGPoint(x: 9 + sin(t * 18 + seedPhase) * 1.3, y: -12 + sin(t * 24 + seedPhase) * 2)
+                look = -3; tilt = CGFloat(sin(t * 1.6 + seedPhase)) * 1.6
+                mood = agent.state == .working ? "flat" : "calm"
             }
-            // Torso
-            roundRect(CGRect(x: 25, y: baseY - 54, width: 30, height: 36), 12, shirtTone)
-            ellipse(CGRect(x: 24, y: baseY - 55, width: 32, height: 27), shirtTone)
-            // Arms follow each action pose.
-            var arms = Path()
-            switch placement.pose {
-            case .raisedHand:
-                arms.move(to: CGPoint(x: 27, y: baseY - 47)); arms.addQuadCurve(to: CGPoint(x: 19, y: baseY - 72), control: CGPoint(x: 10, y: baseY - 67)); arms.addLine(to: CGPoint(x: 18, y: baseY - 82))
-                arms.move(to: CGPoint(x: 53, y: baseY - 46)); arms.addLine(to: CGPoint(x: 64, y: baseY - 33))
-            case .celebrating:
-                arms.move(to: CGPoint(x: 27, y: baseY - 47)); arms.addQuadCurve(to: CGPoint(x: 12, y: baseY - 76), control: CGPoint(x: 9, y: baseY - 57)); arms.move(to: CGPoint(x: 53, y: baseY - 47)); arms.addQuadCurve(to: CGPoint(x: 68, y: baseY - 76), control: CGPoint(x: 71, y: baseY - 57))
-            case .slumped:
-                arms.move(to: CGPoint(x: 27, y: baseY - 44)); arms.addLine(to: CGPoint(x: 19, y: baseY - 25)); arms.move(to: CGPoint(x: 53, y: baseY - 44)); arms.addLine(to: CGPoint(x: 61, y: baseY - 25))
-            case .seatedThinking:
-                arms.move(to: CGPoint(x: 28, y: baseY - 45)); arms.addLine(to: CGPoint(x: 18, y: baseY - 31)); arms.move(to: CGPoint(x: 52, y: baseY - 46)); arms.addQuadCurve(to: CGPoint(x: 49, y: baseY - 70), control: CGPoint(x: 63, y: baseY - 52))
-            case .standingCoffee:
-                arms.move(to: CGPoint(x: 27, y: baseY - 46)); arms.addLine(to: CGPoint(x: 20, y: baseY - 26)); arms.move(to: CGPoint(x: 53, y: baseY - 46)); arms.addQuadCurve(to: CGPoint(x: 61, y: baseY - 35), control: CGPoint(x: 68, y: baseY - 43))
-            default:
-                let swing = placement.pose == .walking && animate ? legShift : (placement.pose == .seatedTyping && animate ? sin(t * 8) * 2 : 0)
-                arms.move(to: CGPoint(x: 27, y: baseY - 47)); arms.addLine(to: CGPoint(x: 17 + swing, y: baseY - 33)); arms.move(to: CGPoint(x: 53, y: baseY - 47)); arms.addLine(to: CGPoint(x: 63 - swing, y: baseY - 33))
-            }
-            context.stroke(arms, with: .color(skinTone), style: StrokeStyle(lineWidth: 7, lineCap: .round, lineJoin: .round))
-            // Keyboard for desk poses
-            if placement.pose == .seatedTyping || placement.pose == .seatedThinking || placement.pose == .raisedHand {
-                roundRect(CGRect(x: 29, y: baseY - 26, width: 23, height: 5), 2, Color.white.opacity(0.76))
-                for key in 0..<4 { roundRect(CGRect(x: 32 + CGFloat(key) * 4.5, y: baseY - 25, width: 2, height: 1.2), 0.5, Color.gray.opacity(0.55)) }
-            }
-            if placement.pose == .standingCoffee {
-                roundRect(CGRect(x: 58, y: baseY - 41, width: 11, height: 11), 2, Color(red: 0.92, green: 0.79, blue: 0.62))
-                let handle = Path(ellipseIn: CGRect(x: 67, y: baseY - 39, width: 5, height: 6)); context.stroke(handle, with: .color(.white.opacity(0.75)), lineWidth: 1.4)
-                if animate {
-                    for i in 0..<2 { var steam = Path(); steam.move(to: CGPoint(x: 61 + CGFloat(i * 4), y: baseY - 44)); steam.addCurve(to: CGPoint(x: 62 + CGFloat(i * 4), y: baseY - 50), control1: CGPoint(x: 57 + CGFloat(i * 4), y: baseY - 47), control2: CGPoint(x: 66 + CGFloat(i * 4), y: baseY - 47)); context.stroke(steam, with: .color(.white.opacity(0.55)), lineWidth: 1) }
-                }
-            }
-            // Head, hair and face
-            let headY = baseY - 104 + (placement.pose == .slumped ? 7 : 0)
-            ellipse(CGRect(x: 17, y: headY, width: 46, height: 45), skinTone, stroke: Color.black.opacity(0.16), width: 1)
-            let hairstyle = Int(agent.seed % 4)
-            switch hairstyle {
-            case 0: ellipse(CGRect(x: 17, y: headY - 5, width: 46, height: 24), hairTone)
-            case 1:
-                ellipse(CGRect(x: 17, y: headY - 3, width: 46, height: 18), hairTone); ellipse(CGRect(x: 49, y: headY + 4, width: 12, height: 20), hairTone)
-            case 2:
-                ellipse(CGRect(x: 17, y: headY - 5, width: 20, height: 19), hairTone); ellipse(CGRect(x: 31, y: headY - 8, width: 19, height: 21), hairTone); ellipse(CGRect(x: 43, y: headY - 4, width: 20, height: 19), hairTone)
-            default:
-                ellipse(CGRect(x: 17, y: headY - 4, width: 46, height: 17), hairTone); var fringe = Path(); fringe.move(to: CGPoint(x: 23, y: headY + 9)); fringe.addQuadCurve(to: CGPoint(x: 51, y: headY + 10), control: CGPoint(x: 37, y: headY + 20)); context.fill(fringe, with: .color(hairTone))
-            }
-            let eyeY = headY + 22
-            if blink {
-                var eyes = Path(); eyes.move(to: CGPoint(x: 29, y: eyeY)); eyes.addLine(to: CGPoint(x: 33, y: eyeY)); eyes.move(to: CGPoint(x: 47, y: eyeY)); eyes.addLine(to: CGPoint(x: 51, y: eyeY)); context.stroke(eyes, with: .color(.black.opacity(0.72)), lineWidth: 1.3)
-            } else {
-                ellipse(CGRect(x: 29, y: eyeY - 1.3, width: 4, height: 5.4), .black.opacity(0.82)); ellipse(CGRect(x: 47, y: eyeY - 1.3, width: 4, height: 5.4), .black.opacity(0.82)); ellipse(CGRect(x: 30, y: eyeY, width: 1.5, height: 1.5), .white); ellipse(CGRect(x: 48, y: eyeY, width: 1.5, height: 1.5), .white)
-            }
-            ellipse(CGRect(x: 23, y: eyeY + 6, width: 6, height: 3), .pink.opacity(0.40)); ellipse(CGRect(x: 51, y: eyeY + 6, width: 6, height: 3), .pink.opacity(0.40))
-            var mouth = Path(); mouth.move(to: CGPoint(x: 37, y: headY + 32)); mouth.addQuadCurve(to: CGPoint(x: 43, y: headY + 32), control: CGPoint(x: 40, y: headY + 36)); context.stroke(mouth, with: .color(.black.opacity(0.55)), lineWidth: 1)
-            if placement.pose == .slumped { ellipse(CGRect(x: 22, y: headY + 16, width: 38, height: 27), Color.red.opacity(0.12)) }
-            // Small maker-specific accessories.
-            switch agent.kind.lowercased() {
-            case "claude":
-                roundRect(CGRect(x: 12, y: headY + 15, width: 5, height: 15), 2.5, Color(red: 0.36, green: 0.78, blue: 0.91)); roundRect(CGRect(x: 63, y: headY + 15, width: 5, height: 15), 2.5, Color(red: 0.36, green: 0.78, blue: 0.91))
-                var band = Path(); band.addArc(center: CGPoint(x: 40, y: headY + 21), radius: 26, startAngle: .degrees(205), endAngle: .degrees(335), clockwise: false); context.stroke(band, with: .color(Color(red: 0.36, green: 0.78, blue: 0.91)), lineWidth: 3)
-            case "codex":
-                let glasses = Path(roundedRect: CGRect(x: 26, y: eyeY - 5, width: 12, height: 10), cornerRadius: 4).union(Path(roundedRect: CGRect(x: 42, y: eyeY - 5, width: 12, height: 10), cornerRadius: 4))
-                context.stroke(glasses, with: .color(Color(red: 0.20, green: 0.34, blue: 0.50)), lineWidth: 1.5); var bridge = Path(); bridge.move(to: CGPoint(x: 38, y: eyeY)); bridge.addLine(to: CGPoint(x: 42, y: eyeY)); context.stroke(bridge, with: .color(.black.opacity(0.7)), lineWidth: 1.3)
-            case "opencode":
-                var cap = Path(); cap.move(to: CGPoint(x: 17, y: headY + 12)); cap.addQuadCurve(to: CGPoint(x: 61, y: headY + 12), control: CGPoint(x: 39, y: headY - 5)); cap.addLine(to: CGPoint(x: 65, y: headY + 14)); cap.addQuadCurve(to: CGPoint(x: 18, y: headY + 16), control: CGPoint(x: 41, y: headY + 22)); cap.closeSubpath(); context.fill(cap, with: .color(Color(red: 0.94, green: 0.67, blue: 0.28)))
-            default: break
-            }
-            if placement.pose == .celebrating && animate {
-                for i in 0..<5 {
-                    let x = CGFloat((Int(agent.seed % 31) + i * 17) % 74) + 3
-                    let y = 9 + CGFloat((i * 13 + Int(t * 12) % 21) % 26)
-                    let rect = CGRect(x: x, y: y, width: 3.5, height: 5)
-                    context.fill(Path(roundedRect: rect, cornerRadius: 1), with: .color([.pink, .yellow, .cyan, .mint, .orange][i]))
-                }
+        } else if sofa {
+            hL = CGPoint(x: -13, y: -22 + sin(t * 1.3) * 0.5); hR = CGPoint(x: 13, y: -22)
+            cup = agent.seed & 1 == 1; mood = "smile"; look = sin(t * 0.5 + seedPhase) > 0.5 ? 2.5 : 0
+        } else if placement.pose == .standingCoffee {
+            cup = true
+            let s = (t + seedPhase * 7).truncatingRemainder(dividingBy: 6) / 6
+            let up = s < 0.3 ? sin((s / 0.3) * .pi) : 0
+            hL = CGPoint(x: -17, y: -36); hR = CGPoint(x: CGFloat(17 - 8 * up), y: CGFloat(-44 + up * (-70 + S + bob + 44)))
+            tilt = CGFloat(-3 * up); look = CGFloat(placement.facingLeft ? -2 : 2); mood = "smile"
+        } else if placement.pose == .celebrating {
+            let k = sin(t * 14)
+            hL = CGPoint(x: -26, y: -92 + k * 4); hR = CGPoint(x: 26, y: -92 - k * 4)
+        } else {
+            hL = CGPoint(x: -17, y: -37); hR = CGPoint(x: 17, y: -37 + sin(t * 1.5) * 0.8)
+            look = placement.facingLeft ? -2 : 2
+        }
+
+        ellipse(&ctx, CGRect(x: -21, y: -5, width: 42, height: 12), .black.opacity(desk ? 0 : 0.32))
+        if !desk || sofa {
+            line(&ctx, CGPoint(x: -8, y: hipY), CGPoint(x: fL.x, y: fL.y - 2), color: Self.pants, width: 11)
+            line(&ctx, CGPoint(x: 8, y: hipY), CGPoint(x: fR.x, y: fR.y - 2), color: Self.pants, width: 11)
+            ellipse(&ctx, CGRect(x: fL.x - 9, y: fL.y - 4, width: 16, height: 8), Color(red: 0.914, green: 0.925, blue: 1))
+            ellipse(&ctx, CGRect(x: fR.x - 7, y: fR.y - 4, width: 16, height: 8), Color(red: 0.914, green: 0.925, blue: 1))
+        }
+        let torso = Path(roundedRect: CGRect(x: -15.5, y: -66 + S, width: 31, height: 38), cornerRadius: 14)
+        ctx.fill(torso, with: .color(shirt))
+        var seam = Path(); seam.move(to: CGPoint(x: -15, y: -52 + S)); seam.addQuadCurve(to: CGPoint(x: 15, y: -52 + S), control: CGPoint(x: 0, y: -44 + S))
+        ctx.stroke(seam, with: .color(.white.opacity(0.18)), lineWidth: 2)
+        if role == "PM" { var tie = Path(); tie.move(to: CGPoint(x: 0, y: -62 + S)); tie.addLines([CGPoint(x: 4, y: -56 + S), CGPoint(x: 2, y: -42 + S), CGPoint(x: 0, y: -39 + S), CGPoint(x: -2, y: -42 + S), CGPoint(x: -4, y: -56 + S)]); tie.closeSubpath(); ctx.fill(tie, with: .color(accent)) }
+        line(&ctx, CGPoint(x: -14, y: -58 + S), hL, color: shirt, width: 9.5)
+        line(&ctx, CGPoint(x: 14, y: -58 + S), hR, color: shirt, width: 9.5)
+        ellipse(&ctx, CGRect(x: hL.x - 4.6, y: hL.y - 4.6, width: 9.2, height: 9.2), skin)
+        ellipse(&ctx, CGRect(x: hR.x - 4.6, y: hR.y - 4.6, width: 9.2, height: 9.2), skin)
+        if cup {
+            let r = CGRect(x: hR.x - 2.5, y: hR.y - 6, width: 11, height: 10)
+            ctx.fill(Path(roundedRect: r, cornerRadius: 2.5), with: .color(Color(red: 0.957, green: 0.961, blue: 1)))
+            ctx.fill(Path(CGRect(x: r.minX, y: r.minY + 2, width: r.width, height: 2.5)), with: .color(accent))
+            if animate { for i in 0..<2 { var steam = Path(); steam.move(to: CGPoint(x: r.minX + 3.5 + CGFloat(i) * 4.5, y: r.minY - 3)); steam.addQuadCurve(to: CGPoint(x: r.minX + 3.5 + CGFloat(i) * 4.5, y: r.minY - 10), control: CGPoint(x: r.minX + CGFloat(i) * 4.5, y: r.minY - 6)); ctx.stroke(steam, with: .color(.white.opacity(0.6)), style: StrokeStyle(lineWidth: 1.4, lineCap: .round)) } }
+        }
+        drawHead(&ctx, S: S, tilt: tilt, look: look, mood: mood, sweat: sweat)
+    }
+
+    private func drawHead(_ ctx: inout GraphicsContext, S: CGFloat, tilt: CGFloat, look: CGFloat, mood: String, sweat: Bool) {
+        ctx.translateBy(x: 0, y: -82 + S); ctx.rotate(by: .degrees(Double(tilt)))
+        if hairStyle == 2 { ctx.fill(Path(roundedRect: CGRect(x: -19.5, y: -6, width: 39, height: 25), cornerRadius: 11), with: .color(hair)) }
+        ellipse(&ctx, CGRect(x: -21.8, y: -0.8, width: 7.6, height: 7.6), skin)
+        ellipse(&ctx, CGRect(x: 14.2, y: -0.8, width: 7.6, height: 7.6), skin)
+        ellipse(&ctx, CGRect(x: -18.4, y: -18.4, width: 36.8, height: 36.8), skin)
+        let hairPath = svgPath("M-18.6 0 A18.6 18.6 0 0 1 18.6 0 C14 -9 4 -11 -3 -8 C-9 -6 -15 -5 -18.6 0 Z")
+        ctx.fill(hairPath, with: .color(hair))
+        if hairStyle == 1 { ctx.fill(svgPath("M-3 -17 Q0 -27 6 -22 Q2 -20 3 -16 Z"), with: .color(hair)) }
+        ellipse(&ctx, CGRect(x: -13.8, y: 4.7, width: 6.6, height: 6.6), Color(red: 1, green: 0.478, blue: 0.576).opacity(0.3))
+        ellipse(&ctx, CGRect(x: 7.2, y: 4.7, width: 6.6, height: 6.6), Color(red: 1, green: 0.478, blue: 0.576).opacity(0.3))
+        let blink = animate && Int((t * 2 + seedPhase).truncatingRemainder(dividingBy: 57)) == 0
+        for x in [-6.8, 6.8] {
+            if blink { var p = Path(); p.move(to: CGPoint(x: x - 2.7 + look, y: 1.5)); p.addLine(to: CGPoint(x: x + 2.7 + look, y: 1.5)); ctx.stroke(p, with: .color(Color(red: 0.102, green: 0.106, blue: 0.2)), lineWidth: 1.8) }
+            else {
+                ellipse(&ctx, CGRect(x: x - 2.7 + look, y: -1.9, width: 5.4, height: 6.8), Color(red: 0.102, green: 0.106, blue: 0.2))
+                ellipse(&ctx, CGRect(x: x - 0.05 + look, y: -0.05, width: 1.9, height: 1.9), .white)
             }
         }
+        let mouth = svgPath(mood == "flat" ? "M-3 8.5 L3 8.5" : mood == "calm" ? "M-3.5 8 Q0 9.8 3.5 8" : mood == "frown" ? "M-4.5 10.5 Q0 5.5 4.5 10.5" : "M-4.5 6.5 Q0 11 4.5 6.5")
+        ctx.stroke(mouth, with: .color(Color(red: 0.29, green: 0.141, blue: 0.2)), style: StrokeStyle(lineWidth: 1.9, lineCap: .round))
+        if sweat { ctx.fill(svgPath("M17 -7 q-4.5 6.5 0 9 q4.5 -2.5 0 -9z"), with: .color(Color(red: 0.49, green: 0.827, blue: 0.988).opacity(0.7 + 0.3 * sin(t * 6)))) }
+        drawAccessory(&ctx)
     }
 
-    private var statusAdornment: some View {
-        Group {
-            if agent.state == .working {
-                Circle().stroke(OfficePalette.stateColor(agent.state).opacity(animate ? 0.45 + 0.35 * sin(phase * 3) : 0.65), lineWidth: 2)
-                    .frame(width: 39, height: 17).overlay(Circle().fill(OfficePalette.stateColor(agent.state).opacity(0.7)).frame(width: 4, height: 4))
-            } else if agent.state == .waiting || agent.state == .blocked {
-                HStack(spacing: 3) {
-                    Text("!").font(.system(size: 12, weight: .heavy, design: .rounded)).foregroundStyle(.white).frame(width: 18, height: 18).background(Circle().fill(OfficePalette.stateColor(agent.state)))
-                    Text("Necesita tu respuesta").font(.system(size: 8, weight: .semibold, design: .rounded)).foregroundStyle(.white).lineLimit(1)
-                }.padding(.horizontal, 6).padding(.vertical, 4).background(Capsule().fill(Color.black.opacity(0.76))).fixedSize()
-            } else if agent.state == .failed {
-                Text("×").font(.system(size: 13, weight: .bold)).foregroundStyle(.white).frame(width: 19, height: 19).background(Circle().fill(OfficePalette.stateColor(agent.state)))
+    private func drawAccessory(_ ctx: inout GraphicsContext) {
+        switch role {
+        case "Developer":
+            var band = Path(); band.addArc(center: .zero, radius: 19, startAngle: .degrees(181), endAngle: .degrees(359), clockwise: false)
+            ctx.stroke(band, with: .color(Color(red: 0.114, green: 0.129, blue: 0.278)), lineWidth: 4)
+            for x: CGFloat in [-20, 20] { ctx.fill(Path(roundedRect: CGRect(x: x - 4, y: -6, width: 8, height: 15), cornerRadius: 4), with: .color(accent)) }
+        case "DevOps":
+            ctx.fill(svgPath("M-20 -3 A20 20 0 0 1 20 -3 Z"), with: .color(Color(red: 0.98, green: 0.737, blue: 0.082)))
+            ctx.fill(Path(roundedRect: CGRect(x: -24, y: -6, width: 48, height: 5.5), cornerRadius: 2.7), with: .color(Color(red: 0.918, green: 0.702, blue: 0.035)))
+            ctx.fill(Path(roundedRect: CGRect(x: -3.5, y: -21, width: 7, height: 12), cornerRadius: 2), with: .color(Color(red: 0.918, green: 0.702, blue: 0.035)))
+        case "QA", "Architect":
+            drawGlasses(&ctx)
+            if role == "Architect" { ctx.rotate(by: .degrees(25)); ctx.fill(Path(roundedRect: CGRect(x: 15, y: -16, width: 3.4, height: 15), cornerRadius: 1), with: .color(accent)) }
+            else { antenna(&ctx) }
+        case "Researcher":
+            for x: CGFloat in [-7, 7] { ctx.stroke(Path(ellipseIn: CGRect(x: x - 6.6, y: -5.1, width: 13.2, height: 13.2)), with: .color(Color(red: 0.114, green: 0.129, blue: 0.278)), lineWidth: 1.8) }
+        case "Designer":
+            ctx.rotate(by: .degrees(-9)); ellipse(&ctx, CGRect(x: -18, y: -22.5, width: 42, height: 17), Color(red: 0.882, green: 0.114, blue: 0.282)); ellipse(&ctx, CGRect(x: -11, y: -25.5, width: 28, height: 8), Color(red: 0.984, green: 0.443, blue: 0.522).opacity(0.55)); ellipse(&ctx, CGRect(x: 0.6, y: -25.4, width: 4.8, height: 4.8), Color(red: 0.745, green: 0.071, blue: 0.235))
+        case "PM":
+            var loop = Path(); loop.move(to: CGPoint(x: 18.5, y: 2)); loop.addQuadCurve(to: CGPoint(x: 8, y: 13), control: CGPoint(x: 21, y: 15)); ctx.stroke(loop, with: .color(Color(red: 0.114, green: 0.129, blue: 0.278)), lineWidth: 2); ellipse(&ctx, CGRect(x: 5.4, y: 10.4, width: 5.2, height: 5.2), accent); ctx.fill(Path(roundedRect: CGRect(x: 16, y: -3, width: 5, height: 9), cornerRadius: 2.5), with: .color(Color(red: 0.114, green: 0.129, blue: 0.278)))
+        default: break
+        }
+    }
+    private func drawGlasses(_ ctx: inout GraphicsContext) {
+        for x: CGFloat in [-13, 2] { ctx.stroke(Path(roundedRect: CGRect(x: x, y: -3.5, width: 11, height: 9), cornerRadius: 2.5), with: .color(Color(red: 0.114, green: 0.129, blue: 0.278)), lineWidth: 1.8) }
+        var bridge = Path(); bridge.move(to: CGPoint(x: -2, y: 0.5)); bridge.addLine(to: CGPoint(x: 2, y: 0.5)); ctx.stroke(bridge, with: .color(Color(red: 0.114, green: 0.129, blue: 0.278)), lineWidth: 1.8)
+    }
+    private func antenna(_ ctx: inout GraphicsContext) {
+        let a = animate ? sin(t * 5 + seedPhase) * 8 : 0
+        ctx.rotate(by: .degrees(a)); var p = Path(); p.move(to: CGPoint(x: 0, y: -17)); p.addLine(to: CGPoint(x: 5, y: -29)); ctx.stroke(p, with: .color(Color(red: 0.114, green: 0.129, blue: 0.278)), lineWidth: 2); ellipse(&ctx, CGRect(x: 1.2, y: -34.8, width: 7.6, height: 7.6), accent)
+    }
+
+    private var bubble: some View {
+        let blocked = isBlocked
+        let label = blocked ? (needsDeskRowAvoidance ? "Te necesita" : "Necesita tu respuesta") : placement.pose == .celebrating ? "Done" : shortActivity
+        let color = blocked ? Color(hex: "ff5d6c") : agent.state == .idle ? Color(hex: "94a3b8") : Color(hex: "34d399")
+        return HStack(spacing: 7) {
+            Circle().fill(color).frame(width: 7, height: 7)
+            Text(label).font(.system(size: 11, weight: .semibold)).foregroundStyle(Color(hex: "e8ebff")).lineLimit(1).fixedSize(horizontal: true, vertical: false)
+        }
+        .padding(.horizontal, 10).frame(height: 22)
+        .background(Color(red: 0.035, green: 0.047, blue: 0.141).opacity(0.92), in: Capsule())
+        .overlay(Capsule().stroke(blocked ? color.opacity(0.75 + 0.2 * sin(t * 6)) : .white.opacity(0.16), lineWidth: 1))
+        .overlay(alignment: .bottom) {
+            Path { p in p.move(to: CGPoint(x: 0, y: 0)); p.addLine(to: CGPoint(x: 10, y: 0)); p.addLine(to: CGPoint(x: 5, y: 6)); p.closeSubpath() }
+                .fill(Color(red: 0.035, green: 0.047, blue: 0.141).opacity(0.92))
+                .frame(width: 10, height: 6).offset(y: 5)
+        }
+        .fixedSize().shadow(color: isSelected ? accent.opacity(0.4) : .clear, radius: 5)
+    }
+    private var isBlocked: Bool { agent.state == .waiting || agent.state == .blocked || agent.state == .failed }
+    private var isWorking: Bool { agent.state == .working || agent.state == .thinking }
+    private var needsDeskRowAvoidance: Bool {
+        guard placement.pose == .seatedTyping || placement.pose == .seatedThinking || placement.pose == .raisedHand else { return false }
+        return [467, 549, 632].contains { abs(placement.position.y - CGFloat($0)) < 0.5 }
+    }
+    private func toolChip(_ tool: (String, Color)) -> some View {
+        HStack(spacing: 5) {
+            Circle().fill(tool.1).frame(width: 6, height: 6)
+            Text(tool.0).font(.system(size: 11, weight: .bold)).foregroundStyle(tool.1).lineLimit(1)
+        }
+        .padding(.horizontal, 8).frame(height: 20)
+        .background(Color(red: 0.031, green: 0.043, blue: 0.133).opacity(0.94), in: Capsule())
+        .overlay(Capsule().stroke(tool.1, lineWidth: 1.3))
+        .fixedSize()
+    }
+    private var nameTag: some View { Text(agent.name).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white).lineLimit(1).padding(.horizontal, 7).padding(.vertical, 3).background(Color.black.opacity(0.78), in: Capsule()).fixedSize() }
+    private var selectionMark: some View {
+        ZStack {
+            Ellipse().stroke(accent, style: StrokeStyle(lineWidth: 2, dash: [6, 5])).frame(width: 60, height: 18).offset(y: 2)
+            Path { p in p.move(to: CGPoint(x: 33, y: -28)); p.addLine(to: CGPoint(x: 47, y: -28)); p.addLine(to: CGPoint(x: 40, y: -18)); p.closeSubpath() }.fill(accent)
+        }.frame(width: 80, height: 120).shadow(color: accent.opacity(0.7), radius: 7)
+    }
+    private var walkingSparkles: some View {
+        ZStack {
+            ForEach(0..<4, id: \.self) { i in
+                Circle().fill(accent.opacity(0.7)).frame(width: 2.5, height: 2.5).offset(x: CGFloat((i * 13) % 24) - 12, y: -CGFloat((i * 17) % 30) - 10)
             }
-        }.fixedSize()
+        }.frame(width: 80, height: 120)
     }
 
-    private var activityChip: some View {
-        Group {
-            if (agent.state == .working || agent.state == .thinking), let activity = agent.activity, !activity.isEmpty {
-                Text(String(activity.prefix(28))).font(.system(size: 8, weight: .medium, design: .rounded)).lineLimit(1).foregroundStyle(.white)
-                    .padding(.horizontal, 7).padding(.vertical, 4).background(Capsule().fill(Color.black.opacity(0.75))).overlay(Capsule().stroke(OfficePalette.stateColor(agent.state).opacity(0.7), lineWidth: 0.8))
-                    .offset(y: animate ? sin(phase * 2 + Double(agent.seed % 5)) * 1.2 : 0)
-            }
-        }.fixedSize()
+    private func ellipse(_ ctx: inout GraphicsContext, _ rect: CGRect, _ color: Color) { ctx.fill(Path(ellipseIn: rect), with: .color(color)) }
+    private func line(_ ctx: inout GraphicsContext, _ a: CGPoint, _ b: CGPoint, color: Color, width: CGFloat) { var p = Path(); p.move(to: a); p.addLine(to: b); ctx.stroke(p, with: .color(color), style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round)) }
+    private func svgPath(_ data: String) -> Path { // SVG snippets above use only move/line/curve and arcs; common paths are explicit here.
+        if data.hasPrefix("M-18.6") { var p = Path(); p.move(to: CGPoint(x: -18.6, y: 0)); p.addCurve(to: CGPoint(x: 18.6, y: 0), control1: CGPoint(x: -18.6, y: -10.3), control2: CGPoint(x: 18.6, y: -10.3)); p.addCurve(to: CGPoint(x: -3, y: -8), control1: CGPoint(x: 14, y: -9), control2: CGPoint(x: 4, y: -11)); p.addCurve(to: CGPoint(x: -18.6, y: 0), control1: CGPoint(x: -9, y: -6), control2: CGPoint(x: -15, y: -5)); p.closeSubpath(); return p }
+        if data.hasPrefix("M-3 -17") { var p = Path(); p.move(to: CGPoint(x: -3, y: -17)); p.addQuadCurve(to: CGPoint(x: 6, y: -22), control: CGPoint(x: 0, y: -27)); p.addQuadCurve(to: CGPoint(x: 3, y: -16), control: CGPoint(x: 2, y: -20)); p.closeSubpath(); return p }
+        if data.hasPrefix("M-4.5 6.5") { var p = Path(); p.move(to: CGPoint(x: -4.5, y: 6.5)); p.addQuadCurve(to: CGPoint(x: 4.5, y: 6.5), control: CGPoint(x: 0, y: 11)); return p }
+        if data.hasPrefix("M-3.5 8") { var p = Path(); p.move(to: CGPoint(x: -3.5, y: 8)); p.addQuadCurve(to: CGPoint(x: 3.5, y: 8), control: CGPoint(x: 0, y: 9.8)); return p }
+        if data.hasPrefix("M-4.5 10.5") { var p = Path(); p.move(to: CGPoint(x: -4.5, y: 10.5)); p.addQuadCurve(to: CGPoint(x: 4.5, y: 10.5), control: CGPoint(x: 0, y: 5.5)); return p }
+        if data.hasPrefix("M-3 8.5") { var p = Path(); p.move(to: CGPoint(x: -3, y: 8.5)); p.addLine(to: CGPoint(x: 3, y: 8.5)); return p }
+        if data.hasPrefix("M17 -7") { var p = Path(); p.move(to: CGPoint(x: 17, y: -7)); p.addQuadCurve(to: CGPoint(x: 17, y: 2), control: CGPoint(x: 12.5, y: -0.5)); p.addQuadCurve(to: CGPoint(x: 17, y: -7), control: CGPoint(x: 21.5, y: -0.5)); p.closeSubpath(); return p }
+        if data.hasPrefix("M-20 -3") { var p = Path(); p.move(to: CGPoint(x: -20, y: -3)); p.addArc(center: .zero, radius: 20, startAngle: .degrees(189), endAngle: .degrees(-9), clockwise: false); p.closeSubpath(); return p }
+        return Path()
     }
 
-    private var nameTag: some View {
-        Group {
-            if isHovered || isSelected {
-                Text(agent.name).font(.system(size: 10, weight: .semibold, design: .rounded)).lineLimit(1).foregroundStyle(.white)
-                    .padding(.horizontal, 7).padding(.vertical, 3).background(Capsule().fill(Color.black.opacity(0.78)))
-            }
-        }.fixedSize()
-    }
-
-    /// Scene-space hit target. The bottom midpoint is the character's feet.
-    func officeCharacterFrame(for placement: OfficePlacement) -> CGRect {
-        CGRect(x: placement.position.x - 40 * placement.scale,
-               y: placement.position.y - 120 * placement.scale,
-               width: 80 * placement.scale, height: 120 * placement.scale)
-    }
-
-    private static func skinColor(seed: UInt64) -> Color {
-        let shades: [Color] = [Color(red: 0.98, green: 0.78, blue: 0.62), Color(red: 0.78, green: 0.52, blue: 0.35), Color(red: 0.55, green: 0.34, blue: 0.25), Color(red: 0.92, green: 0.66, blue: 0.49)]
-        return shades[Int((seed >> 5) % UInt64(shades.count))]
-    }
-    private static func hairColor(seed: UInt64) -> Color {
-        let shades: [Color] = [Color(red: 0.19, green: 0.13, blue: 0.12), Color(red: 0.42, green: 0.25, blue: 0.13), Color(red: 0.15, green: 0.17, blue: 0.21), Color(red: 0.69, green: 0.39, blue: 0.17)]
-        return shades[Int((seed >> 11) % UInt64(shades.count))]
+    private static let pants = Color(hex: "272b52")
+    private static func role(for type: String) -> String {
+        let type = type.lowercased()
+        let exact: [String: String] = ["claude": "Developer", "codex": "Architect", "opencode": "DevOps", "gemini": "Researcher", "aider": "QA", "cursor-agent": "Designer", "amp": "PM", "goose": "DevOps"]
+        if let role = exact[type] { return role }
+        let roles = ["Developer", "QA", "DevOps", "Architect", "Researcher", "Designer", "PM"]
+        var hash: UInt32 = 0
+        for byte in type.utf16 { hash = (hash &* 31 &+ UInt32(byte)) }
+        return roles[Int(hash % UInt32(roles.count))]
     }
 }
 
-#Preview("Office poses") {
+private extension Color {
+    init(hex: String) {
+        let n = UInt64(hex, radix: 16) ?? 0
+        self.init(.sRGB, red: Double((n >> 16) & 255) / 255, green: Double((n >> 8) & 255) / 255, blue: Double(n & 255) / 255, opacity: 1)
+    }
+}
+
+func officeCharacterFrame(for placement: OfficePlacement) -> CGRect {
+    CGRect(x: placement.position.x - 40 * placement.scale, y: placement.position.y - 120 * placement.scale,
+           width: 80 * placement.scale, height: 120 * placement.scale)
+}
+
+#Preview("Office characters") {
     HStack(alignment: .bottom, spacing: 12) {
-        let poses: [OfficePose] = [.seatedTyping, .seatedThinking, .raisedHand, .walking, .standingCoffee, .sittingSofa, .celebrating, .slumped]
-        ForEach(Array(poses.enumerated()), id: \.offset) { index, pose in
-            VStack(spacing: 8) {
-                OfficeCharacterView(
-                    agent: OfficeAgent(id: "preview-\(index)", name: "\(pose)", kind: ["claude", "codex", "opencode", "other"][index % 4], state: [.working, .thinking, .waiting, .working, .idle, .idle, .working, .failed][index], activity: "Preparando la oficina", seed: UInt64(index * 127 + 41)),
-                    placement: OfficePlacement(position: CGPoint(x: 40, y: 120), pose: pose, facingLeft: false, scale: 1),
-                    date: Date(), animate: true, isSelected: false, isHovered: true
-                )
-            }.frame(width: 100, height: 165).background(Color(red: 0.10, green: 0.13, blue: 0.19)).clipShape(RoundedRectangle(cornerRadius: 12))
+        ForEach(Array([OfficeAgentState.working, .thinking, .blocked, .idle].enumerated()), id: \.offset) { index, state in
+            let agent = OfficeAgent(id: "preview-\(index)", name: ["Claude", "Codex", "OpenCode", "Gemini"][index], kind: ["claude", "codex", "opencode", "gemini"][index], state: state, activity: "Editando OfficeCharacters.swift", seed: UInt64(index * 127 + 41))
+            OfficeCharacterView(agent: agent, placement: OfficePlacement(position: CGPoint(x: 40, y: 120), pose: state == .blocked ? .raisedHand : state == .idle ? .standingCoffee : .seatedTyping, facingLeft: false, scale: 1), date: Date(), animate: true, isSelected: false, isHovered: true)
+                .frame(width: 80, height: 140).background(Color(hex: "171a2c"))
         }
-    }.padding().background(Color(red: 0.04, green: 0.06, blue: 0.10))
+    }.padding().background(Color(hex: "080b19"))
 }

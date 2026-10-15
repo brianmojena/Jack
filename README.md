@@ -4,7 +4,7 @@ Chat nativo y compacto para gestionar varios agentes de desarrollo en macOS. Int
 
 ## Versionado
 
-La versión actual es **0.3.53**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
+La versión actual es **0.3.54**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
 
 ## Construir
 
@@ -98,7 +98,7 @@ La vista HTML admite JavaScript inline y recursos incluidos como datos, sin red,
 
 ## Oficina (modo Normal)
 
-La entrada **Oficina** de la barra lateral muestra los agentes activos como personajes en una oficina animada, dibujada de forma nativa con SwiftUI. Cada agente tiene su escritorio: cuando trabaja teclea y muestra su actividad real (por ejemplo «Editando main.swift»); cuando espera tu respuesta o una aprobación levanta la mano; sin tarea se va a la zona de descanso. Al pasar el ratón ves su nombre y actividad, y un clic abre su sesión. La cabecera cuenta cuántos trabajan, esperan o descansan.
+La entrada **Oficina** de la barra lateral muestra solo los agentes activos (trabajando o esperando tu respuesta o una aprobación) como personajes en una oficina nocturna animada, dibujada de forma nativa con SwiftUI con el mismo diseño que Agent Office. Cada agente se sienta en su escritorio: cuando trabaja teclea y muestra su actividad real (por ejemplo «Editando main.swift»); cuando te necesita levanta la mano. Cuando deja de estar activo, desaparece. La barra superior cuenta los agentes activos, los que trabajan y los que esperan; el panel **Agentes** los lista con su rol, ruta, estado y tiempo. Un clic selecciona al agente y acerca la cámara; la ficha permite abrir su sesión, y Esc o un clic en el fondo deselecciona.
 
 La animación se pausa cuando la vista no se ve, la ventana no está activa, el ahorro de batería está activo o el sistema pide reducir movimiento. La Oficina no existe en Light.
 

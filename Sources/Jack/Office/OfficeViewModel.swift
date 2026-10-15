@@ -5,6 +5,7 @@ import SwiftUI
 @MainActor
 final class OfficeViewModel: ObservableObject {
     @Published private(set) var agents: [OfficeAgent] = []
+    @Published private(set) var conversationsByAgent: [String: ChatConversation] = [:]
 
     private let store: ChatStore
     private let onOpen: (UUID) -> Void
@@ -13,13 +14,12 @@ final class OfficeViewModel: ObservableObject {
     init(store: ChatStore, onOpen: @escaping (UUID) -> Void) {
         self.store = store
         self.onOpen = onOpen
-        observation = store.$conversations
-            .combineLatest(store.$statuses)
+        observation = Publishers.CombineLatest3(store.$conversations, store.$statuses, store.$approvals)
             .receive(on: RunLoop.main)
-            .sink { [weak self] conversations, statuses in
-                self?.refresh(conversations: conversations, statuses: statuses)
+            .sink { [weak self] conversations, statuses, approvals in
+                self?.refresh(conversations: conversations, statuses: statuses, approvals: approvals)
             }
-        refresh(conversations: store.conversations, statuses: store.statuses)
+        refresh(conversations: store.conversations, statuses: store.statuses, approvals: store.approvals)
     }
 
     /// Opens the selected chat using the same store selection as a sidebar row.
@@ -29,27 +29,36 @@ final class OfficeViewModel: ObservableObject {
         onOpen(id)
     }
 
-    private func refresh(conversations: [ChatConversation], statuses: [UUID: ChatStatus]) {
-        // UUID ordering keeps desk assignments stable while conversations stream or change status.
-        agents = conversations.sorted { $0.id.uuidString < $1.id.uuidString }.map { conversation in
+    private func refresh(conversations: [ChatConversation], statuses: [UUID: ChatStatus], approvals: [UUID: [ChatApproval]]) {
+        // Only live work and explicit user waits belong in the office. Queued, idle and failed chats are omitted.
+        let active = conversations.filter { conversation in
+            (statuses[conversation.id] ?? .idle) == .running
+                || (statuses[conversation.id] ?? .idle) == .waiting
+                || !(approvals[conversation.id] ?? []).isEmpty
+        }.sorted { $0.id.uuidString < $1.id.uuidString }
+
+        conversationsByAgent = Dictionary(uniqueKeysWithValues: active.map { ($0.id.uuidString, $0) })
+        agents = active.map { conversation in
             let status = statuses[conversation.id] ?? .idle
+            let hasApproval = !(approvals[conversation.id] ?? []).isEmpty
             return OfficeAgent(
                 id: conversation.id.uuidString,
                 name: conversation.title,
                 kind: conversation.provider.rawValue,
-                state: OfficeStateMapper.state(for: status, lastMessageRole: conversation.messages.last?.role),
-                activity: activity(conversation, status: status),
+                state: hasApproval ? .waiting : OfficeStateMapper.state(for: status, lastMessageRole: conversation.messages.last?.role),
+                activity: activity(conversation, status: status, hasApproval: hasApproval),
                 seed: OfficeStateMapper.seed(for: conversation.id.uuidString)
             )
         }
     }
 
-    private func activity(_ conversation: ChatConversation, status: ChatStatus) -> String? {
+    private func activity(_ conversation: ChatConversation, status: ChatStatus, hasApproval: Bool) -> String? {
+        if hasApproval { return "Esperando aprobación" }
         switch status {
         case .waiting:
             return "Esperando tu respuesta"
         case .queued:
-            return "En cola, esperando un espacio libre"
+            return nil
         case .running:
             guard let message = conversation.messages.last else { return "Preparando respuesta" }
             switch message.role {
@@ -57,14 +66,13 @@ final class OfficeViewModel: ObservableObject {
             case "assistant": return "Escribiendo respuesta"
             case "tool":
                 let tool = ToolPresentation(message: message, projectPath: conversation.projectPath)
-                return [tool.verb(running: true), tool.subject]
-                    .filter { !$0.isEmpty }.joined(separator: " ")
+                return [tool.verb(running: true), tool.subject].filter { !$0.isEmpty }.joined(separator: " ")
             default: return "Preparando el siguiente paso"
             }
         case .failed:
             return conversation.messages.last(where: { $0.role == "error" })?.text ?? "Error"
         case .idle:
-            return conversation.preview ?? "Inactivo"
+            return nil
         }
     }
 }
