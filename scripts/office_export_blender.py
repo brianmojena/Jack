@@ -21,7 +21,9 @@ from mathutils import Vector
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(bpy.data.filepath))) if bpy.data.filepath else ""
 STAGING = os.environ.get("OFFICE_STAGING", "/tmp/office_export")
-CHARACTERS = {"REMY": "CHAR_REMY_rig", "CH31": "CHAR_CH31_rig", "GIRL": "CHAR_GIRL_rig"}
+CHARACTERS = {"REMY": "CHAR_REMY_rig", "CH31": "CHAR_CH31_rig", "GIRL": "CHAR_GIRL_rig", "DEADPOOL": "CHAR_DEADPOOL_rig", "LAMINE": "CHAR_LAMINE_rig", "FRANKLIN": "CHAR_FRANKLIN_rig"}
+# Giro (en grados, sobre el eje vertical) con que se exporta cada personaje cuyo esqueleto de Mixamo viene girado de fábrica.
+YAW = {"FRANKLIN": 180}
 CHAIRS = {"PROP_gaming_chair_02": (0, -1), "PROP_gaming_chair_03": (0, -1), "PROP_gaming_chair": (1, 0)}
 CHAIR_PULL = 1.5
 # El cristal del espejo no se exporta: la app lo dibuja ella misma, con el reflejo de la sala (ver OfficeMirror).
@@ -159,7 +161,7 @@ def export_character(key, folder, total_frames):
     saved = (rig.location.copy(), rig.rotation_euler.copy(), rig.animation_data.action, rig.animation_data.action_slot,
              scene.frame_start, scene.frame_end)
     rig.location = (0, 0, 0)
-    rig.rotation_euler = (math.radians(90), 0, 0)
+    rig.rotation_euler = (math.radians(90), 0, math.radians(YAW.get(key, 0)))
     action = bpy.data.actions[f"ALL_{key}"]  # línea de tiempo con todos los clips
     rig.animation_data.action = action
     rig.animation_data.action_slot = action.slots[0]

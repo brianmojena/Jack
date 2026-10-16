@@ -42,9 +42,13 @@ struct OfficeInterfaceView<Content: View>: View {
     @StateObject private var assignments = OfficeAssignments()
     /// Los ajustes gráficos (el engranaje de arriba a la derecha).
     @StateObject private var graphics = OfficeGraphics()
+    /// El avatar (modelo 3D) que lleva cada persona.
+    @StateObject private var avatars = OfficeAvatarChoices()
     @State private var camera = OfficeCamera(target: OfficePose.world(x: 3.2, y: -4.5, z: 2.4))
     @State private var dock: OfficeDock?
     @State private var actions: OfficeActions?
+    /// El puesto cuyo personaje está eligiendo avatar.
+    @State private var choosingAvatar: Int?
     @State private var sceneSize = CGSize(width: 1000, height: 700)
     /// El agente (proveedor y modelo) que usará cada persona en su próximo encargo nuevo, por puesto.
     @State private var workerChoice: [String: OfficeAssignments.ModelChoice] = [:]
@@ -64,7 +68,7 @@ struct OfficeInterfaceView<Content: View>: View {
     private var slots: [OfficeLayout.Slot] { stage.layout?.slots ?? [] }
 
     var body: some View {
-        OfficeSceneView(stage: stage, camera: camera, quality: graphics.quality, measuresFPS: graphics.showFPS, onFPS: { graphics.fps = $0 }, onPick: { tag, _ in if viewing == nil { pick(tag.index) } }, onPickNothing: { actions = nil })
+        OfficeSceneView(stage: stage, camera: camera, quality: graphics.quality, measuresFPS: graphics.showFPS, onFPS: { graphics.fps = $0 }, onPick: { tag, _ in if viewing == nil { pick(tag.index) } }, onPickNothing: { actions = nil; choosingAvatar = nil })
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(JackPalette.chrome)
             .onGeometryChange(for: CGSize.self) { $0.size } action: { sceneSize = $0 }
@@ -74,7 +78,7 @@ struct OfficeInterfaceView<Content: View>: View {
             .overlay(alignment: .top) { screenOverlay }
             .overlay(alignment: .topLeading) { if !sidebarVisible { sidebarButton } }
             .overlay(alignment: .topTrailing) { if viewing == nil { OfficeGraphicsMenu(graphics: graphics) } }
-            .onChange(of: stage.state) { _, _ in sendCommands() }
+            .onChange(of: stage.state) { _, _ in sendCommands(); restoreAvatars() }
             .onChange(of: commands) { _, _ in sendCommands() }
             .onChange(of: store.selectedID) { _, id in
                 // Lo que se elige en la barra lateral abre el chat con la persona que lo lleva.
@@ -417,7 +421,8 @@ struct OfficeInterfaceView<Content: View>: View {
         let back = OfficePill(title: "Volver", symbol: "chevron.left", tint: .gray, back: true, action: go(parent))
         switch menu.step {
         case .root:
-            guard working else { return [OfficePill(title: "Trabajar", symbol: "keyboard", tint: .orange, action: go(.work))] }
+            let changeAvatar = OfficePill(title: "Cambiar avatar", symbol: "person.crop.circle", tint: .purple) { actions = nil; choosingAvatar = index }
+            guard working else { return [OfficePill(title: "Trabajar", symbol: "keyboard", tint: .orange, action: go(.work)), changeAvatar] }
             var items: [OfficePill] = []
             items.append(OfficePill(title: "Hablar con \(slot.name)", symbol: "text.bubble", tint: .blue) { actions = nil; openChat(slot: index) })
             // Su monitor solo está encendido mientras trabaja con un agente.
@@ -425,6 +430,7 @@ struct OfficeInterfaceView<Content: View>: View {
                 items.append(OfficePill(title: "Ver pantalla", symbol: "display", tint: .teal) { actions = nil; viewScreen(index) })
             }
             items.append(OfficePill(title: "Terminar de trabajar", symbol: "moon.zzz", tint: .purple) { actions = nil; stopWorking(slot: index) })
+            items.append(changeAvatar)
             return items
         case .work:
             // Lo primero, un encargo nuevo con el último modelo elegido; «Otro modelo» deja escoger otro.
@@ -524,6 +530,23 @@ struct OfficeInterfaceView<Content: View>: View {
         assignments.setLeader(nil, for: slot.id)
         narration[slot.id] = nil
         openChat(slot: index)
+    }
+
+    // MARK: - Avatares
+
+    /// Al abrir la oficina, cada puesto se pone el avatar que tenía elegido (si no es el de siempre).
+    private func restoreAvatars() {
+        guard stage.state == .ready else { return }
+        for (index, slot) in slots.enumerated() where avatars.avatar(for: slot) != slot.file {
+            Task { await stage.setAvatar(avatars.avatar(for: slot), forSlot: index) }
+        }
+    }
+
+    private func chooseAvatar(_ avatar: String, slot index: Int) {
+        guard slots.indices.contains(index) else { return }
+        choosingAvatar = nil
+        avatars.choose(avatar, for: slots[index])
+        Task { await stage.setAvatar(avatar, forSlot: index) }
     }
 
     // MARK: - Ver pantalla
@@ -646,6 +669,15 @@ struct OfficeInterfaceView<Content: View>: View {
                        let chest = camera.projectCurrent(stage.actors[actions.slot].chestPosition, in: sceneSize) {
                         OfficePillMenu(items: pills(for: actions), anchor: chest, bounds: sceneSize)
                             .id(actions)
+                    }
+                    if let index = choosingAvatar, slots.indices.contains(index), stage.actors.indices.contains(index),
+                       let chest = camera.projectCurrent(stage.actors[index].chestPosition, in: sceneSize) {
+                        OfficeAvatarPicker(
+                            current: avatars.avatar(for: slots[index]),
+                            taken: Set(slots.indices.filter { $0 != index }.map { avatars.avatar(for: slots[$0]) }),
+                            anchor: chest, bounds: sceneSize,
+                            onPick: { chooseAvatar($0, slot: index) }, onClose: { choosingAvatar = nil }
+                        )
                     }
                 }
             }

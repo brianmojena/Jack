@@ -21,9 +21,9 @@ enum OfficeCommand: Equatable {
     let slot: OfficeLayout.Slot
     /// Raíz del personaje en la escena; es lo que se mueve y se pulsa.
     let holder = Entity()
-    private let model: Entity
+    private var model: Entity
     private let layout: OfficeLayout
-    private let timeline: AnimationResource?
+    private var timeline: AnimationResource?
     private var resources: [String: AnimationResource] = [:]
     private var controller: AnimationPlaybackController?
     private var playing: String?
@@ -86,6 +86,36 @@ enum OfficeCommand: Equatable {
             workstation.components.set(OfficeAgentTag(index: index, kind: .desk))
             workstation.components.set(CollisionComponent(shapes: [.generateBox(size: bounds.extents).offsetBy(translation: bounds.center)]))
             workstation.components.set(InputTargetComponent())
+        }
+    }
+
+    /// Cambia el modelo del personaje por otro (otro avatar) sin moverlo: se queda en su postura y sigue con lo que hacía.
+    /// El reflejo del espejo, si lo hay, cambia con él.
+    func replaceModel(with newModel: Entity) {
+        model.removeFromParent()
+        holder.addChild(newModel)
+        model = newModel
+        timeline = newModel.availableAnimations.max { $0.definition.duration < $1.definition.duration }
+        // Los clips y reproductores eran del modelo anterior: se vuelven a crear con el siguiente fotograma.
+        resources = [:]
+        controller = nil
+        mirrorController = nil
+        playing = nil
+        frozen = false
+        idleTime = 0
+        if let reflection = mirrorHolder {
+            mirrorModel?.removeFromParent()
+            let copy = newModel.clone(recursive: true)
+            reflection.addChild(copy)
+            mirrorModel = copy
+        }
+        // Si el personaje estaba desvanecido (su pantalla de cerca), el nuevo también.
+        if opacity < 1 {
+            func dim(_ entity: Entity) {
+                entity.components.set(OpacityComponent(opacity: opacity))
+                entity.children.forEach(dim)
+            }
+            dim(newModel)
         }
     }
 
