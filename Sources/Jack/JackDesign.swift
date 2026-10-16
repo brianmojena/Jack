@@ -45,15 +45,18 @@ enum JackPalette {
 
 /// How Jack's main window is drawn. Basic is the solid, dense workspace; Ice is built from
 /// macOS's own Liquid Glass structure. Terminal presents native PTYs instead of chats. Office draws the
-/// agents as characters in a 3D office, with the chat of the one picked beside it.
+/// agents as characters in an animated 2D studio or a 3D office, with access to their chats.
 enum InterfaceStyle: String, CaseIterable, Identifiable {
-    case basic, ice, terminal, office
+    case basic, ice, terminal, office, office2D
 
     static let key = "interfaceStyle"
 
+    var isOffice: Bool { self == .office || self == .office2D }
+    var availableInLight: Bool { self != .terminal && !isOffice }
+
     var id: String { rawValue }
     var title: String {
-        switch self { case .basic: "Basic"; case .ice: "Ice"; case .terminal: "Terminal"; case .office: "Oficina 3D" }
+        switch self { case .basic: "Basic"; case .ice: "Ice"; case .terminal: "Terminal"; case .office: "Oficina 3D"; case .office2D: "Oficina 2D" }
     }
 }
 
@@ -73,7 +76,7 @@ private struct JackSurfaceBackground: ViewModifier {
 
     func body(content: Content) -> some View {
         switch style {
-        case .basic, .terminal, .office: content.background(surface == .chrome ? JackPalette.chrome : JackPalette.canvas)
+        case .basic, .terminal, .office, .office2D: content.background(surface == .chrome ? JackPalette.chrome : JackPalette.canvas)
         case .ice: content
         }
     }
@@ -87,7 +90,7 @@ private struct JackGlassBackground<S: InsettableShape>: ViewModifier {
     @Environment(\.interfaceStyle) private var style
 
     func body(content: Content) -> some View {
-        if style == .basic || style == .office {
+        if style == .basic || style.isOffice {
             content.background(basic, in: shape)
         } else if #available(macOS 26, *) {
             content.glassEffect(interactive ? .regular.interactive() : .regular, in: shape)

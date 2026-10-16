@@ -25,7 +25,7 @@ final class OfficeNarratorTests: XCTestCase {
         }
         let worker = OfficeWorker(tool: "Codex", status: .running, messages: [])
         do {
-            _ = try await narrator.reply(as: "Ana", history: [], worker: worker, lightMode: true)
+            _ = try await narrator.reply(as: "Ana", history: [], worker: worker, team: "", catalog: "", lightMode: true)
             XCTFail("Light debe rechazar la conversación con la oficina")
         } catch { XCTAssertTrue(error is CancellationError) }
         do {
@@ -33,7 +33,7 @@ final class OfficeNarratorTests: XCTestCase {
             XCTFail("Light debe rechazar los informes de la oficina")
         } catch { XCTAssertTrue(error is CancellationError) }
         do {
-            _ = try await narrator.summary(of: [], previous: nil, lightMode: true)
+            _ = try await narrator.summary(as: "Ana", tool: "Codex", of: [], previous: nil, lightMode: true)
             XCTFail("Light debe rechazar los resúmenes de la oficina")
         } catch { XCTAssertTrue(error is CancellationError) }
     }

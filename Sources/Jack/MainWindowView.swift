@@ -74,7 +74,7 @@ struct MainWindowView: View {
     }
     private var ice: Bool { interfaceStyle == .ice }
     private var officeVisible: Bool {
-        !store.lightModeEnabled && (showingOffice || interfaceStyle == .office)
+        !store.lightModeEnabled && (showingOffice || interfaceStyle.isOffice)
             && !showingArtifacts && !showingClaudeCloud && !showingClaudeChat && !showingAutomations
     }
     private var sidebarProjectSort: SidebarProjectSort {
@@ -236,9 +236,21 @@ struct MainWindowView: View {
         .ignoresSafeArea(.container, edges: .top)
     }
 
-    private var officeContent: some View {
+    @ViewBuilder private var officeContent: some View {
+        if interfaceStyle == .office2D {
+            Office2DInterfaceView(store: store, batterySaver: batterySaver, sidebarVisible: sidebarVisible,
+                                  onShowSidebar: toggleSidebar) { target in officeScreen(target) }
+        } else {
+            office3DContent
+        }
+    }
+
+    private var office3DContent: some View {
         OfficeInterfaceView(store: store, sidebarVisible: sidebarVisible, onShowSidebar: toggleSidebar) { target in
             officeScreen(target)
+        }
+        .overlay(alignment: .topLeading) {
+            OfficePresentationPicker().padding(.leading, sidebarVisible ? 18 : 122).padding(.top, 12)
         }
     }
 

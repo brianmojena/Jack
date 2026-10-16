@@ -4,7 +4,7 @@ Chat nativo y compacto para gestionar varios agentes de desarrollo en macOS. Int
 
 ## Versionado
 
-La versión actual es **0.3.56**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
+La versión actual es **0.3.57**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
 
 ## Construir
 
@@ -30,6 +30,8 @@ En modo Normal, Jack consulta las releases de GitHub (`brianmojena/Jack`) al abr
 Para publicar una versión: sube `CFBundleShortVersionString` y `CFBundleVersion` en `Resources/Info.plist`, haz commit y push, y ejecuta `scripts/release.sh --publish`. Sin `--publish` solo genera `build/release/Jack-<versión>.zip`. La app lleva firma ad hoc, así que un zip descargado con el navegador pide clic derecho > Abrir la primera vez; la instalación desde Jack no tiene ese problema porque la descarga no lleva cuarentena.
 
 ## Uso
+
+En modo Normal, **Ajustes → Apariencia → Oficina 2D** ofrece el estudio animado como alternativa a la oficina 3D. El selector **2D / 3D** permite cambiar entre las dos vistas. Los agentes muestran su actividad real, caminan hasta su puesto y celebran al terminar antes de descansar. Pulsa un personaje o su mesa para ver sus datos y abrir su conversación; los agentes que descansan pueden saludar, ir a por café o sentarse en el sofá. También puedes preparar café y regar la planta de la sala. La cabecera permite pausar las animaciones, que respetan Reducir movimiento y se detienen al ocultar la ventana o abrir un chat de la oficina. Light no incorpora estas vistas.
 
 En modo Normal, el menú de **Proyectos** permite ordenar manualmente, por nombre ascendente o descendente, por actividad reciente o por cantidad de agentes. En orden manual y sin una búsqueda activa, arrastra el tirador de puntos junto al nombre de la carpeta; el cursor muestra la carpeta y la línea marca dónde quedará. El orden se guarda al soltar y cancelar no lo cambia. Los atajos de navegación siguen el orden mostrado.
 
