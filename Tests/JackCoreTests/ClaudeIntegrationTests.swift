@@ -247,6 +247,8 @@ final class ClaudeIntegrationTests: XCTestCase {
         let (store, folder, drivers) = fixture()
         defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
         let id = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .claude))
+        // Exercise the Manual → Accept edits transition independently of the new-agent default.
+        store.updateMode(id: id, mode: "manual", supported: ChatRunMode.choices(for: .claude))
         store.send("edita algo"); await settle()
         let driver = try XCTUnwrap(drivers().first)
         store.cycleMode(id)

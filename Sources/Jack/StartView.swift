@@ -7,6 +7,9 @@ struct StartView: View {
     @ObservedObject var store: ChatStore
     let onStart: (NewAgentRequest) -> Void
     var onResumeClaude: (() -> Void)? = nil
+    /// Proveedor y modelo con los que arranca el formulario (por ejemplo, el elegido en la oficina 3D).
+    var presetProvider: ChatProvider? = nil
+    var presetModel: String? = nil
 
     @AppStorage("lastNewAgentProvider") private var providerValue = ChatProvider.codex.rawValue
     @AppStorage("transcriptMonospaced") private var monospaced = true
@@ -14,6 +17,8 @@ struct StartView: View {
     @State private var model = ""
     @State private var effort = "high"
     @State private var initializedEffort = false
+    /// El modelo preelegido, a la espera de que se aplique su proveedor (cambiar de proveedor borra el modelo).
+    @State private var pendingPresetModel: String?
     @State private var message = ""
     @State private var customModel = ""
     @State private var showingCustomModel = false
@@ -66,8 +71,20 @@ struct StartView: View {
             if !initializedEffort { effort = store.defaultEffort(for: provider); initializedEffort = true }
             focused = true
             ProjectIndex.shared.refreshIfStale()
+            if let presetProvider {
+                model = presetModel ?? ""
+                if providerValue != presetProvider.rawValue {
+                    pendingPresetModel = presetModel ?? ""
+                    providerValue = presetProvider.rawValue
+                }
+            }
         }
-        .onChange(of: providerValue) { _, _ in model = ""; effort = store.defaultEffort(for: provider); focused = true }
+        .onChange(of: providerValue) { _, _ in
+            model = pendingPresetModel ?? ""
+            pendingPresetModel = nil
+            effort = store.defaultEffort(for: provider)
+            focused = true
+        }
         .onChange(of: selectedModel) { _, _ in
             if !efforts.isEmpty && !efforts.contains(effort) { effort = efforts.contains("high") ? "high" : efforts.last! }
         }

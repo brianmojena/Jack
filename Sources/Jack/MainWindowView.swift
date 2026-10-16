@@ -72,6 +72,10 @@ struct MainWindowView: View {
         workspaceVisible = true
     }
     private var ice: Bool { interfaceStyle == .ice }
+    private var officeVisible: Bool {
+        !store.lightModeEnabled && (showingOffice || interfaceStyle == .office)
+            && !showingArtifacts && !showingClaudeCloud && !showingAutomations
+    }
     private var sidebarProjectSort: SidebarProjectSort {
         SidebarProjectSort.resolve(projectSortValue, legacyAlphabetical: legacyAlphabeticalProjects)
     }
@@ -86,6 +90,9 @@ struct MainWindowView: View {
             if interfaceStyle == .terminal, !store.lightModeEnabled {
                 TerminalInterfaceView(workspace: workspace.terminalInterface(), store: store,
                                       enterBatterySaver: enterBatterySaver)
+            } else if officeVisible {
+                officeLayout
+                    .focusedSceneValue(\.jackActions, actions)
             } else {
                 Group { if interfaceStyle == .ice { iceLayout } else { basicLayout } }
                     .focusedSceneValue(\.jackActions, actions)
@@ -213,6 +220,37 @@ struct MainWindowView: View {
         .ignoresSafeArea(.container, edges: .top)
     }
 
+    /// The 3D office: the agents as characters; a desk's screen shows the agent's chat.
+    private var officeLayout: some View {
+        VStack(spacing: 0) {
+            PaneSplit(.leading, visible: sidebarVisible, widthKey: "sidebarWidth", defaultWidth: 264, range: 210...400, flexibleMinimum: 440) {
+                sidebar
+            } trailing: {
+                officeContent
+            }
+            statusBar
+        }
+        .background(WindowChrome())
+        .background(JackPalette.canvas)
+        .ignoresSafeArea(.container, edges: .top)
+    }
+
+    private var officeContent: some View {
+        OfficeInterfaceView(store: store, sidebarVisible: sidebarVisible, onShowSidebar: toggleSidebar) { target in
+            officeScreen(target)
+        }
+    }
+
+    @ViewBuilder private func officeScreen(_ target: OfficePanelTarget) -> some View {
+        switch target {
+        case .agent(let id):
+            if let conversation = store.conversations.first(where: { $0.id == id }) { conversationView(conversation) }
+        case .newAgent(_, let token, let provider, let model):
+            StartView(store: store, onStart: createAgent, onResumeClaude: { showingSessionPicker = true },
+                      presetProvider: provider, presetModel: model).id(token)
+        }
+    }
+
     /// macOS's own Liquid Glass structure: floating sidebar, glass toolbar and the composer
     /// floating over the transcript, which scrolls beneath it.
     private var iceLayout: some View {
@@ -270,7 +308,7 @@ struct MainWindowView: View {
             onShowOffice: store.lightModeEnabled ? nil : {
                 showingClaudeCloud = false; showingArtifacts = false; showingAutomations = false; showingOffice = true
             },
-            officeActive: showingOffice,
+            officeActive: officeVisible,
             onShowClaudeCloud: store.lightModeEnabled ? nil : {
                 showingArtifacts = false; showingAutomations = false; showingOffice = false; showingClaudeCloud = true
             },
@@ -290,11 +328,6 @@ struct MainWindowView: View {
                 showingArtifacts = false
                 store.select(id)
                 sendToAgent(text, files: [], to: id, now: false)
-            }
-        } else if showingOffice, !store.lightModeEnabled {
-            OfficeView(store: store, batterySaver: batterySaver) { id in
-                showingOffice = false
-                store.select(id)
             }
         } else if showingAutomations {
             AutomationsView(schedules: store.schedules, projectPaths: automationProjectPaths)

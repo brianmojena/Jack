@@ -8,3 +8,10 @@ __pycache__/
 *.pyc
 Training/stellar/stellar-colab.zip
 Sources/JackCore/VoiceKey.swift
+# Oficina 3D: modelos originales, copias de Blender y exportación intermedia (scripts/office-assets.sh los regenera)
+Resources/Office/Models/
+Resources/Office/Export/
+*.blend1
+# BuildCloud web: dependencias y compilado
+BuildCloud/web/node_modules/
+BuildCloud/web/dist/
