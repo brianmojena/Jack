@@ -33,6 +33,9 @@ targets:
       - Resources/Assets.xcassets
       - path: Resources/AppIcon.icon
         buildPhase: resources
+      # The 3D office: rooms and characters exported from Blender (scripts/office-assets.sh).
+      - path: Resources/Office/Runtime
+        buildPhase: resources
     dependencies:
       - target: JackCore
       - package: SwiftTerm

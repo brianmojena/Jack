@@ -84,6 +84,9 @@ struct MainWindowView: View {
             if interfaceStyle == .terminal, !store.lightModeEnabled {
                 TerminalInterfaceView(workspace: workspace.terminalInterface(), store: store,
                                       enterBatterySaver: enterBatterySaver)
+            } else if interfaceStyle == .office, !store.lightModeEnabled {
+                officeLayout
+                    .focusedSceneValue(\.jackActions, actions)
             } else {
                 Group { if interfaceStyle == .ice { iceLayout } else { basicLayout } }
                     .focusedSceneValue(\.jackActions, actions)
@@ -209,6 +212,33 @@ struct MainWindowView: View {
         .background(WindowChrome())
         .background(JackPalette.canvas)
         .ignoresSafeArea(.container, edges: .top)
+    }
+
+    /// The 3D office: the agents as characters; a desk's screen shows the agent's chat.
+    private var officeLayout: some View {
+        VStack(spacing: 0) {
+            PaneSplit(.leading, visible: sidebarVisible, widthKey: "sidebarWidth", defaultWidth: 264, range: 210...400, flexibleMinimum: 440) {
+                sidebar
+            } trailing: {
+                OfficeInterfaceView(store: store, sidebarVisible: sidebarVisible, onShowSidebar: toggleSidebar) { target in
+                    officeScreen(target)
+                }
+            }
+            statusBar
+        }
+        .background(WindowChrome())
+        .background(JackPalette.canvas)
+        .ignoresSafeArea(.container, edges: .top)
+    }
+
+    @ViewBuilder private func officeScreen(_ target: OfficePanelTarget) -> some View {
+        switch target {
+        case .agent(let id):
+            if let conversation = store.conversations.first(where: { $0.id == id }) { conversationView(conversation) }
+        case .newAgent(_, let token, let provider, let model):
+            StartView(store: store, onStart: createAgent, onResumeClaude: { showingSessionPicker = true },
+                      presetProvider: provider, presetModel: model).id(token)
+        }
     }
 
     /// macOS's own Liquid Glass structure: floating sidebar, glass toolbar and the composer

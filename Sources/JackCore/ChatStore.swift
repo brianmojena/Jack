@@ -294,6 +294,11 @@ import Foundation
             existing.note = update.note; existing.isCached = true; usage[update.provider] = existing
         } else { usage[update.provider] = update }
     }
+    /// El modo con que empiezan los agentes nuevos: Auto en el modo Normal; Light conserva el suyo de siempre (Manual).
+    func defaultMode(for provider: ChatProvider) -> String? {
+        guard !lightModeEnabled, ChatRunMode.choices(for: provider).contains(where: { $0.id == "auto" }) else { return nil }
+        return "auto"
+    }
     public func defaultEffort(for provider: ChatProvider) -> String {
         provider == .claude && !lightModeEnabled ? "medium" : "high"
     }
@@ -335,6 +340,7 @@ import Foundation
             conversation.model = StellarModels.preferredLocalID(in: Self.visibleStellarModels(localModels, lightMode: true))
         }
         conversation.effort = Self.clamp(effort, to: supportedEfforts(provider: provider, model: conversation.model))
+        conversation.mode = defaultMode(for: provider)
         conversation.parentID = parentID
         if let title { conversation.title = String(title.prefix(120)) }
         if parentID == nil { rememberModel(conversation.model, provider: provider) }
@@ -1899,7 +1905,7 @@ private extension ChatStore {
         c.updatedAt = Date(); c.hasUnread = nil; c.contextUsage = nil; c.tokenUsage = nil
         var settings = source.jackContext ?? JackContextSettings(); settings.seed = seed; settings.seedDelivered = false; settings.spent = 0; settings.budgetWarned = false
         c.jackContext = settings
-        if let provider, provider != source.provider { c.provider = provider; c.model = provider.defaultModel; c.mode = nil; c.variant = nil; c.effort = Self.clamp("high", to: supportedEfforts(provider: provider, model: c.model)) }
+        if let provider, provider != source.provider { c.provider = provider; c.model = provider.defaultModel; c.mode = defaultMode(for: provider); c.variant = nil; c.effort = Self.clamp("high", to: supportedEfforts(provider: provider, model: c.model)) }
         conversations.insert(c, at: 0); loaded.insert(c.id); save(c.id); select(c.id)
         jackNotice("Conversación independiente creada. El contexto anterior se enviará al escribir el primer mensaje.", to: c.id)
     }
