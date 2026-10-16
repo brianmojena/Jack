@@ -21,6 +21,8 @@ import JackCore
     @Published private(set) var lastModel: ModelChoice?
     /// El chat con cada persona, por puesto: lo que le dice el usuario, lo que contesta y lo que le encarga a su agente.
     @Published private(set) var chats: [String: [OfficeLine]] = [:]
+    /// Quién ayuda a quién: el puesto de cada ayudante y el de la persona que le pidió ayuda. No se guarda.
+    @Published private(set) var leaders: [String: String] = [:]
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
@@ -43,6 +45,10 @@ import JackCore
         chats[slot] = Array((chats[slot] ?? []).suffix(79)) + [line]
         saveChats()
     }
+
+    func setLeader(_ leader: String?, for helper: String) { leaders[helper] = leader }
+
+    func helpers(of leader: String) -> [String] { leaders.filter { $0.value == leader }.map(\.key).sorted() }
 
     func clearChat(slot: String) {
         chats[slot] = nil

@@ -40,6 +40,8 @@ struct OfficeInterfaceView<Content: View>: View {
 
     @StateObject private var stage = OfficeStage()
     @StateObject private var assignments = OfficeAssignments()
+    /// Los ajustes gráficos (el engranaje de arriba a la derecha).
+    @StateObject private var graphics = OfficeGraphics()
     @State private var camera = OfficeCamera(target: OfficePose.world(x: 3.2, y: -4.5, z: 2.4))
     @State private var dock: OfficeDock?
     @State private var actions: OfficeActions?
@@ -54,12 +56,15 @@ struct OfficeInterfaceView<Content: View>: View {
     @State private var screenReady = false
     /// Lo que cuenta cada agente de lo que va haciendo (Gemma 4 31B Cloud), por chat.
     @State private var narrator = OfficeNarrator()
-    @State private var narration: [UUID: String] = [:]
+    /// Los monitores «En vivo»: el chat real de cada puesto, montado fuera de la pantalla para fotografiarlo.
+    @State private var liveScreens: [String: OfficeLiveScreen] = [:]
+    /// Lo último que dijo cada persona en su bocadillo, por puesto.
+    @State private var narration: [String: String] = [:]
 
     private var slots: [OfficeLayout.Slot] { stage.layout?.slots ?? [] }
 
     var body: some View {
-        OfficeSceneView(stage: stage, camera: camera, onPick: { tag, _ in if viewing == nil { pick(tag.index) } }, onPickNothing: { actions = nil })
+        OfficeSceneView(stage: stage, camera: camera, quality: graphics.quality, measuresFPS: graphics.showFPS, onFPS: { graphics.fps = $0 }, onPick: { tag, _ in if viewing == nil { pick(tag.index) } }, onPickNothing: { actions = nil })
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(JackPalette.chrome)
             .onGeometryChange(for: CGSize.self) { $0.size } action: { sceneSize = $0 }
@@ -68,6 +73,7 @@ struct OfficeInterfaceView<Content: View>: View {
             .overlay { screenContent }
             .overlay(alignment: .top) { screenOverlay }
             .overlay(alignment: .topLeading) { if !sidebarVisible { sidebarButton } }
+            .overlay(alignment: .topTrailing) { if viewing == nil { OfficeGraphicsMenu(graphics: graphics) } }
             .onChange(of: stage.state) { _, _ in sendCommands() }
             .onChange(of: commands) { _, _ in sendCommands() }
             .onChange(of: store.selectedID) { _, id in
@@ -118,11 +124,13 @@ struct OfficeInterfaceView<Content: View>: View {
                 lastAt[id] = Date()
                 busy.insert(id)
                 let messages = conversation.messages
-                let previous = narration[id]
+                let previous = narration[slot.id]
+                let name = slot.name, tool = tool(for: slot), slotID = slot.id
                 Task {
                     defer { busy.remove(id) }
-                    guard let text = try? await narrator.summary(of: messages, previous: previous, lightMode: store.lightModeEnabled) else { return }
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { narration[id] = text }
+                    guard let text = try? await narrator.summary(as: name, tool: tool, of: messages, previous: previous,
+                                                                 lightMode: store.lightModeEnabled) else { return }
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { narration[slotID] = text }
                 }
             }
             try? await Task.sleep(for: .seconds(2))
@@ -137,34 +145,113 @@ struct OfficeInterfaceView<Content: View>: View {
         Task {
             guard let text = try? await narrator.report(as: slot.name, history: history, worker: worker, lightMode: store.lightModeEnabled) else { return }
             assignments.append(OfficeLine(role: .person, text: text), slot: slot.id)
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { narration[conversation.id] = text }
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { narration[slot.id] = text }
+            // Quien pidió ayuda se entera de cómo acabó la parte de su compañero.
+            if let leader = assignments.leaders[slot.id] {
+                assignments.append(OfficeLine(role: .note, text: "\(slot.name): \(text)"), slot: leader)
+            }
         }
     }
 
     // MARK: - Hablar con la persona
 
-    /// El usuario le dice algo a la persona: ella contesta y, si hace falta, le pasa un encargo a su agente.
+    /// El usuario le dice algo a la persona (Enter): el diálogo se cierra y ella se levanta y va a su escritorio. Contesta en su
+    /// bocadillo y, si hace falta, le pasa el encargo a su agente y pide ayuda a compañeros libres.
     private func talk(_ text: String, slot index: Int) {
         guard slots.indices.contains(index) else { return }
         let slot = slots[index]
         assignments.append(OfficeLine(role: .user, text: text), slot: slot.id)
         assignments.setWorking(true, slot: slot.id)
+        dock = nil
         let conversation = conversation(in: slot)
         let worker = OfficeWorker(tool: tool(for: slot), status: conversation.map { store.statuses[$0.id] ?? .idle },
                                   messages: conversation?.messages ?? [])
         let history = assignments.chat(in: slot.id)
+        let team = teamDescription(for: slot), catalog = modelCatalog
         thinking.insert(slot.id)
         Task {
             defer { thinking.remove(slot.id) }
             do {
-                let decision = try await narrator.reply(as: slot.name, history: history, worker: worker, lightMode: store.lightModeEnabled)
+                let decision = try await narrator.reply(as: slot.name, history: history, worker: worker, team: team, catalog: catalog,
+                                                        lightMode: store.lightModeEnabled)
                 assignments.append(OfficeLine(role: .person, text: decision.reply), slot: slot.id)
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { narration[slot.id] = decision.reply }
                 if let task = decision.task { delegate(task, slot: index) }
+                if !decision.helpers.isEmpty { recruit(decision.helpers, leader: index) }
             } catch is CancellationError {
             } catch {
                 assignments.append(OfficeLine(role: .note, text: "\(slot.name) no pudo contestar: \(error.localizedDescription)"), slot: slot.id)
+                withAnimation { narration[slot.id] = "Perdona, ahora mismo no puedo pensar (no responde \(OfficeNarrator.modelName))." }
             }
         }
+    }
+
+    /// La persona pide ayuda: cada compañero libre (el que nombró o, si no está libre, otro) se levanta, va a su escritorio y
+    /// le pasa su parte a un agente nuevo con el proveedor y el modelo que ella eligió.
+    private func recruit(_ helpers: [OfficeHelper], leader index: Int) {
+        guard slots.indices.contains(index) else { return }
+        let leader = slots[index]
+        for helper in helpers {
+            let named = slots.firstIndex { $0.id != leader.id && isFree($0)
+                && $0.name.compare(helper.name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }
+            guard let target = named ?? slots.firstIndex(where: { $0.id != leader.id && isFree($0) }) else {
+                assignments.append(OfficeLine(role: .note, text: "No hay compañeros libres para ayudar a \(leader.name)."), slot: leader.id)
+                return
+            }
+            let slot = slots[target]
+            let choice = modelChoice(provider: helper.provider, model: helper.model) ?? lastChoice
+            workerChoice[slot.id] = choice
+            // El ayudante deja lo que tuviera: empieza de cero con su parte.
+            if assignments.conversation(in: slot.id) != nil { assignments.clear(slot: slot.id) }
+            assignments.clearChat(slot: slot.id)
+            assignments.setLeader(leader.id, for: slot.id)
+            let tool = "\(choice.provider.title) · \(modelTitle(choice))"
+            assignments.append(OfficeLine(role: .note, text: "\(leader.name) le pidió ayuda a \(slot.name), que trabaja con \(tool)."), slot: leader.id)
+            assignments.append(OfficeLine(role: .note, text: "\(slot.name) ayuda a \(leader.name) con \(tool)."), slot: slot.id)
+            delegate(helper.task, slot: target)
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { narration[slot.id] = "Voy, \(leader.name) me pidió una mano." }
+        }
+    }
+
+    /// Libre: ni en su escritorio, ni con un agente trabajando, ni pensando una respuesta.
+    private func isFree(_ slot: OfficeLayout.Slot) -> Bool {
+        !assignments.working.contains(slot.id) && !thinking.contains(slot.id)
+            && conversation(in: slot).map { store.statuses[$0.id]?.isActive == true } != true
+    }
+
+    /// Los compañeros de una persona, para que decida a quién pedir ayuda y sepa cómo van los que ya la ayudan.
+    private func teamDescription(for leader: OfficeLayout.Slot) -> String {
+        slots.filter { $0.id != leader.id }.map { slot in
+            guard !isFree(slot) else { return "- \(slot.name): libre" }
+            let conversation = conversation(in: slot)
+            let status = conversation.map { (store.statuses[$0.id] ?? .idle).title } ?? "en su escritorio"
+            var line = "- \(slot.name): ocupado (\(tool(for: slot)), \(status))"
+            if assignments.leaders[slot.id] == leader.id {
+                line += ", te está ayudando"
+                if let said = conversation?.messages.last(where: { $0.role == "assistant" && !$0.text.isEmpty })?.text {
+                    line += ". Lo último de su agente: " + String(said.prefix(300)).replacingOccurrences(of: "\n", with: " ")
+                }
+            }
+            return line
+        }.joined(separator: "\n")
+    }
+
+    /// Los modelos que hay por proveedor, para que la persona elija con cuál trabaja cada ayudante.
+    private var modelCatalog: String {
+        ChatProvider.allCases.compactMap { provider in
+            let choices = store.modelChoices(for: provider).filter { !$0.id.isEmpty }.prefix(8)
+            guard !choices.isEmpty else { return nil }
+            return "\(provider.rawValue): " + choices.map { "\($0.id) — \($0.title)" }.joined(separator: "; ")
+        }.joined(separator: "\n")
+    }
+
+    /// El proveedor y el modelo que pidió la persona, solo si existen; si no, `nil`.
+    private func modelChoice(provider name: String, model: String) -> OfficeAssignments.ModelChoice? {
+        let wanted = name.lowercased()
+        guard let provider = ChatProvider.allCases.first(where: { $0.rawValue == wanted || $0.title.lowercased() == wanted }) else { return nil }
+        let choices = store.modelChoices(for: provider)
+        let id = choices.first { $0.id == model || $0.title.lowercased() == model.lowercased() }?.id ?? ""
+        return OfficeAssignments.ModelChoice(provider: provider, model: id)
     }
 
     /// La persona le pasa el encargo a su agente: al que ya tiene, o a uno nuevo con el modelo elegido, en el proyecto que
@@ -206,13 +293,14 @@ struct OfficeInterfaceView<Content: View>: View {
 
     // MARK: - Monitores
 
-    /// Mientras su personaje trabaja, el monitor enseña la pestaña de Claude con lo último que pasa, y sigue encendido aunque
-    /// el agente ya haya contestado, hasta «Terminar de trabajar»; si no, está apagado.
+    /// Mientras su personaje trabaja, el monitor enseña su chat: el real, igual que «Ver pantalla» («En vivo»), o un resumen
+    /// ligero («Ahorro»). Sigue encendido aunque el agente ya haya contestado, hasta «Terminar de trabajar»; si no, apagado.
     private func refreshScreens() async {
         guard stage.state == .ready else { return }
         var shown: [String: String] = [:]
         var labeled: [String: String] = [:]
         var tvKey = ""
+        var tick = 0
         while !Task.isCancelled {
             // La tele: el uso de Claude, al minuto.
             let usage = store.usage[.claude]
@@ -229,28 +317,49 @@ struct OfficeInterfaceView<Content: View>: View {
                     labeled[slot.id] = title
                 }
             }
-            for slot in slots {
+            let live = graphics.quality.liveScreens
+            tick += 1
+            for (index, slot) in slots.enumerated() {
                 var key = "off"
                 var image: CGImage?
-                if let conversation = conversation(in: slot) {
+                let conversation = conversation(in: slot)
+                if let conversation {
                     let status = store.statuses[conversation.id] ?? .idle
                     // Una vez que el agente trabaja, el personaje se queda en su puesto.
                     if status.isActive, !assignments.working.contains(slot.id) { assignments.setWorking(true, slot: slot.id) }
-                    if assignments.working.contains(slot.id) {
-                        let last = conversation.messages.last
-                        key = "\(conversation.id)|\(conversation.messages.count)|\(last?.text.count ?? 0)|\(last?.status ?? "")|\(status)|\(conversation.model)"
+                }
+                if let conversation, assignments.working.contains(slot.id) {
+                    let status = store.statuses[conversation.id] ?? .idle
+                    let last = conversation.messages.last
+                    let ultrawide = (slot.monitor ?? "").contains("ultrawide")
+                    key = "\(live)|\(conversation.id)|\(conversation.messages.count)|\(last?.text.count ?? 0)|\(last?.status ?? "")|\(status)|\(conversation.model)"
+                    if live {
+                        // En vivo: mientras el agente trabaja se fotografía en cada vuelta (el texto llega a trozos); la que se
+                        // está mirando de cerca no hace falta, porque encima ya está el chat de verdad.
+                        if status.isActive { key += "|\(tick)" }
+                        if viewing == index { continue }
+                        // Al tamaño exacto de la vista real de «Ver pantalla»: al acercarse se ve lo mismo, sin saltos.
+                        let size = closeUpSize(index) ?? (ultrawide ? CGSize(width: 1260, height: 540) : CGSize(width: 960, height: 540))
+                        key += "|\(Int(size.width))x\(Int(size.height))"
                         if shown[slot.id] != key {
-                            let ultrawide = (slot.monitor ?? "").contains("ultrawide")
-                            image = OfficeMonitorView.image(conversation: conversation, status: status, model: conversation.model,
-                                                            size: ultrawide ? CGSize(width: 1260, height: 540) : CGSize(width: 960, height: 540))
+                            let screen = liveScreens[slot.id] ?? OfficeLiveScreen(size: size)
+                            screen.resize(to: size)
+                            liveScreens[slot.id] = screen
+                            screen.show(conversation.id, AnyView(dockContent(.agent(conversation.id)).background(JackPalette.canvas)))
+                            image = screen.snapshot()
                         }
+                    } else if shown[slot.id] != key {
+                        image = OfficeMonitorView.image(conversation: conversation, status: status, model: conversation.model,
+                                                        size: ultrawide ? CGSize(width: 1260, height: 540) : CGSize(width: 960, height: 540))
                     }
                 }
+                // Sin trabajo en vivo, su ventana invisible sobra.
+                if !live || key == "off" { liveScreens[slot.id] = nil }
                 guard shown[slot.id] != key else { continue }
                 shown[slot.id] = key
                 stage.setScreen(slot: slot.id, image: image)
             }
-            try? await Task.sleep(for: .milliseconds(600))
+            try? await Task.sleep(for: .milliseconds(Int(graphics.quality.screenInterval * 1000)))
         }
     }
 
@@ -327,7 +436,6 @@ struct OfficeInterfaceView<Content: View>: View {
             if let conversation {
                 items.append(OfficePill(title: "Seguir con «\(Self.short(conversation.title))»", symbol: "arrow.uturn.forward", tint: .blue) {
                     actions = nil
-                    assignments.setWorking(true, slot: slot.id)
                     openChat(slot: index)
                 })
             }
@@ -398,12 +506,11 @@ struct OfficeInterfaceView<Content: View>: View {
             assignments.append(OfficeLine(role: .note, text: "\(slot.name) retoma «\(chat.title)» con \(chat.provider.title)."), slot: slot.id)
         }
         assignments.assign(id, to: slot.id)
-        assignments.setWorking(true, slot: slot.id)
         openChat(slot: index)
     }
 
-    /// Un encargo nuevo con el proveedor y el modelo elegidos (por defecto, los últimos): la persona va a su puesto, deja el
-    /// trabajo anterior y abajo se le cuenta qué hacer; el agente se crea con su primer encargo.
+    /// Un encargo nuevo con el proveedor y el modelo elegidos (por defecto, los últimos): se abre el chat con la persona, que
+    /// deja el trabajo anterior; se levanta al recibir el primer mensaje, y el agente se crea con su primer encargo.
     private func startNew(slot index: Int, provider: ChatProvider? = nil, model: String? = nil) {
         guard slots.indices.contains(index) else { return }
         let slot = slots[index]
@@ -414,7 +521,8 @@ struct OfficeInterfaceView<Content: View>: View {
             assignments.clear(slot: slot.id)
             assignments.clearChat(slot: slot.id)
         }
-        assignments.setWorking(true, slot: slot.id)
+        assignments.setLeader(nil, for: slot.id)
+        narration[slot.id] = nil
         openChat(slot: index)
     }
 
@@ -433,11 +541,26 @@ struct OfficeInterfaceView<Content: View>: View {
         withAnimation(.easeOut(duration: 0.3)) { viewing = index }
         focusScreen(index)
         for (other, actor) in stage.actors.enumerated() { actor.concealed = other == index }
+        // La vista real se pone encima cuando la cámara se detiene. En vivo, el monitor ya muestra lo mismo al mismo tamaño,
+        // así que aparece sin fundido: solo pasa a poder tocarse. Con el resumen ligero sí se funde.
+        let live = graphics.quality.liveScreens
         Task {
-            try? await Task.sleep(for: .milliseconds(750))
+            for _ in 0..<60 where !camera.isSettled {
+                try? await Task.sleep(for: .milliseconds(50))
+                guard viewing == index else { return }
+            }
             guard viewing == index else { return }
-            withAnimation(.easeOut(duration: 0.35)) { screenReady = true }
+            if live { screenReady = true } else { withAnimation(.easeOut(duration: 0.3)) { screenReady = true } }
         }
+    }
+
+    /// El tamaño en puntos que tendrá el cristal de un monitor al mirarlo de cerca (el mismo cálculo que el encuadre de la
+    /// cámara: la pantalla llena el ancho o el alto de la vista, con su margen).
+    private func closeUpSize(_ index: Int) -> CGSize? {
+        guard let frame = stage.screenFrame(slot: index), frame.size.y > 0, sceneSize.width > 0, sceneSize.height > 0 else { return nil }
+        let aspect = CGFloat(frame.size.x / frame.size.y)
+        let width = min(sceneSize.width, sceneSize.height * aspect) / CGFloat(OfficeCamera.closeUpMargin)
+        return CGSize(width: width.rounded(), height: (width / aspect).rounded())
     }
 
     /// El cristal del monitor en la vista, ya con la cámara delante.
@@ -465,11 +588,8 @@ struct OfficeInterfaceView<Content: View>: View {
         withAnimation(.easeOut(duration: 0.25)) { viewing = nil }
     }
 
-    /// Se cierra el panel; una persona que no llegó a encargar nada vuelve al sofá.
+    /// Se cierra el panel sin enviar nada: la persona sigue donde estaba.
     private func closeDock() {
-        if let dock, slots.indices.contains(dock.slot), conversation(in: slots[dock.slot]) == nil, !thinking.contains(slots[dock.slot].id) {
-            assignments.setWorking(false, slot: slots[dock.slot].id)
-        }
         dock = nil
     }
 
@@ -479,6 +599,8 @@ struct OfficeInterfaceView<Content: View>: View {
         let slot = slots[index]
         if let conversation = conversation(in: slot), store.statuses[conversation.id]?.isActive == true { store.stop(conversation.id) }
         assignments.setWorking(false, slot: slot.id)
+        assignments.setLeader(nil, for: slot.id)
+        narration[slot.id] = nil
         dock = nil
     }
 
@@ -496,20 +618,24 @@ struct OfficeInterfaceView<Content: View>: View {
     /// Las burbujas de los personajes, ancladas a su cabeza: se mueven con la cámara.
     @ViewBuilder private var anchoredOverlay: some View {
         if stage.state == .ready, viewing == nil {
-            TimelineView(.animation) { _ in
+            TimelineView(.animation(minimumInterval: graphics.quality.hudInterval)) { _ in
                 ZStack {
                     ForEach(Array(slots.enumerated()), id: \.element.id) { index, slot in
-                        if let conversation = conversation(in: slot), stage.actors.indices.contains(index),
+                        let conversation = conversation(in: slot)
+                        let said = assignments.working.contains(slot.id) ? narration[slot.id] : nil
+                        if conversation != nil || said != nil, stage.actors.indices.contains(index),
                            let point = camera.projectCurrent(stage.actors[index].headPosition, in: sceneSize) {
-                            let status = store.statuses[conversation.id] ?? .idle
-                            let said = assignments.working.contains(slot.id) ? narration[conversation.id] : nil
                             VStack(spacing: 6) {
                                 if let said { OfficeSpeechBubble(text: said).transition(.scale(scale: 0.8, anchor: .bottom).combined(with: .opacity)) }
-                                OfficeModelBubble(store: store, conversation: conversation, status: status,
-                                                  badge: badge(for: conversation, status: status, slot: index),
-                                                  onBadge: { openChat(slot: index) })
+                                if let conversation {
+                                    let status = store.statuses[conversation.id] ?? .idle
+                                    OfficeModelBubble(store: store, conversation: conversation, status: status,
+                                                      badge: badge(for: conversation, status: status, slot: index),
+                                                      onBadge: { openChat(slot: index) })
+                                }
                             }
-                            .modifier(OfficeAnchor(point: point, lift: 12, size: CGSize(width: said == nil ? 190 : 260, height: said == nil ? 34 : 110),
+                            .modifier(OfficeAnchor(point: point, lift: 12,
+                                                   size: CGSize(width: said == nil ? 190 : 260, height: (said == nil ? 0 : 80) + (conversation == nil ? 0 : 34)),
                                                    bounds: sceneSize))
                         }
                     }
@@ -530,13 +656,14 @@ struct OfficeInterfaceView<Content: View>: View {
     @ViewBuilder private var screenContent: some View {
         if let viewing, screenReady, slots.indices.contains(viewing), let conversation = conversation(in: slots[viewing]),
            let rect = screenRect(viewing) {
+            // Igual que se dibuja en el monitor (mismo tamaño y fondo), para que al aparecer no cambie nada.
+            let size = closeUpSize(viewing) ?? rect.size
             dockContent(.agent(conversation.id))
-                .frame(width: rect.width, height: rect.height)
+                .frame(width: size.width, height: size.height)
                 .background(JackPalette.canvas)
-                .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
-                .shadow(color: .black.opacity(0.25), radius: 6)
+                .clipped()
                 .position(x: rect.midX, y: rect.midY)
-                .transition(.opacity)
+                .transition(graphics.quality.liveScreens ? .identity : .opacity)
         }
     }
 
