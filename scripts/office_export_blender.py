@@ -182,7 +182,10 @@ def export_character(key, folder, total_frames):
         scene.frame_set(1)
 
 
-def export_all(total_frames=617):
+def export_all(total_frames=None):
+    # Por omisión, hasta donde llegan las líneas de tiempo de los personajes (ALL_<clave>).
+    if total_frames is None:
+        total_frames = max(int(bpy.data.actions[f"ALL_{key}"].frame_range[1]) for key in CHARACTERS)
     if os.path.isdir(STAGING):
         shutil.rmtree(STAGING)
     os.makedirs(STAGING)

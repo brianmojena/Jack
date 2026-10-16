@@ -44,6 +44,9 @@ struct OfficeInterfaceView<Content: View>: View {
     @StateObject private var graphics = OfficeGraphics()
     /// El avatar (modelo 3D) que lleva cada persona.
     @StateObject private var avatars = OfficeAvatarChoices()
+    /// La partida de ajedrez en curso (si la hay) y el puesto cuyo personaje está preparando una.
+    @StateObject private var chess = OfficeChessGame()
+    @State private var settingUpChess: Int?
     @State private var camera = OfficeCamera(target: OfficePose.world(x: 3.2, y: -4.5, z: 2.4))
     @State private var dock: OfficeDock?
     @State private var actions: OfficeActions?
@@ -68,7 +71,7 @@ struct OfficeInterfaceView<Content: View>: View {
     private var slots: [OfficeLayout.Slot] { stage.layout?.slots ?? [] }
 
     var body: some View {
-        OfficeSceneView(stage: stage, camera: camera, quality: graphics.quality, measuresFPS: graphics.showFPS, onFPS: { graphics.fps = $0 }, onPick: { tag, _ in if viewing == nil { pick(tag.index) } }, onPickNothing: { actions = nil; choosingAvatar = nil })
+        OfficeSceneView(stage: stage, camera: camera, quality: graphics.quality, measuresFPS: graphics.showFPS, onFPS: { graphics.fps = $0 }, onPick: { tag, _ in if viewing == nil { pick(tag.index) } }, onPickNothing: { actions = nil; choosingAvatar = nil; settingUpChess = nil })
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(JackPalette.chrome)
             .onGeometryChange(for: CGSize.self) { $0.size } action: { sceneSize = $0 }
@@ -89,7 +92,10 @@ struct OfficeInterfaceView<Content: View>: View {
             .onChange(of: assignments.working) { _, working in
                 // Si su personaje deja de trabajar, su pantalla se apaga: la cámara vuelve a la sala.
                 if let viewing, slots.indices.contains(viewing), !working.contains(slots[viewing].id) { leaveScreen() }
+                // Quien se pone a trabajar deja la partida.
+                if slots.indices.contains(where: { working.contains(slots[$0].id) && chess.involves($0) }) { chess.stop(stage: stage) }
             }
+            .onChange(of: store.lightModeEnabled) { _, light in if light { chess.stop(stage: stage) } }
             .task(id: stage.state) { await refreshScreens() }
             .task(id: stage.state) { await narrate() }
     }
@@ -221,6 +227,7 @@ struct OfficeInterfaceView<Content: View>: View {
     private func isFree(_ slot: OfficeLayout.Slot) -> Bool {
         !assignments.working.contains(slot.id) && !thinking.contains(slot.id)
             && conversation(in: slot).map { store.statuses[$0.id]?.isActive == true } != true
+            && !chess.involves(slots.firstIndex { $0.id == slot.id } ?? -1)
     }
 
     /// Los compañeros de una persona, para que decida a quién pedir ayuda y sepa cómo van los que ya la ayudan.
@@ -380,8 +387,13 @@ struct OfficeInterfaceView<Content: View>: View {
     /// Qué hace cada personaje según lo que hace su agente: ejecutando se sienta a teclear; esperando
     /// una respuesta o mandado a trabajar teclea despacio; con error se queda en el sofá negando con la cabeza.
     private var commands: [OfficeCommand] {
-        slots.map { slot in
+        slots.enumerated().map { index, slot in
             let atDesk = assignments.working.contains(slot.id)
+            // Jugando al ajedrez, sentado a la mesa (salvo que su agente se ponga a trabajar).
+            if !atDesk, let color = chess.seat(of: index), let seat = stage.chess?.seats[color],
+               conversation(in: slot).map({ store.statuses[$0.id]?.isActive == true }) != true {
+                return .chess(seat)
+            }
             guard let conversation = conversation(in: slot) else { return atDesk ? .desk(waiting: true) : .sofa(failed: false) }
             switch store.statuses[conversation.id] ?? .idle {
             case .running: return .desk(waiting: false)
@@ -422,7 +434,18 @@ struct OfficeInterfaceView<Content: View>: View {
         switch menu.step {
         case .root:
             let changeAvatar = OfficePill(title: "Cambiar avatar", symbol: "person.crop.circle", tint: .purple) { actions = nil; choosingAvatar = index }
-            guard working else { return [OfficePill(title: "Trabajar", symbol: "keyboard", tint: .orange, action: go(.work)), changeAvatar] }
+            if chess.involves(index) {
+                return [OfficePill(title: "Terminar partida", symbol: "flag.checkered", tint: .purple) { actions = nil; chess.stop(stage: stage) }, changeAvatar]
+            }
+            guard working else {
+                var items = [OfficePill(title: "Trabajar", symbol: "keyboard", tint: .orange, action: go(.work))]
+                // El ajedrez necesita la mesa, un compañero libre y que no se esté ahorrando (lo juega Gemma, en la nube).
+                if canPlayChess(index) {
+                    items.append(OfficePill(title: "Jugar ajedrez", symbol: "checkerboard.rectangle", tint: .teal) { actions = nil; settingUpChess = index })
+                }
+                items.append(changeAvatar)
+                return items
+            }
             var items: [OfficePill] = []
             items.append(OfficePill(title: "Hablar con \(slot.name)", symbol: "text.bubble", tint: .blue) { actions = nil; openChat(slot: index) })
             // Su monitor solo está encendido mientras trabaja con un agente.
@@ -478,6 +501,10 @@ struct OfficeInterfaceView<Content: View>: View {
             items.append(back)
             return items
         }
+    }
+
+    private func canPlayChess(_ index: Int) -> Bool {
+        stage.chess != nil && !chess.isActive && !store.lightModeEnabled && slots.indices.contains(where: { $0 != index && isFree(slots[$0]) })
     }
 
     /// El último proveedor y modelo elegidos; si nunca se eligió ninguno, el proveedor del último agente nuevo con su modelo por defecto.
@@ -645,7 +672,7 @@ struct OfficeInterfaceView<Content: View>: View {
                 ZStack {
                     ForEach(Array(slots.enumerated()), id: \.element.id) { index, slot in
                         let conversation = conversation(in: slot)
-                        let said = assignments.working.contains(slot.id) ? narration[slot.id] : nil
+                        let said = chess.involves(index) ? chess.said[index] : (assignments.working.contains(slot.id) ? narration[slot.id] : nil)
                         if conversation != nil || said != nil, stage.actors.indices.contains(index),
                            let point = camera.projectCurrent(stage.actors[index].headPosition, in: sceneSize) {
                             VStack(spacing: 6) {
@@ -677,6 +704,21 @@ struct OfficeInterfaceView<Content: View>: View {
                             taken: Set(slots.indices.filter { $0 != index }.map { avatars.avatar(for: slots[$0]) }),
                             anchor: chest, bounds: sceneSize,
                             onPick: { chooseAvatar($0, slot: index) }, onClose: { choosingAvatar = nil }
+                        )
+                    }
+                    if let index = settingUpChess, slots.indices.contains(index), stage.actors.indices.contains(index),
+                       let chest = camera.projectCurrent(stage.actors[index].chestPosition, in: sceneSize) {
+                        OfficeChessSetupCard(
+                            me: .init(id: index, name: slots[index].name),
+                            rivals: slots.indices.filter { $0 != index && isFree(slots[$0]) }.map { .init(id: $0, name: slots[$0].name) },
+                            anchor: chest, bounds: sceneSize,
+                            onStart: { white, black in
+                                settingUpChess = nil
+                                chess.start(white: .init(slot: white.slot, master: white.master, color: .white),
+                                            black: .init(slot: black.slot, master: black.master, color: .black),
+                                            stage: stage, lightMode: { store.lightModeEnabled })
+                            },
+                            onClose: { settingUpChess = nil }
                         )
                     }
                 }

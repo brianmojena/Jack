@@ -390,6 +390,8 @@ struct StellarMessage: Codable, Equatable {
     var toolName: String? = nil
     /// An instruction prefix embedded in a tool result that must survive context reduction.
     var protectedPrefix: String? = nil
+    /// Pictures attached to the message, as base64 PNG/JPEG (for models with vision).
+    var images: [String]? = nil
 }
 
 struct StellarToolCall: Codable, Equatable {
@@ -532,11 +534,16 @@ enum StellarClient {
             value["tool_calls"] = calls.map { ["function": ["name": $0.name, "arguments": $0.input]] }
         }
         if let name = message.toolName { value["tool_name"] = name }
+        if let images = message.images, !images.isEmpty { value["images"] = images }
         return value
     }
 
     static func openAIMessage(_ message: StellarMessage) -> [String: Any] {
         var value: [String: Any] = ["role": message.role, "content": message.content]
+        if let images = message.images, !images.isEmpty {
+            value["content"] = [["type": "text", "text": message.content]]
+                + images.map { ["type": "image_url", "image_url": ["url": "data:image/png;base64," + $0]] }
+        }
         if let calls = message.toolCalls, !calls.isEmpty {
             value["tool_calls"] = calls.map { ["id": $0.id, "type": "function", "function": ["name": $0.name, "arguments": $0.arguments]] }
         }

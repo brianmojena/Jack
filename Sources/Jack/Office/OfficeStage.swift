@@ -31,6 +31,8 @@ import simd
     private(set) var layout: OfficeLayout?
     private(set) var actors: [OfficeActor] = []
     private(set) var room: Entity?
+    /// La mesa de ajedrez (si el archivo de la sala la trae).
+    private(set) var chess: OfficeChessSet?
     /// La luz ambiental de la sala: un entorno sintético cálido, no el cielo (el HDRI solo es fondo).
     private var ambient: EnvironmentResource?
     private var pointLights: [Entity] = []
@@ -67,12 +69,19 @@ import simd
             Self.fixBackWallCorner(in: room)
             enlargeTV(in: room)
             await prepareWalls(in: room)
+            // La mesa de ajedrez: se monta antes del espejo (para que también esté en el reflejo) y antes de que los puestos
+            // aparten sus sillas (la de la mesa se copia de la del primer puesto tal como llega).
+            if let chessURL = resources.url("OfficeChess", "json"), let chessLayout = try? OfficeChessLayout.load(from: chessURL), let first = layout.slots.first {
+                chess = OfficeChessSet(layout: chessLayout, room: room, template: first)
+                chess?.reset()
+            }
             var made: [OfficeActor] = []
             for (index, slot) in layout.slots.enumerated() {
                 guard let url = resources.url(slot.file, "usdz") else { throw OfficeError.missing("\(slot.file).usdz") }
                 let model = try await Entity(contentsOf: url)
                 let actor = OfficeActor(index: index, slot: slot, layout: layout, model: model)
                 actor.attachChair(in: room)
+                actor.chess = chess
                 world.addChild(actor.holder)
                 made.append(actor)
             }
@@ -81,6 +90,7 @@ import simd
             addGroundingShadows(room)
             for actor in made { addGroundingShadows(actor.holder) }
             if let mirror = layout.mirror { addMirror(mirror, room: room) }
+            if let mirroredRoom { chess?.attachMirror(mirroredRoom) }
             collectScreens(layout: layout, room: room)
             collectTV(room: room)
             state = .ready
@@ -383,6 +393,7 @@ import simd
 
     func update(deltaTime: Double) {
         for actor in actors { actor.update(deltaTime: min(deltaTime, 0.1)) }
+        chess?.update(deltaTime: min(deltaTime, 0.1))
     }
 
     // MARK: - Gráficos

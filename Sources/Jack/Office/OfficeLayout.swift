@@ -71,7 +71,7 @@ struct OfficeLayout: Decodable {
 }
 
 /// Posición, giro y silla de un personaje en RealityKit.
-struct OfficePose {
+struct OfficePose: Equatable {
     var position: SIMD3<Float>
     /// Giro en radianes alrededor del eje y. Con 0, el personaje mira hacia +z.
     var yaw: Float
