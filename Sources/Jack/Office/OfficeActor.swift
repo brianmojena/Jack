@@ -13,6 +13,8 @@ enum OfficeCommand: Equatable {
     case desk(waiting: Bool)
     /// Sentado a la mesa de ajedrez, en el asiento indicado.
     case chess(OfficeChessSeat)
+    /// A ducharse, como en Los Sims; al terminar vuelve a su sofá (`OfficeActor.onShowerDone`).
+    case shower
 }
 
 /// Qué hace un jugador sentado a la mesa de ajedrez.
@@ -33,7 +35,7 @@ enum OfficeChessMood: Equatable {
 /// Un personaje de la oficina: un esqueleto de Mixamo con todos sus clips en una sola línea de tiempo,
 /// que se recorta por clip, y los recorridos calculados en Blender para ir del sofá al escritorio y volver.
 @MainActor final class OfficeActor {
-    private enum Phase { case sofa, toDesk, desk, toSofa, toChess, chess, fromChess }
+    private enum Phase { case sofa, toDesk, desk, toSofa, toChess, chess, fromChess, toShower, showering, fromShower }
 
     let index: Int
     let slot: OfficeLayout.Slot
@@ -85,6 +87,14 @@ enum OfficeChessMood: Equatable {
     var isSeatedAtChess: Bool { phase == .chess }
     /// Ha vuelto a su sofá (o nunca salió de él).
     var isOnSofa: Bool { phase == .sofa }
+
+    /// La ducha de la sala, si la tiene.
+    var shower: OfficeShower?
+    /// Se llama al volver de la ducha al sofá (o si no se pudo ir).
+    var onShowerDone: (() -> Void)?
+    private var showerRoute: (toShower: OfficeRoutePath, openAt: Int, toSofa: OfficeRoutePath, closeAt: Int)?
+    private var showerTime = 0.0
+    private var mosaic: (real: Entity, reflected: Entity?)?
 
     /// Con `true` el personaje y su silla se desvanecen, para que no tapen su pantalla cuando la cámara se pone delante.
     var concealed = false
@@ -194,6 +204,9 @@ enum OfficeChessMood: Equatable {
             }
             if case .desk = command { prepareDeskRoutes(); begin(.toDesk) }
             if case .chess(let seat) = command, startChess(seat) { begin(.toChess) }
+            if case .shower = command {
+                if startShower() { begin(.toShower) } else { onShowerDone?() }
+            }
         case .toDesk:
             if advance(clips: deskRoutes?.toDesk.clips ?? slot.toDesk.clips, poses: deskRoutes?.toDesk.poses ?? toDesk, deltaTime: deltaTime) { phase = .desk }
         case .desk:
@@ -226,6 +239,36 @@ enum OfficeChessMood: Equatable {
         case .fromChess:
             guard let route = chessRoute else { phase = .sofa; break }
             if advance(clips: route.toSofa.clips, poses: route.toSofa.poses, deltaTime: deltaTime) { phase = .sofa }
+        case .toShower:
+            guard let route = showerRoute, let shower else { finishShower(); break }
+            let before = frame
+            let arrived = advance(clips: route.toShower.clips, poses: route.toShower.poses, deltaTime: deltaTime)
+            if before < Double(route.openAt), frame >= Double(route.openAt) { shower.openDoor() }
+            if arrived {
+                // Dentro: se cierra la puerta, cae el agua y el mosaico lo tapa todo menos la cabeza.
+                shower.closeDoor()
+                shower.setWater(true)
+                setMosaic(true)
+                showerTime = 0
+                phase = .showering
+            }
+        case .showering:
+            guard let shower else { finishShower(); break }
+            apply(shower.inside)
+            play("stand_idle")
+            showerTime += deltaTime
+            if showerTime > OfficeShower.duration {
+                shower.setWater(false)
+                setMosaic(false)
+                shower.openDoor()
+                begin(.fromShower)
+            }
+        case .fromShower:
+            guard let route = showerRoute, let shower else { finishShower(); break }
+            let before = frame
+            let arrived = advance(clips: route.toSofa.clips, poses: route.toSofa.poses, deltaTime: deltaTime)
+            if before < Double(route.closeAt), frame >= Double(route.closeAt) { shower.closeDoor() }
+            if arrived { finishShower() }
         }
     }
 
@@ -309,6 +352,45 @@ enum OfficeChessMood: Equatable {
         chessRoute = (toSeat, toSofa, seat)
         chessMood = .waiting
         return true
+    }
+
+    /// Prepara los recorridos a la ducha y de vuelta; `false` si no hay ducha, está ocupada o no se pueden calcular.
+    private func startShower() -> Bool {
+        guard let shower, shower.occupant == nil || shower.occupant == index, let template = layout.slots.first,
+              let there = OfficeShowerRoute.toShower(actor: slot, template: template, shower: shower, fps: layout.fps, obstacles: walkObstacles, bounds: walkBounds),
+              let back = OfficeShowerRoute.toSofa(actor: slot, template: template, shower: shower, fps: layout.fps, obstacles: walkObstacles, bounds: walkBounds) else { return false }
+        shower.occupant = index
+        showerRoute = (there.path, there.openAt, back.path, back.closeAt)
+        return true
+    }
+
+    private func finishShower() {
+        setMosaic(false)
+        if let shower, shower.occupant == index {
+            shower.setWater(false)
+            shower.closeDoor()
+            shower.occupant = nil
+        }
+        showerRoute = nil
+        phase = .sofa
+        onShowerDone?()
+    }
+
+    /// El mosaico de Los Sims, colgado del personaje y de su reflejo.
+    private func setMosaic(_ on: Bool) {
+        if on, mosaic == nil, let shower, let panel = shower.makeMosaic() {
+            holder.addChild(panel)
+            let copy = mirrorHolder.map { reflection -> Entity in
+                let copy = panel.clone(recursive: true)
+                reflection.addChild(copy)
+                return copy
+            }
+            mosaic = (panel, copy)
+        } else if !on, let current = mosaic {
+            shower?.removeMosaic(current.real)
+            current.reflected?.removeFromParent()
+            mosaic = nil
+        }
     }
 
     private func setChair(offset: Float) {

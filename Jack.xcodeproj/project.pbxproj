@@ -31,6 +31,7 @@
 		214E82491A5D4351F45187E4 /* SimulatorDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87F75EF25C24256C43529DFF /* SimulatorDisplay.swift */; };
 		22D3BF00FE3AD394A5774F43 /* ArtifactPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61D2267782A3D3E8EBBD9FE6 /* ArtifactPanel.swift */; };
 		23C27E17768412C6E4895294 /* OfficeAssignments.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05109BEC027632469B1BE7E8 /* OfficeAssignments.swift */; };
+		24FDBE8BA60B2B270B8928BC /* OfficeShower.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BC4F75959BB60BA973D9523 /* OfficeShower.swift */; };
 		26F33593401C4D6EF10CC974 /* AgentBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 112E9D6E62140F40A3F29A21 /* AgentBridge.swift */; };
 		271A101EAC8B08D73BC317E4 /* LAMINE.usdz in Resources */ = {isa = PBXBuildFile; fileRef = 3256570DB470AE91C84FA069 /* LAMINE.usdz */; };
 		28950F3713B14C7E4449B984 /* ProviderUsageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB76527AA8274E1DC203B419 /* ProviderUsageView.swift */; };
@@ -154,6 +155,7 @@
 		F5DFB322C1C7348868D53F3D /* ScheduleViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC3731337F76E3D2A95FDCE0 /* ScheduleViews.swift */; };
 		F68F4CEAD8E711BE50639E5C /* StellarCode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C9731344B7463E74671F52C /* StellarCode.swift */; };
 		F75DB029A29F7EC9E15CFBA1 /* MarkdownTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5A12922F7A4E1E7A3623821 /* MarkdownTableView.swift */; };
+		FB3768AA2CC8AAB469CCD9A9 /* OfficeCoffee.usdz in Resources */ = {isa = PBXBuildFile; fileRef = FA3913908EAAFE4B49420F97 /* OfficeCoffee.usdz */; };
 		FC19D2D5A244B0E2775C3482 /* CH31.usdz in Resources */ = {isa = PBXBuildFile; fileRef = 0D6B7F996310DFC0D7965C38 /* CH31.usdz */; };
 		FD733015495B4D55D0039B68 /* OfficePersonas.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7000AAC5B5D05A170361D0C /* OfficePersonas.swift */; };
 		FDA0C86DE21F32B305B5F8F8 /* BrowserPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5019EA3818C709E8D20043A4 /* BrowserPicker.swift */; };
@@ -294,6 +296,7 @@
 		98F544C4351BBB12FEBCCF2B /* LightNativeText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LightNativeText.swift; sourceTree = "<group>"; };
 		99043DC6E87DB144C2ECE631 /* BrowserPick.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserPick.swift; sourceTree = "<group>"; };
 		9B0A4D0840ACD2556EE7FC91 /* ChessMasters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChessMasters.swift; sourceTree = "<group>"; };
+		9BC4F75959BB60BA973D9523 /* OfficeShower.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeShower.swift; sourceTree = "<group>"; };
 		9BF3FCA24BA069D694B0B6F5 /* MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownText.swift; sourceTree = "<group>"; };
 		9CC159ECABCA798A6D404BD8 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		9CDE854B3FD01D422AB89A6C /* Avatar_FRANKLIN.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = Avatar_FRANKLIN.png; sourceTree = "<group>"; };
@@ -356,6 +359,7 @@
 		F40A187CE25E794DFACFD965 /* LightTranscript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LightTranscript.swift; sourceTree = "<group>"; };
 		F7BD885E59F4C6849E846404 /* MainWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowView.swift; sourceTree = "<group>"; };
 		F92F2637817F350152A1A81C /* UpdateChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateChecker.swift; sourceTree = "<group>"; };
+		FA3913908EAAFE4B49420F97 /* OfficeCoffee.usdz */ = {isa = PBXFileReference; lastKnownFileType = file.usdz; path = OfficeCoffee.usdz; sourceTree = "<group>"; };
 		FB9EA786E5FECB86077B5F5E /* Jack.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Jack.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		FBCEDB5716647F7760B19F33 /* DEADPOOL.usdz */ = {isa = PBXFileReference; lastKnownFileType = file.usdz; path = DEADPOOL.usdz; sourceTree = "<group>"; };
 		FE98510172BA77F6A01641E5 /* FRANKLIN.usdz */ = {isa = PBXFileReference; lastKnownFileType = file.usdz; path = FRANKLIN.usdz; sourceTree = "<group>"; };
@@ -481,6 +485,7 @@
 				A9273830B442B5862BFE6D2E /* GIRL.usdz */,
 				3256570DB470AE91C84FA069 /* LAMINE.usdz */,
 				C49D66B8FB242565051CC707 /* OfficeChess.json */,
+				FA3913908EAAFE4B49420F97 /* OfficeCoffee.usdz */,
 				067FC34731494377F242C1EA /* OfficeLayout.json */,
 				B1D9F8E01DEDBA4586FAA1B0 /* OfficeRoom.usdz */,
 				B33E00280F531F45985C9478 /* REMY.usdz */,
@@ -601,6 +606,7 @@
 				165BF6B2CE2A6F0D93026CD8 /* OfficePostProcess.swift */,
 				0665C3AFD39156575CA767CA /* OfficeQuality.swift */,
 				B0B9574E6B8F4D6F393A34CA /* OfficeSceneView.swift */,
+				9BC4F75959BB60BA973D9523 /* OfficeShower.swift */,
 				1D804F6903E93D790E25E568 /* OfficeSofaTalk.swift */,
 				128535DB15D834F9AB310105 /* OfficeSound.swift */,
 				35E7EAF9BD58303903C67CBB /* OfficeStage.swift */,
@@ -735,6 +741,7 @@
 				2ABB3DC7BAC5958046AF5199 /* GIRL.usdz in Resources */,
 				271A101EAC8B08D73BC317E4 /* LAMINE.usdz in Resources */,
 				7320BA4C372A4423C5D7EDF1 /* OfficeChess.json in Resources */,
+				FB3768AA2CC8AAB469CCD9A9 /* OfficeCoffee.usdz in Resources */,
 				DC69FFE0CE1B3972D807D898 /* OfficeLayout.json in Resources */,
 				957BAD3B8F877B8C3FAFFA05 /* OfficeRoom.usdz in Resources */,
 				EC3598039BED03FF2D93838E /* REMY.usdz in Resources */,
@@ -805,6 +812,7 @@
 				C390FE2E1F8043AEE3726592 /* OfficePostProcess.swift in Sources */,
 				C77D612D1EB59DB6C6A1080B /* OfficeQuality.swift in Sources */,
 				3A8D30522C50C8A36DA75365 /* OfficeSceneView.swift in Sources */,
+				24FDBE8BA60B2B270B8928BC /* OfficeShower.swift in Sources */,
 				82001565019E6A3EEEB9A411 /* OfficeSofaTalk.swift in Sources */,
 				5D7A39B052D6D83C94D421AF /* OfficeSound.swift in Sources */,
 				68C89B3976CF06E200C70EC1 /* OfficeStage.swift in Sources */,

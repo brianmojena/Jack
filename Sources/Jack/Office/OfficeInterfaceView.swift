@@ -240,6 +240,7 @@ struct OfficeInterfaceView<Content: View>: View {
             && conversation(in: slot).map { store.statuses[$0.id]?.isActive == true } != true
             && !chess.involves(slots.firstIndex { $0.id == slot.id } ?? -1)
             && !talk.involves(slots.firstIndex { $0.id == slot.id } ?? -1)
+            && stage.showering != slots.firstIndex { $0.id == slot.id }
     }
 
     /// Los compañeros de una persona, para que decida a quién pedir ayuda y sepa cómo van los que ya la ayudan.
@@ -419,6 +420,8 @@ struct OfficeInterfaceView<Content: View>: View {
     /// una respuesta o mandado a trabajar teclea despacio; con error se queda en el sofá negando con la cabeza.
     private var commands: [OfficeCommand] {
         slots.enumerated().map { index, slot in
+            // Duchándose: acaba y vuelve a su sofá antes de hacer otra cosa.
+            if stage.showering == index { return .shower }
             let atDesk = assignments.working.contains(slot.id)
             // Jugando al ajedrez, sentado a la mesa (salvo que su agente se ponga a trabajar).
             if !atDesk, let color = chess.seat(of: index), let seat = stage.chess?.seats[color],
@@ -489,6 +492,10 @@ struct OfficeInterfaceView<Content: View>: View {
                                        lightMode: { store.lightModeEnabled })
                         })
                     }
+                }
+                // Bañarse, como en Los Sims: va a la ducha, se ducha unos segundos y vuelve a su sofá.
+                if stage.shower != nil, stage.showering == nil, onSofa(index) {
+                    items.append(OfficePill(title: "Bañarse", symbol: "shower", tint: .blue) { actions = nil; stage.startShower(slot: index) })
                 }
                 items.append(changeAvatar)
                 items.append(close)
@@ -752,7 +759,7 @@ struct OfficeInterfaceView<Content: View>: View {
                                 }
                             }
                             .modifier(OfficeAnchor(point: point, lift: 12,
-                                                   size: CGSize(width: said == nil ? 190 : 260, height: (said == nil ? 0 : 80) + (conversation == nil ? 0 : 34)),
+                                                   size: CGSize(width: said == nil ? 190 : 260, height: (said == nil ? 0 : 104) + (conversation == nil ? 0 : 34)),
                                                    bounds: sceneSize))
                         }
                     }
@@ -1031,25 +1038,69 @@ private struct OfficeModelBubble: View {
     }
 }
 
-/// Lo que cuenta el agente, en un bocadillo blanco sobre su personaje.
+/// Lo que cuenta el agente, en un bocadillo blanco sobre su personaje. Si no cabe en cuatro líneas, «Ver completo» lo abre entero.
 private struct OfficeSpeechBubble: View {
     let text: String
+    @State private var shownHeight: CGFloat = 0
+    @State private var fullHeight: CGFloat = 0
+    @State private var showingAll = false
+
+    private static let ink = Color(red: 0.13, green: 0.12, blue: 0.16)
+    private var truncated: Bool { fullHeight > shownHeight + 1 }
 
     var body: some View {
         VStack(spacing: -1) {
-            Text(text)
-                .font(.office(12, .medium))
-                .foregroundStyle(Color(red: 0.13, green: 0.12, blue: 0.16))
-                .multilineTextAlignment(.leading)
-                .lineLimit(4)
-                .frame(maxWidth: 240, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 12).padding(.vertical, 8)
-                .background(.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            VStack(alignment: .leading, spacing: 5) {
+                label
+                    .lineLimit(4)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { shownHeight = $0 }
+                    // El mismo texto sin límite de líneas, invisible, para saber si se ha cortado.
+                    .background(alignment: .topLeading) {
+                        label
+                            .lineLimit(nil)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .hidden()
+                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { fullHeight = $0 }
+                    }
+                if truncated {
+                    Button { showingAll = true } label: {
+                        Text("Ver completo")
+                            .font(.office(11, .bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 9).padding(.vertical, 3)
+                            .background(OfficeOrange.gradient, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .popover(isPresented: $showingAll, arrowEdge: .top) {
+                        ScrollView {
+                            Text(text)
+                                .font(.office(13, .medium))
+                                .multilineTextAlignment(.leading)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(16)
+                        }
+                        .frame(width: 380)
+                        .frame(maxHeight: 420)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             OfficeTail().fill(.white).frame(width: 14, height: 8)
         }
         .shadow(color: .black.opacity(0.35), radius: 8, y: 3)
-        .help(text)
+        .help(truncated ? "" : text)
+    }
+
+    private var label: some View {
+        Text(text)
+            .font(.office(12, .medium))
+            .foregroundStyle(Self.ink)
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: 240, alignment: .leading)
     }
 }
 

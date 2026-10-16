@@ -28,6 +28,8 @@ CHAIRS = {"PROP_gaming_chair_02": (0, -1), "PROP_gaming_chair_03": (0, -1), "PRO
 CHAIR_PULL = 1.5
 # El cristal del espejo no se exporta: la app lo dibuja ella misma, con el reflejo de la sala (ver OfficeMirror).
 MIRROR_GLASS = "EspejoCuerpoEntero_Espejo_0"
+# La cafetera tiene su vapor animado: va aparte (OfficeCoffee.usdz) y la app la pone en el marcador PROP_coffee_spot.
+COFFEE = "COFFEE"
 
 COMMON = dict(
     generate_preview_surface=True, export_textures_mode="NEW", overwrite_textures=True, convert_orientation=True,
@@ -137,7 +139,8 @@ def export_room(folder):
     bpy.context.view_layer.update()
     bpy.ops.object.select_all(action="DESELECT")
     for obj in bpy.data.objects:
-        if obj.type in ("LIGHT", "CAMERA") or _top(obj).name.startswith("CHAR_") or obj.hide_get() or obj.hide_viewport or _glass(obj) or obj.name == MIRROR_GLASS:
+        if obj.type in ("LIGHT", "CAMERA") or _top(obj).name.startswith("CHAR_") or _top(obj).name == COFFEE or obj.hide_get() or obj.hide_viewport \
+                or _glass(obj) or obj.name == MIRROR_GLASS:
             continue
         try:
             obj.select_set(True)
@@ -182,6 +185,33 @@ def export_character(key, folder, total_frames):
         scene.frame_set(1)
 
 
+def export_coffee(folder):
+    """La cafetera con su animación, en el origen (la app la coloca); `False` si la sala no la tiene."""
+    root = bpy.data.objects.get(COFFEE)
+    if root is None:
+        return False
+    scene = bpy.context.scene
+    animated = [o for o in _descendants(root) if o.animation_data and o.animation_data.action]
+    end = max((int(o.animation_data.action.frame_range[1]) for o in animated), default=1)
+    saved = (root.location.copy(), scene.frame_start, scene.frame_end)
+    root.location = (0, 0, 0)
+    scene.frame_start, scene.frame_end = 1, end
+    scene.frame_set(1)
+    bpy.context.view_layer.update()
+    bpy.ops.object.select_all(action="DESELECT")
+    for obj in [root] + _descendants(root):
+        obj.select_set(True)
+    os.makedirs(folder, exist_ok=True)
+    try:
+        bpy.ops.wm.usd_export(filepath=os.path.join(folder, "OfficeCoffee.usdc"), export_animation=True, export_materials=True,
+                              export_armatures=False, use_instancing=False, **COMMON)
+    finally:
+        root.location = saved[0]
+        scene.frame_start, scene.frame_end = saved[1], saved[2]
+        scene.frame_set(1)
+    return True
+
+
 def export_all(total_frames=None):
     # Por omisión, hasta donde llegan las líneas de tiempo de los personajes (ALL_<clave>).
     if total_frames is None:
@@ -192,6 +222,7 @@ def export_all(total_frames=None):
     prepare_images()
     with runtime_materials():
         export_room(os.path.join(STAGING, "OfficeRoom"))
+        export_coffee(os.path.join(STAGING, "OfficeCoffee"))
     for key in CHARACTERS:
         export_character(key, os.path.join(STAGING, key), total_frames)
     print("Exportado en", STAGING)

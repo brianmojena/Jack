@@ -33,6 +33,11 @@ import simd
     private(set) var room: Entity?
     /// La mesa de ajedrez (si el archivo de la sala la trae).
     private(set) var chess: OfficeChessSet?
+    /// La ducha (si el archivo de la sala la trae) y quién se está duchando.
+    private(set) var shower: OfficeShower?
+    /// La cafetera de la mesita, con su vapor animado (viene aparte de la sala, en `OfficeCoffee.usdz`).
+    private var coffee: Entity?
+    @Published private(set) var showering: Int?
     /// La luz ambiental de la sala: un entorno sintético cálido, no el cielo (el HDRI solo es fondo).
     private var ambient: EnvironmentResource?
     private var pointLights: [Entity] = []
@@ -91,11 +96,16 @@ import simd
             // Los muebles, con las sillas apartadas (que es como están cuando alguien se levanta).
             let obstacles = walkObstacles(in: room, slots: layout.slots)
             for actor in made { actor.walkObstacles = obstacles }
+            shower = OfficeShower(room: room, world: world)
+            for actor in made { actor.shower = shower }
+            await addCoffee(resources, room: room)
             await addLights(resources)
             addGroundingShadows(room)
             for actor in made { addGroundingShadows(actor.holder) }
             if let mirror = layout.mirror { addMirror(mirror, room: room) }
             if let mirroredRoom { chess?.attachMirror(mirroredRoom) }
+            if let mirroredRoom { shower?.attachMirror(mirroredRoom) }
+            if let coffee, let reflected = mirroredRoom?.parent { mirrorCoffee(coffee, in: reflected) }
             collectScreens(layout: layout, room: room)
             collectTV(room: room)
             state = .ready
@@ -107,7 +117,7 @@ import simd
     /// El suelo que ocupan los muebles grandes (x, z de RealityKit), para que los personajes los rodeen al caminar.
     private func walkObstacles(in room: Entity, slots: [OfficeLayout.Slot]) -> [OfficeChessRoute.Obstacle] {
         var rects: [OfficeChessRoute.Obstacle] = []
-        for name in ["WORKSTATION_01", "WORKSTATION_02", "WORKSTATION_03", "PROP_sofa", "PROP_sofa_big", "CHESS_table_top", "PROP_shower"] {
+        for name in ["WORKSTATION_01", "WORKSTATION_02", "WORKSTATION_03", "PROP_sofa", "PROP_sofa_big", "CHESS_table_top", "PROP_shower", "PROP_coffee_table"] {
             guard let entity = room.findEntity(named: name) else { continue }
             let bounds = entity.visualBounds(relativeTo: nil)
             guard !bounds.isEmpty else { continue }
@@ -139,6 +149,56 @@ import simd
                 groundedEntities += collect(model)
             }
         }
+    }
+
+    /// Manda a ducharse al personaje de un puesto (si la ducha está libre). Vuelve solo a su sofá al terminar.
+    func startShower(slot index: Int) {
+        guard shower != nil, showering == nil, actors.indices.contains(index) else { return }
+        showering = index
+        actors[index].onShowerDone = { [weak self] in
+            if self?.showering == index { self?.showering = nil }
+        }
+    }
+
+    // MARK: - Cafetera
+
+    /// Pone la cafetera en su marcador de la mesita y deja su vapor subiendo en bucle.
+    private func addCoffee(_ resources: Resources, room: Entity) async {
+        guard let url = resources.url("OfficeCoffee", "usdz"), let spot = room.findEntity(named: "PROP_coffee_spot"),
+              let model = try? await Entity(contentsOf: url) else { return }
+        model.name = "office-coffee"
+        model.position = spot.position(relativeTo: nil)
+        Self.softenSteam(model)
+        world.addChild(model)
+        Self.playLoop(model)
+        coffee = model
+    }
+
+    /// Su gemela en la sala del espejo, con el mismo vapor.
+    private func mirrorCoffee(_ coffee: Entity, in reflected: Entity) {
+        let copy = coffee.clone(recursive: true)
+        Self.flipCulling(copy)
+        reflected.addChild(copy)
+        Self.playLoop(copy)
+    }
+
+    private static func playLoop(_ entity: Entity) {
+        for animation in entity.availableAnimations {
+            entity.playAnimation(animation.repeat(duration: .infinity))
+        }
+    }
+
+    /// El vapor llega opaco (el exportador USD solo guarda la transparencia que viene de una textura): blanco y casi transparente.
+    private static func softenSteam(_ entity: Entity, inSteam: Bool = false) {
+        let steam = inSteam || entity.name.hasPrefix("COFFEE_steam")
+        if steam, var model = entity.components[ModelComponent.self] {
+            var material = UnlitMaterial(color: .white)
+            material.blending = .transparent(opacity: .init(floatLiteral: 0.3))
+            material.faceCulling = .none
+            model.materials = Array(repeating: material, count: max(model.materials.count, 1))
+            entity.components.set(model)
+        }
+        for child in entity.children { softenSteam(child, inSteam: steam) }
     }
 
     func command(_ command: OfficeCommand, forSlot index: Int) {
@@ -424,6 +484,7 @@ import simd
     func update(deltaTime: Double) {
         for actor in actors { actor.update(deltaTime: min(deltaTime, 0.1)) }
         chess?.update(deltaTime: min(deltaTime, 0.1))
+        shower?.update(deltaTime: min(deltaTime, 0.1))
     }
 
     // MARK: - Gráficos

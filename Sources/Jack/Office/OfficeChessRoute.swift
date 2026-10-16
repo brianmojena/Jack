@@ -132,7 +132,7 @@ enum OfficeChessRoute {
 
     /// Caminar de `a` a `b` rodeando los obstáculos (menos los que ya contienen la salida o la llegada, que se están dejando o
     /// alcanzando).
-    private static func walkAround(from a: OfficePose, to b: OfficePose, obstacles: [Obstacle], bounds: Rect?, speed: Float, lead: Bool = true) -> [OfficePose] {
+    static func walkAround(from a: OfficePose, to b: OfficePose, obstacles: [Obstacle], bounds: Rect?, speed: Float, lead: Bool = true) -> [OfficePose] {
         let start = ground(a.position), goal = ground(b.position)
         var points = plan(from: start, to: goal, keepClear: [start, goal], extra: [], obstacles: obstacles, bounds: bounds)
         // Un primer paso al frente, para no deslizarse de lado nada más levantarse.
@@ -143,7 +143,7 @@ enum OfficeChessRoute {
     // MARK: - Piezas del recorrido
 
     /// Lo que se mueve el personaje por fotograma al caminar (metros de la escena), medido en el tramo de caminar de Blender.
-    private static func walkSpeed(of slot: OfficeLayout.Slot) -> Float {
+    static func walkSpeed(of slot: OfficeLayout.Slot) -> Float {
         let poses = slot.toDesk.poses
         guard let range = slot.toDesk.clips.first(where: { $0.clip == "walk" }), range.to - range.from > 4 else { return 0.17 }
         var steps: [Float] = []
