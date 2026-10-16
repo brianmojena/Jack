@@ -62,6 +62,16 @@ enum OfficeChessMood: Equatable {
     private let deskPose: OfficePose
     private let pulledChair: Float
 
+    /// Mientras charla en el sofá, el clip de hablar que le toca: `talk_right` si tiene al compañero a su derecha, `talk_left` si a
+    /// su izquierda. Sin charla, `nil`.
+    var talkClip: String?
+
+    /// El suelo que ocupan los muebles (x, z de RealityKit) y los límites de la sala, para que al caminar los rodee.
+    var walkObstacles: [OfficeChessRoute.Obstacle] = []
+    var walkBounds: OfficeChessRoute.Rect?
+    /// Los recorridos al escritorio y de vuelta, con el camino calculado entre los muebles (si no, los de Blender).
+    private var deskRoutes: (toDesk: OfficeRoutePath, toSofa: OfficeRoutePath)?
+
     /// La mesa de ajedrez, si la sala la tiene.
     var chess: OfficeChessSet?
     /// Los recorridos del sofá a la mesa y de vuelta, calculados al sentarse.
@@ -179,23 +189,24 @@ enum OfficeChessMood: Equatable {
             apply(sofaPose)
             setChair(offset: pulledChair)
             if case .sofa(let failed) = command {
-                play(failed ? "no" : "idle_sit")
-                updateFreeze(shouldFreeze: freezeIdle && !failed, deltaTime: deltaTime)
+                play(failed ? "no" : (talkClip ?? "idle_sit"))
+                updateFreeze(shouldFreeze: freezeIdle && !failed && talkClip == nil, deltaTime: deltaTime)
             }
-            if case .desk = command { begin(.toDesk) }
+            if case .desk = command { prepareDeskRoutes(); begin(.toDesk) }
             if case .chess(let seat) = command, startChess(seat) { begin(.toChess) }
         case .toDesk:
-            if advance(clips: slot.toDesk.clips, poses: toDesk, deltaTime: deltaTime) { phase = .desk }
+            if advance(clips: deskRoutes?.toDesk.clips ?? slot.toDesk.clips, poses: deskRoutes?.toDesk.poses ?? toDesk, deltaTime: deltaTime) { phase = .desk }
         case .desk:
             apply(deskPose)
             setChair(offset: deskPose.chairOffset)
             if case .desk(let waiting) = command {
                 play("type", speed: waiting ? 0.25 : 1)
             } else {
+                prepareDeskRoutes()
                 begin(.toSofa)
             }
         case .toSofa:
-            if advance(clips: slot.toSofa.clips, poses: toSofa, deltaTime: deltaTime) { phase = .sofa }
+            if advance(clips: deskRoutes?.toSofa.clips ?? slot.toSofa.clips, poses: deskRoutes?.toSofa.poses ?? toSofa, deltaTime: deltaTime) { phase = .sofa }
         case .toChess:
             guard let route = chessRoute else { phase = .sofa; break }
             if advance(clips: route.toSeat.clips, poses: route.toSeat.poses, deltaTime: deltaTime) { phase = .chess }
@@ -282,11 +293,19 @@ enum OfficeChessMood: Equatable {
         setChair(offset: pose.chairOffset)
     }
 
+    /// Calcula, una vez, el camino entre el sofá y el escritorio rodeando los muebles.
+    private func prepareDeskRoutes() {
+        guard deskRoutes == nil, !walkObstacles.isEmpty, let template = layout.slots.first,
+              let toDesk = OfficeChessRoute.toDesk(actor: slot, template: template, obstacles: walkObstacles, bounds: walkBounds),
+              let toSofa = OfficeChessRoute.toSofaFromDesk(actor: slot, template: template, obstacles: walkObstacles, bounds: walkBounds) else { return }
+        deskRoutes = (toDesk, toSofa)
+    }
+
     /// Prepara los recorridos a la mesa; `false` si no se pueden calcular (entonces se queda en el sofá).
     private func startChess(_ seat: OfficeChessSeat) -> Bool {
         guard let chess, let template = layout.slots.first,
-              let toSeat = OfficeChessRoute.toSeat(actor: slot, template: template, seat: seat, table: (chess.tableCenter, chess.tableHalf), chairStart: chess.offset(of: seat.color), fps: layout.fps),
-              let toSofa = OfficeChessRoute.toSofa(actor: slot, template: template, seat: seat, table: (chess.tableCenter, chess.tableHalf), fps: layout.fps) else { return false }
+              let toSeat = OfficeChessRoute.toSeat(actor: slot, template: template, seat: seat, table: (chess.tableCenter, chess.tableHalf), obstacles: walkObstacles, bounds: walkBounds, chairStart: chess.offset(of: seat.color), fps: layout.fps),
+              let toSofa = OfficeChessRoute.toSofa(actor: slot, template: template, seat: seat, table: (chess.tableCenter, chess.tableHalf), obstacles: walkObstacles, bounds: walkBounds, fps: layout.fps) else { return false }
         chessRoute = (toSeat, toSofa, seat)
         chessMood = .waiting
         return true
@@ -303,9 +322,16 @@ enum OfficeChessMood: Equatable {
 
     private func play(_ clip: String, speed: Float = 1) {
         if playing == clip {
-            controller?.speed = speed
-            mirrorController?.speed = speed
-            return
+            // Un clip en bucle que se haya parado (o quedado en pausa sin que toque) se pone en marcha otra vez: así al caminar
+            // las piernas nunca se quedan quietas mientras el personaje se desplaza.
+            let stalled = controller.map { ($0.isComplete || $0.isStopped || ($0.isPaused && !frozen)) } ?? false
+            if stalled, layout.clips[clip]?.loop == true {
+                playing = nil
+            } else {
+                controller?.speed = speed
+                mirrorController?.speed = speed
+                return
+            }
         }
         guard let resource = resource(for: clip) else { return }
         controller = model.playAnimation(resource, transitionDuration: 0.25, startsPaused: false)
@@ -320,7 +346,10 @@ enum OfficeChessMood: Equatable {
         guard let timeline, let info = layout.clips[clip] else { return nil }
         let view = AnimationView(source: timeline.definition, name: clip, repeatMode: info.loop ? .repeat : .none,
                                  trimStart: info.start, trimDuration: info.duration)
-        guard let resource = try? AnimationResource.generate(with: view) else { return nil }
+        guard var resource = try? AnimationResource.generate(with: view) else { return nil }
+        // El modo de repetición de la vista recortada no repite (el clip de caminar acababa tras una zancada y las piernas se
+        // quedaban quietas mientras el personaje seguía desplazándose): se repite el recurso entero.
+        if info.loop { resource = resource.repeat(duration: .infinity) }
         resources[clip] = resource
         return resource
     }

@@ -27,6 +27,8 @@ import JackCore
     private(set) var game = ChessGame()
     private var task: Task<Void, Never>?
     private let advisor = OfficeChessPlayer()
+    /// Cómo se llama cada puesto (el nombre de su avatar).
+    private var names: [Int: String] = [:]
 
     var isActive: Bool { phase != .idle }
 
@@ -40,9 +42,10 @@ import JackCore
         return (shuffled[0], shuffled[1])
     }
 
-    func start(white: Player, black: Player, stage: OfficeStage, lightMode: @escaping @MainActor () -> Bool) {
+    func start(white: Player, black: Player, stage: OfficeStage, names: [Int: String], lightMode: @escaping @MainActor () -> Bool) {
         guard phase == .idle, stage.chess != nil, white.slot != black.slot else { return }
         players = [white, black]
+        self.names = names
         said = [:]
         game = ChessGame()
         phase = .seating
@@ -93,7 +96,7 @@ import JackCore
             let choice: ChessChoice
             do {
                 choice = try await advisor.choose(game: game, as: me.master, against: rival.master, color: color,
-                                                  playedBy: layout.slots[me.slot].name, lightMode: lightMode())
+                                                  playedBy: names[me.slot] ?? layout.slots[me.slot].name, lightMode: lightMode())
                 failures = 0
             } catch is CancellationError {
                 return

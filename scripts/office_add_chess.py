@@ -3,7 +3,7 @@
 Uso (el .blend se guarda al terminar):
 
     blender -b --factory-startup Resources/Office/Office.blend --python scripts/office_add_chess.py -- \\
-        ~/Downloads/low_poly_chess_-_chess_board.glb
+        ~/Downloads/low_poly_chess_-_chess_board.glb ~/Downloads/old_wooden_chair_low-poly.glb
 
 El GLB (un tablero low poly con sus piezas) no se guarda en el repositorio: las piezas quedan dentro de Office.blend.
 
@@ -29,6 +29,8 @@ TABLE_TOP = 2.48      # la misma altura que los escritorios
 TABLE_SIZE = 4.4      # lado de la mesa
 TABLE_THICKNESS = 0.18
 SCALE = 0.30          # del GLB (casillas de 1.2) a la sala: casillas de 0.36
+CHAIR_SCALE = 2.8     # de la silla del GLB (asiento a 0.57) al asiento de las sillas de los escritorios (1.6)
+CHAIR_BACK = 0.15     # cuánto queda el centro del asiento por detrás de la cadera
 SEAT_GAP = 0.90       # de la cadera sentada al canto de la mesa (como en los escritorios)
 KINDS = {"Pawn": "P", "Knight": "N", "Bishop": "B", "Rook": "R", "Queen": "Q", "King": "K"}
 KIND_NAMES = {"P": "pawn", "N": "knight", "B": "bishop", "R": "rook", "Q": "queen", "K": "king"}
@@ -109,6 +111,36 @@ def material(name, color, roughness, metallic=0.0):
 
 def principled(mat):
     return next(n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
+
+
+def add_chairs(path, seats):
+    """Dos sillas de madera (el GLB `old_wooden_chair`), una por asiento, mirando a la mesa, con el asiento a la altura de
+    las sillas de los escritorios. Origen en el centro del asiento, a ras de suelo; se apartan hacia atrás desde la app."""
+    imported = import_glb(path)
+    bpy.context.view_layer.update()
+    meshes = [o for o in imported if o.type == "MESH"]
+    for obj in meshes:
+        flatten(obj)
+    for obj in imported:
+        if obj.type != "MESH":
+            bpy.data.objects.remove(obj, do_unlink=True)
+    chair = meshes[0]
+    for extra in meshes[1:]:
+        bpy.data.objects.remove(extra, do_unlink=True)
+    corner = base_center(chair)
+    chair.data.transform(Matrix.Translation(-corner))
+    chair.data.transform(Matrix.Scale(CHAIR_SCALE, 4))
+    # En el GLB la silla mira hacia -y.
+    for seat in seats:
+        yaw = math.radians(seat["yaw"])
+        forward = Vector((math.sin(yaw), -math.cos(yaw)))
+        copy = chair.copy()
+        copy.name = f"CHESS_chair_{seat['color']}"
+        copy.location = (seat["position"][0] - forward.x * CHAIR_BACK, seat["position"][1] - forward.y * CHAIR_BACK, 0.0)
+        copy.rotation_mode = "XYZ"
+        copy.rotation_euler = (0, 0, yaw)
+        bpy.context.scene.collection.objects.link(copy)
+    bpy.data.objects.remove(chair, do_unlink=True)
 
 
 def main():
@@ -202,6 +234,8 @@ def main():
             "black": {"start": [CENTER.x - 1.5, CENTER.y - half + 0.3, TABLE_TOP], "step": [0.2, 0.0]},
         },
     }
+    if len(args) > 1:
+        add_chairs(os.path.expanduser(args[1]), layout["seats"])
     path = os.path.join(ROOT, "Resources", "Office", "Runtime", "OfficeChess.json")
     with open(path, "w") as handle:
         json.dump(layout, handle, indent=1)

@@ -84,7 +84,7 @@ struct OfficeChessSeat: Equatable {
         let color: ChessColor
         let real: Entity
         var reflected: Entity?
-        /// Con la silla metida, y hacia dónde se aparta (en el espacio de RealityKit).
+        /// Con la silla metida, y hacia dónde se aparta (en las coordenadas locales de la sala, las de Blender).
         let tucked: SIMD3<Float>
         let pull: SIMD3<Float>
 
@@ -137,8 +137,7 @@ struct OfficeChessSeat: Equatable {
     private var mirrorRoom: Entity?
     var onLand: (() -> Void)?
 
-    /// Busca las piezas y crea las dos sillas a partir de la de `template` (la silla del escritorio de ese puesto), con la
-    /// misma posición relativa al asiento que tiene su dueño al teclear.
+    /// Busca las piezas y las dos sillas de la mesa. `template` es el puesto de referencia (la altura a la que se sienta).
     init?(layout: OfficeChessLayout, room: Entity, template: OfficeLayout.Slot) {
         self.layout = layout
         tableCenter = SIMD2(Float(layout.table.center[0]), Float(-layout.table.center[1]))
@@ -148,25 +147,16 @@ struct OfficeChessSeat: Equatable {
                   let kind = Self.kind(info.kind), let home = ChessSquare.parse(info.square) else { return nil }
             pieces.append(Piece(color: color, kind: kind, real: entity, home: home))
         }
-        guard let chair = room.findEntity(named: template.chair) else { return nil }
         let desk = OfficePose(template.atDesk)
-        let tucked = chair.position(relativeTo: nil)
-        let orientation = chair.orientation(relativeTo: nil)
-        let scale = chair.scale(relativeTo: nil)
         for seat in layout.seats {
-            guard let color = ChessColor(rawValue: seat.color) else { continue }
+            guard let color = ChessColor(rawValue: seat.color), let chair = room.findEntity(named: "CHESS_chair_\(seat.color)") else { continue }
             let pose = OfficePose(position: OfficePose.world(x: seat.position[0], y: seat.position[1], z: Double(desk.position.y)),
                                   yaw: Float(seat.yaw * .pi / 180), chairOffset: 0)
             seats[color] = OfficeChessSeat(color: color, pose: pose)
-            // La silla se coloca respecto al asiento igual que la del escritorio respecto a su dueño.
-            let turn = simd_quatf(angle: pose.yaw - desk.yaw, axis: SIMD3(0, 1, 0))
-            let copy = chair.clone(recursive: true)
-            copy.name = "CHESS_chair_\(color.rawValue)"
-            copy.scale = scale
-            copy.orientation = turn * orientation
-            room.addChild(copy)
-            let forward = SIMD3<Float>(sin(pose.yaw), 0, cos(pose.yaw))
-            let made = Chair(color: color, real: copy, tucked: pose.position + turn.act(tucked - desk.position), pull: -forward)
+            // La silla (de madera, exportada con la mesa) se aparta hacia atrás desde el asiento; sus coordenadas son las
+            // locales de Blender.
+            let yaw = Float(seat.yaw * .pi / 180)
+            let made = Chair(color: color, real: chair, tucked: chair.position, pull: SIMD3(-sin(yaw), cos(yaw), 0))
             made.set(offset: 0)
             chairs[color] = made
         }
@@ -188,6 +178,18 @@ struct OfficeChessSeat: Equatable {
     private var currentOffset: [ChessColor: Float] = [:]
 
     func offset(of color: ChessColor) -> Float { currentOffset[color] ?? 0 }
+
+    /// El suelo que ocupa cada silla de la mesa cuando está apartada (x, z de RealityKit), para que nadie la atraviese.
+    func pulledChairFootprints() -> [(min: SIMD2<Float>, max: SIMD2<Float>)] {
+        chairs.values.map { chair in
+            let bounds = chair.real.visualBounds(relativeTo: nil)
+            // La silla se mueve en las coordenadas locales de Blender (x, y, z arriba); en RealityKit, x se queda y y pasa a -z.
+            let shift = SIMD2(chair.pull.x, -chair.pull.y) * (1.5 - offset(of: chair.color))
+            let moved = (min: SIMD2(bounds.min.x, bounds.min.z) + shift, max: SIMD2(bounds.max.x, bounds.max.z) + shift)
+            // Metida o apartada: cubre las dos posiciones (la silla cambia de sitio según se juegue o no).
+            return (SIMD2(min(moved.min.x, bounds.min.x), min(moved.min.y, bounds.min.z)), SIMD2(max(moved.max.x, bounds.max.x), max(moved.max.y, bounds.max.z)))
+        }
+    }
 
     func setChair(_ color: ChessColor, offset: Float) {
         currentOffset[color] = offset

@@ -47,6 +47,8 @@ struct OfficeInterfaceView<Content: View>: View {
     /// La partida de ajedrez en curso (si la hay) y el puesto cuyo personaje está preparando una.
     @StateObject private var chess = OfficeChessGame()
     @State private var settingUpChess: Int?
+    /// Dos personajes del sofá charlando de un tema al azar.
+    @StateObject private var talk = OfficeSofaTalk()
     @State private var camera = OfficeCamera(target: OfficePose.world(x: 3.2, y: -4.5, z: 2.4))
     @State private var dock: OfficeDock?
     @State private var actions: OfficeActions?
@@ -69,6 +71,12 @@ struct OfficeInterfaceView<Content: View>: View {
     @State private var narration: [String: String] = [:]
 
     private var slots: [OfficeLayout.Slot] { stage.layout?.slots ?? [] }
+
+    /// La personalidad del avatar que lleva ahora el puesto (los tres personajes añadidos después tienen la suya).
+    private func persona(of slot: OfficeLayout.Slot) -> OfficePersona? { OfficePersonas.persona(forAvatar: avatars.avatar(for: slot)) }
+
+    /// Cómo se llama la persona del puesto: la de su avatar, si tiene personalidad propia; si no, la del puesto.
+    private func name(of slot: OfficeLayout.Slot) -> String { persona(of: slot)?.name ?? slot.name }
 
     var body: some View {
         OfficeSceneView(stage: stage, camera: camera, quality: graphics.quality, measuresFPS: graphics.showFPS, onFPS: { graphics.fps = $0 }, onPick: { tag, _ in if viewing == nil { pick(tag.index) } }, onPickNothing: { actions = nil; choosingAvatar = nil; settingUpChess = nil })
@@ -94,9 +102,12 @@ struct OfficeInterfaceView<Content: View>: View {
                 if let viewing, slots.indices.contains(viewing), !working.contains(slots[viewing].id) { leaveScreen() }
                 // Quien se pone a trabajar deja la partida.
                 if slots.indices.contains(where: { working.contains(slots[$0].id) && chess.involves($0) }) { chess.stop(stage: stage) }
+                if slots.indices.contains(where: { working.contains(slots[$0].id) && talk.involves($0) }) { talk.stop() }
             }
-            .onChange(of: store.lightModeEnabled) { _, light in if light { chess.stop(stage: stage) } }
+            .onChange(of: store.lightModeEnabled) { _, light in if light { chess.stop(stage: stage); talk.stop() } }
+            .onChange(of: talk.pair) { _, pair in updateTalkAnimations(pair) }
             .task(id: stage.state) { await refreshScreens() }
+            .task(id: stage.state) { await runTV() }
             .task(id: stage.state) { await narrate() }
     }
 
@@ -135,10 +146,10 @@ struct OfficeInterfaceView<Content: View>: View {
                 busy.insert(id)
                 let messages = conversation.messages
                 let previous = narration[slot.id]
-                let name = slot.name, tool = tool(for: slot), slotID = slot.id
+                let name = name(of: slot), persona = persona(of: slot)?.profile, tool = tool(for: slot), slotID = slot.id
                 Task {
                     defer { busy.remove(id) }
-                    guard let text = try? await narrator.summary(as: name, tool: tool, of: messages, previous: previous,
+                    guard let text = try? await narrator.summary(as: name, persona: persona, tool: tool, of: messages, previous: previous,
                                                                  lightMode: store.lightModeEnabled) else { return }
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { narration[slotID] = text }
                 }
@@ -153,12 +164,12 @@ struct OfficeInterfaceView<Content: View>: View {
         let worker = OfficeWorker(tool: tool(for: slot), status: status, messages: conversation.messages)
         let history = assignments.chat(in: slot.id)
         Task {
-            guard let text = try? await narrator.report(as: slot.name, history: history, worker: worker, lightMode: store.lightModeEnabled) else { return }
+            guard let text = try? await narrator.report(as: name(of: slot), persona: persona(of: slot)?.profile, history: history, worker: worker, lightMode: store.lightModeEnabled) else { return }
             assignments.append(OfficeLine(role: .person, text: text), slot: slot.id)
             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { narration[slot.id] = text }
             // Quien pidió ayuda se entera de cómo acabó la parte de su compañero.
             if let leader = assignments.leaders[slot.id] {
-                assignments.append(OfficeLine(role: .note, text: "\(slot.name): \(text)"), slot: leader)
+                assignments.append(OfficeLine(role: .note, text: "\(name(of: slot)): \(text)"), slot: leader)
             }
         }
     }
@@ -182,7 +193,7 @@ struct OfficeInterfaceView<Content: View>: View {
         Task {
             defer { thinking.remove(slot.id) }
             do {
-                let decision = try await narrator.reply(as: slot.name, history: history, worker: worker, team: team, catalog: catalog,
+                let decision = try await narrator.reply(as: name(of: slot), persona: persona(of: slot)?.profile, history: history, worker: worker, team: team, catalog: catalog,
                                                         lightMode: store.lightModeEnabled)
                 assignments.append(OfficeLine(role: .person, text: decision.reply), slot: slot.id)
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { narration[slot.id] = decision.reply }
@@ -190,7 +201,7 @@ struct OfficeInterfaceView<Content: View>: View {
                 if !decision.helpers.isEmpty { recruit(decision.helpers, leader: index) }
             } catch is CancellationError {
             } catch {
-                assignments.append(OfficeLine(role: .note, text: "\(slot.name) no pudo contestar: \(error.localizedDescription)"), slot: slot.id)
+                assignments.append(OfficeLine(role: .note, text: "\(name(of: slot)) no pudo contestar: \(error.localizedDescription)"), slot: slot.id)
                 withAnimation { narration[slot.id] = "Perdona, ahora mismo no puedo pensar (no responde \(OfficeNarrator.modelName))." }
             }
         }
@@ -203,9 +214,9 @@ struct OfficeInterfaceView<Content: View>: View {
         let leader = slots[index]
         for helper in helpers {
             let named = slots.firstIndex { $0.id != leader.id && isFree($0)
-                && $0.name.compare(helper.name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }
+                && name(of: $0).compare(helper.name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }
             guard let target = named ?? slots.firstIndex(where: { $0.id != leader.id && isFree($0) }) else {
-                assignments.append(OfficeLine(role: .note, text: "No hay compañeros libres para ayudar a \(leader.name)."), slot: leader.id)
+                assignments.append(OfficeLine(role: .note, text: "No hay compañeros libres para ayudar a \(name(of: leader))."), slot: leader.id)
                 return
             }
             let slot = slots[target]
@@ -216,10 +227,10 @@ struct OfficeInterfaceView<Content: View>: View {
             assignments.clearChat(slot: slot.id)
             assignments.setLeader(leader.id, for: slot.id)
             let tool = "\(choice.provider.title) · \(modelTitle(choice))"
-            assignments.append(OfficeLine(role: .note, text: "\(leader.name) le pidió ayuda a \(slot.name), que trabaja con \(tool)."), slot: leader.id)
-            assignments.append(OfficeLine(role: .note, text: "\(slot.name) ayuda a \(leader.name) con \(tool)."), slot: slot.id)
+            assignments.append(OfficeLine(role: .note, text: "\(name(of: leader)) le pidió ayuda a \(name(of: slot)), que trabaja con \(tool)."), slot: leader.id)
+            assignments.append(OfficeLine(role: .note, text: "\(name(of: slot)) ayuda a \(name(of: leader)) con \(tool)."), slot: slot.id)
             delegate(helper.task, slot: target)
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { narration[slot.id] = "Voy, \(leader.name) me pidió una mano." }
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { narration[slot.id] = "Voy, \(name(of: leader)) me pidió una mano." }
         }
     }
 
@@ -228,15 +239,16 @@ struct OfficeInterfaceView<Content: View>: View {
         !assignments.working.contains(slot.id) && !thinking.contains(slot.id)
             && conversation(in: slot).map { store.statuses[$0.id]?.isActive == true } != true
             && !chess.involves(slots.firstIndex { $0.id == slot.id } ?? -1)
+            && !talk.involves(slots.firstIndex { $0.id == slot.id } ?? -1)
     }
 
     /// Los compañeros de una persona, para que decida a quién pedir ayuda y sepa cómo van los que ya la ayudan.
     private func teamDescription(for leader: OfficeLayout.Slot) -> String {
         slots.filter { $0.id != leader.id }.map { slot in
-            guard !isFree(slot) else { return "- \(slot.name): libre" }
+            guard !isFree(slot) else { return "- \(name(of: slot)): libre" }
             let conversation = conversation(in: slot)
             let status = conversation.map { (store.statuses[$0.id] ?? .idle).title } ?? "en su escritorio"
-            var line = "- \(slot.name): ocupado (\(tool(for: slot)), \(status))"
+            var line = "- \(name(of: slot)): ocupado (\(tool(for: slot)), \(status))"
             if assignments.leaders[slot.id] == leader.id {
                 line += ", te está ayudando"
                 if let said = conversation?.messages.last(where: { $0.role == "assistant" && !$0.text.isEmpty })?.text {
@@ -310,17 +322,8 @@ struct OfficeInterfaceView<Content: View>: View {
         guard stage.state == .ready else { return }
         var shown: [String: String] = [:]
         var labeled: [String: String] = [:]
-        var tvKey = ""
         var tick = 0
         while !Task.isCancelled {
-            // La tele: el uso de Claude, al minuto.
-            let usage = store.usage[.claude]
-            let minute = Int(Date().timeIntervalSince1970 / 60)
-            let key = "\(minute)|" + (usage?.windows ?? []).map { "\($0.id):\($0.usedPercent ?? -1):\($0.resetsAt?.timeIntervalSince1970 ?? 0)" }.joined(separator: ",")
-            if key != tvKey, let image = OfficeTVView.image(usage: usage, now: Date()) {
-                tvKey = key
-                stage.setTV(image: image)
-            }
             for (index, slot) in slots.enumerated() {
                 // El letrero de la pared: el nombre del chat del puesto, en cuanto lo tiene.
                 let title = conversation(in: slot)?.title ?? ""
@@ -371,6 +374,34 @@ struct OfficeInterfaceView<Content: View>: View {
                 stage.setScreen(slot: slot.id, image: image)
             }
             try? await Task.sleep(for: .milliseconds(Int(graphics.quality.screenInterval * 1000)))
+        }
+    }
+
+    // MARK: - Tele
+
+    /// Segundos que la tele enseña cada cosa antes de pasar a la otra.
+    private static var tvPhase: Double { 10 }
+
+    /// La tele alterna el uso de Claude con el logo de Jack en ASCII animado. Con la calidad baja (personajes quietos) el
+    /// logo queda fijo; si no, se anima a 15 fotogramas por segundo, u 8 si la escena va limitada a menos de 60.
+    private func runTV() async {
+        guard stage.state == .ready else { return }
+        let logo = OfficeTVLogo()
+        while !Task.isCancelled {
+            if let image = OfficeTVView.image(usage: store.usage[.claude], now: Date()) { await stage.setTV(image: image) }
+            try? await Task.sleep(for: .seconds(Self.tvPhase))
+
+            let quality = graphics.quality
+            let animated = quality.idleAnimation
+            let fps = quality.frameRate == 0 || quality.frameRate >= 60 ? 15.0 : 8.0
+            let start = Date()
+            repeat {
+                let t = animated ? Date().timeIntervalSince(start) : 3
+                if let image = await Task.detached(priority: .utility, operation: { logo.frame(at: t) }).value {
+                    await stage.setTV(image: image)
+                }
+                try? await Task.sleep(for: .seconds(animated ? 1 / fps : Self.tvPhase))
+            } while !Task.isCancelled && Date().timeIntervalSince(start) < Self.tvPhase
         }
     }
 
@@ -434,8 +465,12 @@ struct OfficeInterfaceView<Content: View>: View {
         switch menu.step {
         case .root:
             let changeAvatar = OfficePill(title: "Cambiar avatar", symbol: "person.crop.circle", tint: .purple) { actions = nil; choosingAvatar = index }
+            let close = OfficePill(title: "Cerrar", symbol: "xmark", tint: .gray, back: true) { actions = nil }
             if chess.involves(index) {
-                return [OfficePill(title: "Terminar partida", symbol: "flag.checkered", tint: .purple) { actions = nil; chess.stop(stage: stage) }, changeAvatar]
+                return [OfficePill(title: "Terminar partida", symbol: "flag.checkered", tint: .purple) { actions = nil; chess.stop(stage: stage) }, changeAvatar, close]
+            }
+            if talk.involves(index) {
+                return [OfficePill(title: "Dejar de charlar", symbol: "bubble.left.and.bubble.right", tint: .purple) { actions = nil; talk.stop() }, changeAvatar, close]
             }
             guard working else {
                 var items = [OfficePill(title: "Trabajar", symbol: "keyboard", tint: .orange, action: go(.work))]
@@ -443,17 +478,31 @@ struct OfficeInterfaceView<Content: View>: View {
                 if canPlayChess(index) {
                     items.append(OfficePill(title: "Jugar ajedrez", symbol: "checkerboard.rectangle", tint: .teal) { actions = nil; settingUpChess = index })
                 }
+                // Charlar: con cada compañero libre, de un tema curioso al azar (habla Gemma por los dos).
+                if !store.lightModeEnabled, !talk.isActive, !chess.isActive, onSofa(index) {
+                    for other in slots.indices where other != index && isFree(slots[other]) && onSofa(other) {
+                        items.append(OfficePill(title: "Charlar con \(name(of: slots[other]))", symbol: "bubble.left.and.bubble.right", tint: .blue) {
+                            actions = nil
+                            talk.start(index, other, people: Dictionary(uniqueKeysWithValues: slots.enumerated().map { entry in
+                                (entry.offset, OfficeSofaTalk.Person(name: name(of: entry.element), profile: persona(of: entry.element)?.profile, about: persona(of: entry.element)?.about))
+                            }),
+                                       lightMode: { store.lightModeEnabled })
+                        })
+                    }
+                }
                 items.append(changeAvatar)
+                items.append(close)
                 return items
             }
             var items: [OfficePill] = []
-            items.append(OfficePill(title: "Hablar con \(slot.name)", symbol: "text.bubble", tint: .blue) { actions = nil; openChat(slot: index) })
+            items.append(OfficePill(title: "Hablar con \(name(of: slot))", symbol: "text.bubble", tint: .blue) { actions = nil; openChat(slot: index) })
             // Su monitor solo está encendido mientras trabaja con un agente.
             if conversation != nil, assignments.working.contains(slot.id) {
                 items.append(OfficePill(title: "Ver pantalla", symbol: "display", tint: .teal) { actions = nil; viewScreen(index) })
             }
             items.append(OfficePill(title: "Terminar de trabajar", symbol: "moon.zzz", tint: .purple) { actions = nil; stopWorking(slot: index) })
             items.append(changeAvatar)
+            items.append(close)
             return items
         case .work:
             // Lo primero, un encargo nuevo con el último modelo elegido; «Otro modelo» deja escoger otro.
@@ -503,6 +552,24 @@ struct OfficeInterfaceView<Content: View>: View {
         }
     }
 
+    /// Quien charla se pone a hablar (con la cabeza hacia su compañero); al acabar la charla, vuelve a su postura de siempre.
+    private func updateTalkAnimations(_ pair: [Int]) {
+        for (index, actor) in stage.actors.enumerated() {
+            guard pair.contains(index), let partner = pair.first(where: { $0 != index }), slots.indices.contains(index), slots.indices.contains(partner) else {
+                actor.talkClip = nil
+                continue
+            }
+            let mine = OfficePose(slots[index].sofa), theirs = OfficePose(slots[partner].sofa)
+            let forward = SIMD2(sin(mine.yaw), cos(mine.yaw))
+            let right = SIMD2(-forward.y, forward.x)
+            let toward = SIMD2(theirs.position.x - mine.position.x, theirs.position.z - mine.position.z)
+            actor.talkClip = simd_dot(toward, right) >= 0 ? "talk_right" : "talk_left"
+        }
+    }
+
+    /// Solo charla quien está sentado en su sofá.
+    private func onSofa(_ index: Int) -> Bool { stage.actors[safe: index]?.isOnSofa == true }
+
     private func canPlayChess(_ index: Int) -> Bool {
         stage.chess != nil && !chess.isActive && !store.lightModeEnabled && slots.indices.contains(where: { $0 != index && isFree(slots[$0]) })
     }
@@ -536,7 +603,7 @@ struct OfficeInterfaceView<Content: View>: View {
         guard slots.indices.contains(index) else { return }
         let slot = slots[index]
         if assignments.conversation(in: slot.id) != id, let chat = store.conversations.first(where: { $0.id == id }) {
-            assignments.append(OfficeLine(role: .note, text: "\(slot.name) retoma «\(chat.title)» con \(chat.provider.title)."), slot: slot.id)
+            assignments.append(OfficeLine(role: .note, text: "\(name(of: slot)) retoma «\(chat.title)» con \(chat.provider.title)."), slot: slot.id)
         }
         assignments.assign(id, to: slot.id)
         openChat(slot: index)
@@ -672,7 +739,7 @@ struct OfficeInterfaceView<Content: View>: View {
                 ZStack {
                     ForEach(Array(slots.enumerated()), id: \.element.id) { index, slot in
                         let conversation = conversation(in: slot)
-                        let said = chess.involves(index) ? chess.said[index] : (assignments.working.contains(slot.id) ? narration[slot.id] : nil)
+                        let said = chess.involves(index) ? chess.said[index] : talk.involves(index) ? talk.said[index] : (assignments.working.contains(slot.id) ? narration[slot.id] : nil)
                         if conversation != nil || said != nil, stage.actors.indices.contains(index),
                            let point = camera.projectCurrent(stage.actors[index].headPosition, in: sceneSize) {
                             VStack(spacing: 6) {
@@ -709,14 +776,15 @@ struct OfficeInterfaceView<Content: View>: View {
                     if let index = settingUpChess, slots.indices.contains(index), stage.actors.indices.contains(index),
                        let chest = camera.projectCurrent(stage.actors[index].chestPosition, in: sceneSize) {
                         OfficeChessSetupCard(
-                            me: .init(id: index, name: slots[index].name),
-                            rivals: slots.indices.filter { $0 != index && isFree(slots[$0]) }.map { .init(id: $0, name: slots[$0].name) },
+                            me: .init(id: index, name: name(of: slots[index])),
+                            rivals: slots.indices.filter { $0 != index && isFree(slots[$0]) }.map { .init(id: $0, name: name(of: slots[$0])) },
                             anchor: chest, bounds: sceneSize,
                             onStart: { white, black in
                                 settingUpChess = nil
                                 chess.start(white: .init(slot: white.slot, master: white.master, color: .white),
                                             black: .init(slot: black.slot, master: black.master, color: .black),
-                                            stage: stage, lightMode: { store.lightModeEnabled })
+                                            stage: stage, names: Dictionary(uniqueKeysWithValues: slots.enumerated().map { ($0.offset, name(of: $0.element)) }),
+                                            lightMode: { store.lightModeEnabled })
                             },
                             onClose: { settingUpChess = nil }
                         )
@@ -750,7 +818,7 @@ struct OfficeInterfaceView<Content: View>: View {
                     Label("Volver a la oficina", systemImage: "chevron.left")
                 }
                 .help("Volver a la oficina")
-                Text(slot.name).font(.office(12.5, .bold)).foregroundStyle(.white.opacity(0.6)).padding(.trailing, 8)
+                Text(name(of: slot)).font(.office(12.5, .bold)).foregroundStyle(.white.opacity(0.6)).padding(.trailing, 8)
             }
             .buttonStyle(OfficeGlassButtonStyle())
             .padding(5)
@@ -778,7 +846,7 @@ struct OfficeInterfaceView<Content: View>: View {
             let conversation = conversation(in: slot)
             let status = conversation.map { store.statuses[$0.id] ?? .idle }
             OfficeColleagueView(
-                name: slot.name,
+                name: name(of: slot),
                 tool: tool(for: slot),
                 status: status,
                 lines: assignments.chat(in: slot.id),

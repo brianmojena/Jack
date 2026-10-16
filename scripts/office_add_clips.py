@@ -39,6 +39,7 @@ SLUMP_LIMIT = 75.0  # grados que se le quitan, como mucho, a la inclinación del
 HAND_TOP = 2.56
 SEAT_HIPS = 2.13
 LOOK_DOWN = 22.0  # inclinación de la cabeza hacia el tablero (grados)
+SOFA_FRAME = 40    # un fotograma dentro del clip `idle_sit`
 TYPE_FRAME = 300  # un fotograma dentro del clip «type» (empieza en el 298)
 
 
@@ -257,6 +258,10 @@ def build(key_name, options, sources, thinking, preview):
     scene.frame_set(TYPE_FRAME)
     bpy.context.view_layer.update()
     typing = rig.pose.bones[HIPS].matrix.translation.copy()
+    # La cadera sentada en el sofá (la postura `idle_sit`): lo que charla se sienta igual.
+    scene.frame_set(SOFA_FRAME)
+    bpy.context.view_layer.update()
+    on_sofa = rig.pose.bones[HIPS].matrix.translation.copy()
 
     # Se resuelve todo con la animación quitada (para que no pise la postura que se prueba) y después se hornean los fotogramas.
     rig.animation_data.action = None
@@ -332,14 +337,25 @@ def build(key_name, options, sources, thinking, preview):
         pending.append(("chess_" + name, [win_solver.solve(frame, offset, (nod[0] * weight(frame), nod[1] * weight(frame), left), lean(frame))
                                            for frame in range(1, count + 1)], False))
 
+    # Hablar sentado en el sofá (dos clips de Mixamo de 44 s: en uno mira hacia su derecha y en el otro hacia su izquierda, para
+    # quien tiene al compañero a un lado o al otro). Un fotograma clave de cada dos: basta para un gesto de charla y ocupa la mitad.
+    for name in ("talk_right", "talk_left"):
+        source = sources[name]
+        count = int(round(source.animation_data.action.frame_range[1]))
+        talk_solver = Solver(rig, source, spin, delta_torso)
+        offset = on_sofa - talk_solver.hips_position(1)
+        pending.append((name, [talk_solver.solve(frame, offset) for frame in range(1, count + 1, 2)], True, 2))
+
     rig.animation_data.action = action
     rig.animation_data.action_slot = action.slots[0]
     clips, previous, cursor = {}, {}, START
-    for name, frames, loop in pending:
+    for entry in pending:
+        name, frames, loop = entry[:3]
+        step = entry[3] if len(entry) > 3 else 1
         for offset, values in enumerate(frames):
-            key(rig, values, cursor + offset, previous)
-        clips[name] = {"start": round((cursor - 1) / FPS, 5), "duration": round((len(frames) - 1) / FPS, 5), "loop": loop}
-        cursor += len(frames)
+            key(rig, values, cursor + offset * step, previous)
+        clips[name] = {"start": round((cursor - 1) / FPS, 5), "duration": round((len(frames) - 1) * step / FPS, 5), "loop": loop}
+        cursor += (len(frames) - 1) * step + 1
     if preview:
         render_preview(rig, key_name, clips, preview, action)
     return clips, cursor - 1
@@ -421,7 +437,7 @@ def main():
     preview = argv[argv.index("--preview") + 1] if "--preview" in argv else None
     thinking = measure_thinking()
     sources = {}
-    for name, file in (("win", "Sitting Victory"), ("lose", "Sitting Disbelief")):
+    for name, file in (("win", "Sitting Victory"), ("lose", "Sitting Disbelief"), ("talk_right", "Sitting Talking"), ("talk_left", "Sitting Talking (1)")):
         sources[name] = import_fbx(file)
     rigs = {name: rig for name, (rig, _) in sources.items()}
     clips, last = {}, 0

@@ -14,10 +14,14 @@ struct OfficeRoutePath {
 /// camino nuevo: levantarse del sofá (el del propio personaje), caminar rodeando la mesa y sentarse en la silla de la mesa (el
 /// movimiento de sentarse del escritorio del puesto de referencia, colocado en el asiento); y al revés.
 enum OfficeChessRoute {
+    typealias Rect = (min: SIMD2<Float>, max: SIMD2<Float>)
+    /// Un mueble del que apartarse. Los «blandos» (las sillas) se esquivan con menos margen y, si con ellos no hay camino, se ignoran.
+    typealias Obstacle = (rect: Rect, soft: Bool)
+
     /// De cuánto se aparta el camino de la mesa (la silla y el personaje se mueven dentro de ese margen).
     private static let margin: Float = 0.6
 
-    static func toSeat(actor: OfficeLayout.Slot, template: OfficeLayout.Slot, seat: OfficeChessSeat, table: (center: SIMD2<Float>, half: Float), chairStart: Float, fps: Double) -> OfficeRoutePath? {
+    static func toSeat(actor: OfficeLayout.Slot, template: OfficeLayout.Slot, seat: OfficeChessSeat, table: (center: SIMD2<Float>, half: Float), obstacles: [Obstacle], bounds: Rect?, chairStart: Float, fps: Double) -> OfficeRoutePath? {
         let own = actor.toDesk, reference = template.toDesk
         guard let stand = own.clips.first(where: { $0.clip == "stand_up" }), let sit = reference.clips.first(where: { $0.clip == "sit_down" }),
               stand.to > stand.from, own.root.count >= stand.to, reference.root.count > sit.from else { return nil }
@@ -36,7 +40,7 @@ enum OfficeChessRoute {
         let start = poses[poses.count - 1]
         var approach = sitting[0]
         approach.chairOffset = pulled
-        let steps = walk(from: start, to: approach, seat: seat.pose, table: table, speed: walkSpeed(of: template), pulled: pulled)
+        let steps = walk(from: start, to: approach, seat: seat.pose, table: table, obstacles: obstacles, bounds: bounds, speed: walkSpeed(of: template), pulled: pulled)
         poses += steps
         clips.append(.init(clip: "walk", from: poses.count - steps.count, to: poses.count))
         let sitStart = poses.count
@@ -47,7 +51,7 @@ enum OfficeChessRoute {
         return OfficeRoutePath(poses: poses, clips: clips)
     }
 
-    static func toSofa(actor: OfficeLayout.Slot, template: OfficeLayout.Slot, seat: OfficeChessSeat, table: (center: SIMD2<Float>, half: Float), fps: Double) -> OfficeRoutePath? {
+    static func toSofa(actor: OfficeLayout.Slot, template: OfficeLayout.Slot, seat: OfficeChessSeat, table: (center: SIMD2<Float>, half: Float), obstacles: [Obstacle], bounds: Rect?, fps: Double) -> OfficeRoutePath? {
         let own = actor.toSofa, reference = template.toSofa
         guard let walkRange = reference.clips.first(where: { $0.clip == "walk" }), let arrive = own.clips.first(where: { $0.clip == "stand_idle" }),
               walkRange.from > 0, own.root.count > arrive.from else { return nil }
@@ -66,7 +70,7 @@ enum OfficeChessRoute {
         let start = poses[poses.count - 1]
         var goal = ownPoses[arrive.from]
         goal.chairOffset = start.chairOffset
-        let steps = walk(from: start, to: goal, seat: seat.pose, table: table, speed: walkSpeed(of: template), pulled: start.chairOffset, leaving: true)
+        let steps = walk(from: start, to: goal, seat: seat.pose, table: table, obstacles: obstacles, bounds: bounds, speed: walkSpeed(of: template), pulled: start.chairOffset, leaving: true)
         poses += steps
         clips.append(.init(clip: "walk", from: poses.count - steps.count, to: poses.count))
 
@@ -78,6 +82,62 @@ enum OfficeChessRoute {
             clips.append(.init(clip: range.clip, from: base + max(range.from - arrive.from, 0), to: base + range.to - arrive.from))
         }
         return OfficeRoutePath(poses: poses, clips: clips)
+    }
+
+    // MARK: - Del sofá al escritorio y de vuelta
+
+    /// Del sofá al escritorio: levantarse y sentarse son los de Blender; el camino entre los dos se calcula rodeando los muebles
+    /// (el de Blender atravesaba algunos).
+    static func toDesk(actor: OfficeLayout.Slot, template: OfficeLayout.Slot, obstacles: [Obstacle], bounds: Rect?) -> OfficeRoutePath? {
+        let own = actor.toDesk
+        guard let stand = own.clips.first(where: { $0.clip == "stand_up" }), let sit = own.clips.first(where: { $0.clip == "sit_down" }),
+              stand.to > stand.from, sit.from > stand.to, own.root.count > sit.from else { return nil }
+        let poses = own.poses
+        var route = Array(poses[stand.from..<stand.to])
+        var clips = [OfficeLayout.Segment.ClipRange(clip: "stand_up", from: 0, to: route.count)]
+        let steps = walkAround(from: route[route.count - 1], to: poses[sit.from], obstacles: obstacles, bounds: bounds, speed: walkSpeed(of: template))
+        route += steps
+        clips.append(.init(clip: "walk", from: route.count - steps.count, to: route.count))
+        let base = route.count
+        route += Array(poses[sit.from...])
+        for range in own.clips where range.to > sit.from {
+            clips.append(.init(clip: range.clip, from: base + max(range.from - sit.from, 0), to: base + range.to - sit.from))
+        }
+        return OfficeRoutePath(poses: route, clips: clips)
+    }
+
+    /// Del escritorio al sofá, igual: levantarse y sentarse de Blender y, entre medias, un camino que rodea los muebles.
+    static func toSofaFromDesk(actor: OfficeLayout.Slot, template: OfficeLayout.Slot, obstacles: [Obstacle], bounds: Rect?) -> OfficeRoutePath? {
+        let own = actor.toSofa
+        guard let walkRange = own.clips.first(where: { $0.clip == "walk" }), let arrive = own.clips.first(where: { $0.clip == "stand_idle" }),
+              walkRange.from > 0, arrive.from > walkRange.from, own.root.count > arrive.from else { return nil }
+        let poses = own.poses
+        var route = Array(poses[0..<walkRange.from])
+        var clips: [OfficeLayout.Segment.ClipRange] = []
+        for range in own.clips where range.from < walkRange.from {
+            clips.append(.init(clip: range.clip, from: range.from, to: min(range.to, walkRange.from)))
+        }
+        let steps = walkAround(from: route[route.count - 1], to: poses[arrive.from], obstacles: obstacles, bounds: bounds, speed: walkSpeed(of: template), lead: false)
+        route += steps
+        clips.append(.init(clip: "walk", from: route.count - steps.count, to: route.count))
+        let base = route.count
+        route += Array(poses[arrive.from...])
+        for range in own.clips where range.to > arrive.from {
+            clips.append(.init(clip: range.clip, from: base + max(range.from - arrive.from, 0), to: base + range.to - arrive.from))
+        }
+        return OfficeRoutePath(poses: route, clips: clips)
+    }
+
+    // MARK: - Esquivar muebles
+
+    /// Caminar de `a` a `b` rodeando los obstáculos (menos los que ya contienen la salida o la llegada, que se están dejando o
+    /// alcanzando).
+    private static func walkAround(from a: OfficePose, to b: OfficePose, obstacles: [Obstacle], bounds: Rect?, speed: Float, lead: Bool = true) -> [OfficePose] {
+        let start = ground(a.position), goal = ground(b.position)
+        var points = plan(from: start, to: goal, keepClear: [start, goal], extra: [], obstacles: obstacles, bounds: bounds)
+        // Un primer paso al frente, para no deslizarse de lado nada más levantarse.
+        if lead { points.insert(points[0] + SIMD2(sin(a.yaw), cos(a.yaw)) * 0.7, at: 1) }
+        return follow(points, from: a, to: b, speed: speed)
     }
 
     // MARK: - Piezas del recorrido
@@ -112,7 +172,7 @@ enum OfficeChessRoute {
 
     /// El camino caminando de `a` a `b`. Termina con una aproximación por el lado del asiento (para no atravesar la silla
     /// apartada) y rodea la mesa si hace falta. Los fotogramas van a una velocidad constante.
-    private static func walk(from a: OfficePose, to b: OfficePose, seat: OfficePose, table: (center: SIMD2<Float>, half: Float), speed: Float,
+    private static func walk(from a: OfficePose, to b: OfficePose, seat: OfficePose, table: (center: SIMD2<Float>, half: Float), obstacles: [Obstacle], bounds: Rect?, speed: Float,
                              pulled: Float, leaving: Bool = false) -> [OfficePose] {
         let forward = SIMD2(sin(seat.yaw), cos(seat.yaw))
         let side = SIMD2(forward.y, -forward.x)
@@ -121,18 +181,28 @@ enum OfficeChessRoute {
         let seatPoint = ground(leaving ? a.position : b.position)
         let lateral: Float = simd_dot((leaving ? ground(b.position) : ground(a.position)) - seatPoint, side) >= 0 ? 1 : -1
         let gate = seatPoint - forward * 0.5 + side * lateral * 1.35
+        // Además de la mesa, los demás muebles (menos los que contienen la salida, la llegada o la puerta de entrada).
+        let start = ground(a.position), goal = ground(b.position)
         var points: [SIMD2<Float>]
         if leaving {
-            points = [ground(a.position), gate] + shortestPath(from: gate, to: ground(b.position), avoiding: rect).dropFirst()
+            points = [start, gate] + plan(from: gate, to: goal, keepClear: [start, goal, gate], extra: [rect], obstacles: obstacles, bounds: bounds).dropFirst()
         } else {
-            points = shortestPath(from: ground(a.position), to: gate, avoiding: rect) + [ground(b.position)]
+            points = plan(from: start, to: gate, keepClear: [start, goal, gate], extra: [rect], obstacles: obstacles, bounds: bounds) + [goal]
         }
         // Un primer paso al frente: así el personaje no se desliza de lado nada más levantarse.
         if !leaving { points.insert(points[0] + SIMD2(sin(a.yaw), cos(a.yaw)) * 0.7, at: 1) }
+        return follow(points, from: a, to: b, speed: speed)
+    }
+
+    /// Los fotogramas de caminar a velocidad constante por una línea quebrada de `a` a `b` (el giro sigue la dirección con
+    /// suavidad y acaba exactamente en el de `b`).
+    private static func follow(_ route: [SIMD2<Float>], from a: OfficePose, to b: OfficePose, speed: Float) -> [OfficePose] {
+        var points = route
         // Fuera lo repetido.
         var clean: [SIMD2<Float>] = []
         for point in points where clean.last.map({ simd_distance($0, point) > 0.05 }) ?? true { clean.append(point) }
         points = clean
+        if points.count < 2 { points = [points.first ?? ground(a.position), ground(b.position) + SIMD2(0.001, 0)] }
         var lengths: [Float] = [0]
         for index in 1..<points.count { lengths.append(lengths[index - 1] + simd_distance(points[index], points[index - 1])) }
         let total = lengths[lengths.count - 1]
@@ -175,12 +245,35 @@ enum OfficeChessRoute {
         return result
     }
 
-    /// La ruta más corta de `a` a `b` sin cruzar el rectángulo (el mapa es un rectángulo y pocas esquinas: basta con probar).
-    private static func shortestPath(from a: SIMD2<Float>, to b: SIMD2<Float>, avoiding rect: (min: SIMD2<Float>, max: SIMD2<Float>)) -> [SIMD2<Float>] {
+    /// El camino de `from` a `to` rodeando los muebles: primero con todos (las sillas con poco margen); si así no hay paso, solo con
+    /// los grandes; y si tampoco, en línea recta. `keepClear` son los puntos que no pueden quedar dentro de ningún obstáculo (los
+    /// muebles que los contienen se dejan fuera). `extra` son obstáculos que siempre cuentan (ya con su margen).
+    private static func plan(from: SIMD2<Float>, to: SIMD2<Float>, keepClear: [SIMD2<Float>], extra: [Rect], obstacles: [Obstacle], bounds: Rect?) -> [SIMD2<Float>] {
+        func inside(_ rect: Rect, _ p: SIMD2<Float>) -> Bool { p.x > rect.min.x && p.x < rect.max.x && p.y > rect.min.y && p.y < rect.max.y }
+        for includeSoft in [true, false] {
+            let rects = obstacles.filter { includeSoft || !$0.soft }.map { obstacle -> Rect in
+                let pad = SIMD2<Float>(repeating: obstacle.soft ? 0.15 : margin)
+                return (obstacle.rect.min - pad, obstacle.rect.max + pad)
+            }.filter { rect in !keepClear.contains { inside(rect, $0) } } + extra
+            if let path = shortestPath(from: from, to: to, avoiding: rects, within: bounds) { return path }
+        }
+        return [from, to]
+    }
+
+    /// La ruta más corta de `a` a `b` sin cruzar ninguno de los rectángulos (se prueban sus esquinas, algo apartadas, como puntos
+    /// de paso). `within` deja fuera los puntos de paso que caerían fuera de la sala.
+    private static func shortestPath(from a: SIMD2<Float>, to b: SIMD2<Float>, avoiding rects: [Rect], within bounds: Rect? = nil) -> [SIMD2<Float>]? {
         let pad: Float = 0.25
-        let corners = [SIMD2(rect.min.x - pad, rect.min.y - pad), SIMD2(rect.max.x + pad, rect.min.y - pad),
-                       SIMD2(rect.max.x + pad, rect.max.y + pad), SIMD2(rect.min.x - pad, rect.max.y + pad)]
-        let nodes = [a, b] + corners
+        var nodes = [a, b]
+        for rect in rects {
+            for corner in [SIMD2(rect.min.x - pad, rect.min.y - pad), SIMD2(rect.max.x + pad, rect.min.y - pad),
+                           SIMD2(rect.max.x + pad, rect.max.y + pad), SIMD2(rect.min.x - pad, rect.max.y + pad)] {
+                if let bounds, corner.x < bounds.min.x || corner.y < bounds.min.y || corner.x > bounds.max.x || corner.y > bounds.max.y { continue }
+                // Un punto dentro de otro obstáculo no sirve.
+                if rects.contains(where: { corner.x > $0.min.x && corner.x < $0.max.x && corner.y > $0.min.y && corner.y < $0.max.y }) { continue }
+                nodes.append(corner)
+            }
+        }
         var best = [Float](repeating: .greatestFiniteMagnitude, count: nodes.count)
         var previous = [Int?](repeating: nil, count: nodes.count)
         var done = Set<Int>()
@@ -188,19 +281,19 @@ enum OfficeChessRoute {
         while let current = (0..<nodes.count).filter({ !done.contains($0) && best[$0] < .greatestFiniteMagnitude }).min(by: { best[$0] < best[$1] }) {
             done.insert(current)
             if current == 1 { break }
-            for next in 0..<nodes.count where !done.contains(next) && !crosses(nodes[current], nodes[next], rect: rect) {
+            for next in 0..<nodes.count where !done.contains(next) && !rects.contains(where: { crosses(nodes[current], nodes[next], rect: $0) }) {
                 let cost = best[current] + simd_distance(nodes[current], nodes[next])
                 if cost < best[next] { best[next] = cost; previous[next] = current }
             }
         }
-        guard previous[1] != nil || a == b else { return [a, b] }
+        guard previous[1] != nil || a == b else { return nil }
         var path = [1]
         while let before = previous[path[0]] { path.insert(before, at: 0) }
         return path.map { nodes[$0] }
     }
 
     /// ¿Atraviesa el segmento el interior del rectángulo?
-    private static func crosses(_ p: SIMD2<Float>, _ q: SIMD2<Float>, rect: (min: SIMD2<Float>, max: SIMD2<Float>)) -> Bool {
+    private static func crosses(_ p: SIMD2<Float>, _ q: SIMD2<Float>, rect: Rect) -> Bool {
         var enter: Float = 0, leave: Float = 1
         let d = q - p
         for axis in 0..<2 {

@@ -24,6 +24,7 @@
 		166A26F7D4105C984E303849 /* AsideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AA8C81C6A84E8DDF53B0226 /* AsideView.swift */; };
 		1758CFAF8C920737DFED7D85 /* JackCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A669F4C23030DFB614FB88C4 /* JackCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		185690F8D6DC3A3439597B70 /* JackCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A669F4C23030DFB614FB88C4 /* JackCore.framework */; };
+		185FB599149061B5FA201413 /* OfficeChatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 625337F3710DDE976268E888 /* OfficeChatter.swift */; };
 		19F535BFB4481EB3F8D01D87 /* StatusBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A093DD8DC6081C7E5DB0FA3D /* StatusBar.swift */; };
 		1E413BE4FA305A05CFCDA372 /* BrowserPick.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99043DC6E87DB144C2ECE631 /* BrowserPick.swift */; };
 		1E4B9916484367A33AC3D959 /* ChatUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D0A660EF197200211C217B4 /* ChatUsage.swift */; };
@@ -66,6 +67,7 @@
 		630D91B0364828E0921F7120 /* OfficeChessSetupCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C3963173B64BA866E086FD5 /* OfficeChessSetupCard.swift */; };
 		65138D0E8C01F36F52CF9E9E /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 32B0BA461A610CE350B86967 /* AppIcon.icon */; };
 		6710432588B24B1A6CB97E59 /* TerminalInterfaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3130A5E80CADC1AE5B40976C /* TerminalInterfaceView.swift */; };
+		67ED284489A407FCBD1FA3D8 /* OfficeTVLogo.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8C0E10BF56058A3038998A6 /* OfficeTVLogo.swift */; };
 		68C89B3976CF06E200C70EC1 /* OfficeStage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35E7EAF9BD58303903C67CBB /* OfficeStage.swift */; };
 		6A89D2DA42A687D07F5F2C3F /* SimulatorPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A3D7246F7BBDA7A8018807 /* SimulatorPanel.swift */; };
 		6E34413A8520410627E235EB /* FRANKLIN.usdz in Resources */ = {isa = PBXBuildFile; fileRef = FE98510172BA77F6A01641E5 /* FRANKLIN.usdz */; };
@@ -77,6 +79,7 @@
 		7CF0D92236427584C6ED9239 /* PaneSplit.swift in Sources */ = {isa = PBXBuildFile; fileRef = BECA119E22381166808B5690 /* PaneSplit.swift */; };
 		7D4CC0F281DABD8A9E4E68C2 /* OfficeChessGame.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D025C650A4072CEEFE9A0C3 /* OfficeChessGame.swift */; };
 		7E295FDBE4DB448AD14EB38C /* BrowserAddress.swift in Sources */ = {isa = PBXBuildFile; fileRef = D270EF82D7E479169076203B /* BrowserAddress.swift */; };
+		82001565019E6A3EEEB9A411 /* OfficeSofaTalk.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D804F6903E93D790E25E568 /* OfficeSofaTalk.swift */; };
 		827E3C32A16440805AD8B9D8 /* JackSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A513FA72943E495D585C29AB /* JackSidebar.swift */; };
 		83D2E3F9BB19AF6FF2568D4D /* TerminalWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D9700E178543DADE35E275A /* TerminalWorkspace.swift */; };
 		83E9506F9D13A06999E90C0E /* LightNewAgentSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDDD94D4D38FF19A730E48F5 /* LightNewAgentSheet.swift */; };
@@ -152,6 +155,7 @@
 		F68F4CEAD8E711BE50639E5C /* StellarCode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C9731344B7463E74671F52C /* StellarCode.swift */; };
 		F75DB029A29F7EC9E15CFBA1 /* MarkdownTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5A12922F7A4E1E7A3623821 /* MarkdownTableView.swift */; };
 		FC19D2D5A244B0E2775C3482 /* CH31.usdz in Resources */ = {isa = PBXBuildFile; fileRef = 0D6B7F996310DFC0D7965C38 /* CH31.usdz */; };
+		FD733015495B4D55D0039B68 /* OfficePersonas.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7000AAC5B5D05A170361D0C /* OfficePersonas.swift */; };
 		FDA0C86DE21F32B305B5F8F8 /* BrowserPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5019EA3818C709E8D20043A4 /* BrowserPicker.swift */; };
 		FF821D60F33C1127B7DDD634 /* LightTranscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40A187CE25E794DFACFD965 /* LightTranscript.swift */; };
 /* End PBXBuildFile section */
@@ -227,6 +231,7 @@
 		17C8EF45B0037C8560493285 /* FlowPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowPanel.swift; sourceTree = "<group>"; };
 		19DB586343084F37D7CD7B3A /* OfficeDisplays.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeDisplays.swift; sourceTree = "<group>"; };
 		1ABE22C8EB6AC06EEB29920D /* ServerViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerViews.swift; sourceTree = "<group>"; };
+		1D804F6903E93D790E25E568 /* OfficeSofaTalk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeSofaTalk.swift; sourceTree = "<group>"; };
 		1FCA7EE32BDFA05868D21D74 /* ChatAside.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatAside.swift; sourceTree = "<group>"; };
 		21FADA6FCE0D89345442C744 /* SSHKeySetup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHKeySetup.swift; sourceTree = "<group>"; };
 		23A3C12F03AEFEE7243BF5C8 /* FlowDiagram.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowDiagram.swift; sourceTree = "<group>"; };
@@ -261,6 +266,7 @@
 		6143A83A4EEEBF4CC0FE7C86 /* ProjectLocator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectLocator.swift; sourceTree = "<group>"; };
 		6164E34644769C64B3E867B1 /* WorkspacePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspacePanel.swift; sourceTree = "<group>"; };
 		61D2267782A3D3E8EBBD9FE6 /* ArtifactPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactPanel.swift; sourceTree = "<group>"; };
+		625337F3710DDE976268E888 /* OfficeChatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeChatter.swift; sourceTree = "<group>"; };
 		67147764C7E299C6400683A6 /* AgentFoldersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentFoldersView.swift; sourceTree = "<group>"; };
 		6AA8C81C6A84E8DDF53B0226 /* AsideView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AsideView.swift; sourceTree = "<group>"; };
 		6B8F35219BDD3B6F10A58137 /* JackCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JackCommands.swift; sourceTree = "<group>"; };
@@ -297,6 +303,7 @@
 		A513FA72943E495D585C29AB /* JackSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JackSidebar.swift; sourceTree = "<group>"; };
 		A5DA957BF049BAF361BA307D /* OfficeInterfaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeInterfaceView.swift; sourceTree = "<group>"; };
 		A669F4C23030DFB614FB88C4 /* JackCore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = JackCore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		A7000AAC5B5D05A170361D0C /* OfficePersonas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficePersonas.swift; sourceTree = "<group>"; };
 		A8AC5CBAB71E44192E8AF824 /* AttachmentViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentViews.swift; sourceTree = "<group>"; };
 		A9273830B442B5862BFE6D2E /* GIRL.usdz */ = {isa = PBXFileReference; lastKnownFileType = file.usdz; path = GIRL.usdz; sourceTree = "<group>"; };
 		A9F734741C87233B79689516 /* OfficeLiveScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeLiveScreen.swift; sourceTree = "<group>"; };
@@ -308,6 +315,7 @@
 		B28C9861FC67C38346F78797 /* VoiceTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTranscriber.swift; sourceTree = "<group>"; };
 		B332971E94CCDE4220748943 /* RemoteAgentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteAgentView.swift; sourceTree = "<group>"; };
 		B33E00280F531F45985C9478 /* REMY.usdz */ = {isa = PBXFileReference; lastKnownFileType = file.usdz; path = REMY.usdz; sourceTree = "<group>"; };
+		B8C0E10BF56058A3038998A6 /* OfficeTVLogo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeTVLogo.swift; sourceTree = "<group>"; };
 		BAA06A062E9665524A768902 /* ChatModelChoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModelChoice.swift; sourceTree = "<group>"; };
 		BB76527AA8274E1DC203B419 /* ProviderUsageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderUsageView.swift; sourceTree = "<group>"; };
 		BC3731337F76E3D2A95FDCE0 /* ScheduleViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleViews.swift; sourceTree = "<group>"; };
@@ -421,8 +429,10 @@
 				8CCF40FF45B214513A23886B /* NotebookDocument.swift */,
 				DD0F0EC32A5D428E50E5152F /* NotebookSession.swift */,
 				85DCC6EA3147FF905D955068 /* NotebookTools.swift */,
+				625337F3710DDE976268E888 /* OfficeChatter.swift */,
 				0AEFE88E5FE3B5A05EA0BE71 /* OfficeChessPlayer.swift */,
 				DA6D4C3C0E3982C22F2F25B1 /* OfficeNarrator.swift */,
+				A7000AAC5B5D05A170361D0C /* OfficePersonas.swift */,
 				D509AEAE925B54594B2E191B /* PaneLayout.swift */,
 				6D47B1B2C9E68EC321647E2E /* PlanFlow.swift */,
 				AF1118CA07727753620BBFEB /* ProgressMonitor.swift */,
@@ -591,8 +601,10 @@
 				165BF6B2CE2A6F0D93026CD8 /* OfficePostProcess.swift */,
 				0665C3AFD39156575CA767CA /* OfficeQuality.swift */,
 				B0B9574E6B8F4D6F393A34CA /* OfficeSceneView.swift */,
+				1D804F6903E93D790E25E568 /* OfficeSofaTalk.swift */,
 				128535DB15D834F9AB310105 /* OfficeSound.swift */,
 				35E7EAF9BD58303903C67CBB /* OfficeStage.swift */,
+				B8C0E10BF56058A3038998A6 /* OfficeTVLogo.swift */,
 			);
 			path = Office;
 			sourceTree = "<group>";
@@ -793,8 +805,10 @@
 				C390FE2E1F8043AEE3726592 /* OfficePostProcess.swift in Sources */,
 				C77D612D1EB59DB6C6A1080B /* OfficeQuality.swift in Sources */,
 				3A8D30522C50C8A36DA75365 /* OfficeSceneView.swift in Sources */,
+				82001565019E6A3EEEB9A411 /* OfficeSofaTalk.swift in Sources */,
 				5D7A39B052D6D83C94D421AF /* OfficeSound.swift in Sources */,
 				68C89B3976CF06E200C70EC1 /* OfficeStage.swift in Sources */,
+				67ED284489A407FCBD1FA3D8 /* OfficeTVLogo.swift in Sources */,
 				7CF0D92236427584C6ED9239 /* PaneSplit.swift in Sources */,
 				4EE75C7A08BEA1C03B542683 /* ProgressViews.swift in Sources */,
 				5C70B0D201725071F109AE1C /* ProjectIndex.swift in Sources */,
@@ -854,8 +868,10 @@
 				2CD3AE84E731F84635B040B6 /* NotebookDocument.swift in Sources */,
 				C9B11725023A9D298A27281D /* NotebookSession.swift in Sources */,
 				5A56C9CADC26642A0D180421 /* NotebookTools.swift in Sources */,
+				185FB599149061B5FA201413 /* OfficeChatter.swift in Sources */,
 				4FE4F04A92F476E321F8A506 /* OfficeChessPlayer.swift in Sources */,
 				9650E046A1B054A8FA208C68 /* OfficeNarrator.swift in Sources */,
+				FD733015495B4D55D0039B68 /* OfficePersonas.swift in Sources */,
 				125DC2F3E2AC2F34CBF5DA1A /* PaneLayout.swift in Sources */,
 				A39B7CF137522252F4D1A9C3 /* PlanFlow.swift in Sources */,
 				4EEE59F330E778DC3B2E53D1 /* ProgressMonitor.swift in Sources */,

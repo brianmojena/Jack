@@ -41,6 +41,7 @@ import simd
     private var screens: [String: [(entity: Entity, reflected: Bool)]] = [:]
     /// La pantalla de la tele, en la sala y en su reflejo.
     private var tvScreens: [(entity: Entity, reflected: Bool)] = []
+    private var tvTexture: TextureResource?
     /// El letrero de cada puesto en la pared, sobre su escritorio, y dónde queda esa pared.
     private var labels: [String: ModelEntity] = [:]
     private var walls: [Int: SIMD3<Float>] = [:]
@@ -82,10 +83,14 @@ import simd
                 let actor = OfficeActor(index: index, slot: slot, layout: layout, model: model)
                 actor.attachChair(in: room)
                 actor.chess = chess
+                actor.walkBounds = (SIMD2(Float(layout.room.min[0]) + 0.5, -Float(layout.room.max[1]) + 0.5), SIMD2(Float(layout.room.max[0]) - 0.5, -Float(layout.room.min[1]) - 0.5))
                 world.addChild(actor.holder)
                 made.append(actor)
             }
             actors = made
+            // Los muebles, con las sillas apartadas (que es como están cuando alguien se levanta).
+            let obstacles = walkObstacles(in: room, slots: layout.slots)
+            for actor in made { actor.walkObstacles = obstacles }
             await addLights(resources)
             addGroundingShadows(room)
             for actor in made { addGroundingShadows(actor.holder) }
@@ -97,6 +102,26 @@ import simd
         } catch {
             state = .failed(error.localizedDescription)
         }
+    }
+
+    /// El suelo que ocupan los muebles grandes (x, z de RealityKit), para que los personajes los rodeen al caminar.
+    private func walkObstacles(in room: Entity, slots: [OfficeLayout.Slot]) -> [OfficeChessRoute.Obstacle] {
+        var rects: [OfficeChessRoute.Obstacle] = []
+        for name in ["WORKSTATION_01", "WORKSTATION_02", "WORKSTATION_03", "PROP_sofa", "PROP_sofa_big", "CHESS_table_top", "PROP_shower"] {
+            guard let entity = room.findEntity(named: name) else { continue }
+            let bounds = entity.visualBounds(relativeTo: nil)
+            guard !bounds.isEmpty else { continue }
+            rects.append(((SIMD2(bounds.min.x, bounds.min.z), SIMD2(bounds.max.x, bounds.max.z)), false))
+        }
+        // Las sillas de los escritorios, ya apartadas.
+        for slot in slots {
+            guard let chair = room.findEntity(named: slot.chair) else { continue }
+            let bounds = chair.visualBounds(relativeTo: nil)
+            if !bounds.isEmpty { rects.append(((SIMD2(bounds.min.x, bounds.min.z), SIMD2(bounds.max.x, bounds.max.z)), true)) }
+        }
+        // Las sillas de la mesa de ajedrez, donde quedan al apartarlas para sentarse.
+        rects += (chess?.pulledChairFootprints() ?? []).map { ($0, true) }
+        return rects
     }
 
     /// Pone a un puesto el modelo de otro avatar (el archivo `<avatar>.usdz`); el personaje no se mueve ni deja lo que hacía.
@@ -257,19 +282,24 @@ import simd
         if let screen = mirroredRoom?.findEntity(named: "TV_49Zoll_Screen1_0") { tvScreens += models(under: screen).map { ($0, true) } }
     }
 
-    /// Lo que enseña la tele.
-    func setTV(image: CGImage) {
+    /// Lo que enseña la tele. La primera imagen crea su textura; las siguientes la sustituyen sin tocar los materiales,
+    /// para que el logo animado pueda ir a varios fotogramas por segundo.
+    func setTV(image: CGImage) async {
         guard !tvScreens.isEmpty else { return }
-        Task { @MainActor in
-            guard let texture = try? await TextureResource(image: image, options: .init(semantic: .color)) else { return }
-            for (entity, reflected) in tvScreens {
-                guard var model = entity.components[ModelComponent.self] else { continue }
-                var material = UnlitMaterial(color: .white)
-                material.color = .init(tint: .white, texture: .init(texture))
-                if reflected { material.faceCulling = .front }
-                model.materials = Array(repeating: material, count: max(model.materials.count, 1))
-                entity.components.set(model)
-            }
+        let options = TextureResource.CreateOptions(semantic: .color)
+        if let tvTexture {
+            try? tvTexture.replace(withImage: image, options: options)
+            return
+        }
+        guard let texture = try? await TextureResource(image: image, options: options) else { return }
+        tvTexture = texture
+        for (entity, reflected) in tvScreens {
+            guard var model = entity.components[ModelComponent.self] else { continue }
+            var material = UnlitMaterial(color: .white)
+            material.color = .init(tint: .white, texture: .init(texture))
+            if reflected { material.faceCulling = .front }
+            model.materials = Array(repeating: material, count: max(model.materials.count, 1))
+            entity.components.set(model)
         }
     }
 
