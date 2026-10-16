@@ -61,6 +61,7 @@ import simd
             world.addChild(room)
             // Antes del espejo, para que el reflejo copie las paredes y la tele ya cambiadas.
             Self.solidWalls(in: room)
+            Self.fixBackWallCorner(in: room)
             enlargeTV(in: room)
             await prepareWalls(in: room)
             var made: [OfficeActor] = []
@@ -154,6 +155,30 @@ import simd
 
     /// Las paredes (la sala fusionada y piezas sueltas como la de ladrillo) vienen con una sola cara, la de dentro: vistas
     /// desde fuera eran transparentes. Toda la sala se dibuja por las dos caras.
+    /// El rincón de la pared de ladrillo: su caja hueca (`ROOM_merged_0`) tiene una cara de abajo que, vista por las dos caras,
+    /// se pintaba con ladrillo encima del suelo, y la cara de ladrillo (`Object_388`) coincidía con el canto de la pared lateral.
+    /// La caja vuelve a ocultar sus caras de espaldas (así no se ve su fondo ni su canto de dentro) y el ladrillo se adelanta
+    /// dos centésimas hacia la sala.
+    private static func fixBackWallCorner(in room: Entity) {
+        func models(under entity: Entity) -> [Entity] {
+            (entity.components.has(ModelComponent.self) ? [entity] : []) + entity.children.flatMap(models(under:))
+        }
+        if let box = room.findEntity(named: "ROOM_merged_0") {
+            for entity in models(under: box) {
+                guard var model = entity.components[ModelComponent.self] else { continue }
+                model.materials = model.materials.map { material in
+                    if var pbr = material as? PhysicallyBasedMaterial { pbr.faceCulling = .back; return pbr }
+                    return material
+                }
+                entity.components.set(model)
+            }
+        }
+        if let brick = room.findEntity(named: "Object_388") {
+            // Hacia la sala es +z en la escena (en Blender, -y).
+            brick.setPosition(brick.position(relativeTo: nil) + SIMD3(0, 0, 0.02), relativeTo: nil)
+        }
+    }
+
     private static func solidWalls(in room: Entity) {
         func models(under entity: Entity) -> [Entity] {
             (entity.components.has(ModelComponent.self) ? [entity] : []) + entity.children.flatMap(models(under:))
@@ -338,6 +363,84 @@ import simd
 
     func update(deltaTime: Double) {
         for actor in actors { actor.update(deltaTime: min(deltaTime, 0.1)) }
+    }
+
+    // MARK: - Gráficos
+
+    /// Las entidades con sombra de contacto, recogidas la primera vez para poder quitarlas y volver a ponerlas.
+    private var groundedEntities: [Entity] = []
+    private var logos: Entity?
+    private var appliedQuality: OfficeQuality?
+    private var sun: Entity?
+
+    /// La luz de la iluminación simple, como la de una oficina: blanca y pareja, de frente y por arriba, más un relleno suave
+    /// por el otro lado para que no queden zonas oscuras; sin sombras. Se crea la primera vez que hace falta.
+    private func simpleSun() -> Entity {
+        if let sun { return sun }
+        let entity = Entity()
+        entity.name = "simple-light"
+        func light(from offset: SIMD3<Float>, intensity: Float, color: NSColor) -> Entity {
+            let light = Entity()
+            light.components.set(DirectionalLightComponent(color: color, intensity: intensity, isRealWorldProxy: false))
+            light.look(at: focus, from: focus + offset, relativeTo: nil)
+            return light
+        }
+        entity.addChild(light(from: SIMD3(9, 22, 16), intensity: 3200, color: NSColor(red: 1, green: 0.99, blue: 0.96, alpha: 1)))
+        entity.addChild(light(from: SIMD3(-14, 14, -10), intensity: 1600, color: NSColor(red: 0.93, green: 0.96, blue: 1, alpha: 1)))
+        entity.isEnabled = false
+        world.addChild(entity)
+        sun = entity
+        return entity
+    }
+
+    /// Ajusta la escena a los gráficos elegidos. Con `ultra` queda como se montó al cargar.
+    func apply(_ quality: OfficeQuality) {
+        guard state == .ready, quality != appliedQuality else { return }
+        // Con los gráficos de siempre y sin haber tocado nada, no hay nada que cambiar.
+        if appliedQuality == nil, quality == .ultra { appliedQuality = quality; return }
+        appliedQuality = quality
+        func all(_ entity: Entity) -> [Entity] { [entity] + entity.children.flatMap(all) }
+        let entities = all(world)
+        if groundedEntities.isEmpty { groundedEntities = entities.filter { $0.components.has(GroundingShadowComponent.self) } }
+        for entity in groundedEntities {
+            if quality.shadows { entity.components.set(GroundingShadowComponent(castsShadow: true, receivesShadow: true)) }
+            else { entity.components.remove(GroundingShadowComponent.self) }
+        }
+        // Iluminación simple: sin focos ni puntos de luz, solo luz natural pareja (ambiental más una luz suave sin sombras).
+        let simple = quality.lights == 1
+        for entity in entities {
+            // Los focos son lo principal; luego el relleno y el rebote del suelo; por último, los halos de los logos.
+            if entity.components.has(SpotLightComponent.self) {
+                entity.isEnabled = !simple
+                if quality.shadows { if !entity.components.has(SpotLightComponent.Shadow.self) { entity.components.set(SpotLightComponent.Shadow()) } }
+                else { entity.components.remove(SpotLightComponent.Shadow.self) }
+            } else if let point = entity.components[PointLightComponent.self] {
+                let isGlow = point.attenuationRadius <= 8
+                entity.isEnabled = !simple && (quality.lights >= 3 || (quality.lights == 2 && !isGlow))
+            } else if let ambient = entity.components[ImageBasedLightComponent.self] {
+                // La ambiental de la sala sube en la iluminación simple; la del reflejo, que parte más alta, también.
+                let inMirror = entity.parent?.parent === world
+                let exponent: Float = simple ? (inMirror ? 2.2 : 1.8) : (inMirror ? 0.3 : 0.0)
+                entity.components.set(ImageBasedLightComponent(source: ambient.source, intensityExponent: exponent))
+            }
+        }
+        simpleSun().isEnabled = simple
+        if logos == nil { logos = room?.findEntity(named: "PROP_lang_logos") }
+        if #available(macOS 27.0, *), let logos {
+            if quality.neon { logos.components.set(BloomComponent(scope: .hierarchical)) } else { logos.components.remove(BloomComponent.self) }
+        }
+        // El espejo: sin él no se dibuja la sala reflejada y el cristal pasa a ser un panel oscuro.
+        world.children.first { $0.name == "mirror-world" }?.isEnabled = quality.mirror
+        world.findEntity(named: "mirror-portal")?.isEnabled = quality.mirror
+        if let glass = world.findEntity(named: "mirror-glass") as? ModelEntity, var model = glass.model {
+            model.materials = model.materials.map { material in
+                guard var pbr = material as? PhysicallyBasedMaterial else { return material }
+                pbr.blending = .transparent(opacity: quality.mirror ? 0.12 : 0.92)
+                return pbr
+            }
+            glass.model = model
+        }
+        for actor in actors { actor.freezeIdle = !quality.idleAnimation }
     }
 
     // MARK: - Luces

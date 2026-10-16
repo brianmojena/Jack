@@ -12,6 +12,8 @@ import SwiftUI
     }
 
     static let fieldOfView: Float = 38
+    /// Cuánto margen deja alrededor de una pantalla al mirarla de cerca (1 = la pantalla llena la vista).
+    static let closeUpMargin: Float = 1.16
     private(set) var current: Pose
     private(set) var goal: Pose
     /// La pose de la sala mientras se mira una pantalla de cerca, para volver a ella al salir.
@@ -55,9 +57,15 @@ import SwiftUI
     func focus(screen center: SIMD3<Float>, facing: SIMD3<Float>, size: SIMD2<Float>, view: CGSize) {
         let tangent = tan(Self.fieldOfView * .pi / 360)
         let aspect = Float(view.width / max(view.height, 1))
-        let distance = max(size.y / 2 / tangent, size.x / 2 / (tangent * aspect)) * 1.16
+        let distance = max(size.y / 2 / tangent, size.x / 2 / (tangent * aspect)) * Self.closeUpMargin
         if room == nil { room = goal }
         goal = Pose(target: center, azimuth: atan2(facing.x, facing.z), elevation: 0, distance: distance)
+    }
+
+    /// Si la cámara ya llegó a su meta (para cambiar a la vista real de un monitor sin que se note).
+    var isSettled: Bool {
+        simd_distance(current.target, goal.target) < 0.004 && abs(current.distance - goal.distance) < 0.004
+            && abs(current.elevation - goal.elevation) < 0.001 && abs(current.azimuth - goal.azimuth) < 0.001
     }
 
     /// Vuelve a la vista de la sala que había antes de mirar la pantalla.
@@ -119,30 +127,71 @@ struct OfficeSceneView: View {
     @ObservedObject var stage: OfficeStage
     let camera: OfficeCamera
     var resources = OfficeStage.Resources.bundled
+    /// Los gráficos elegidos; con `.ultra` la escena se ve como siempre.
+    var quality = OfficeQuality.ultra
+    /// Recibe los fotogramas por segundo medidos, una vez por segundo (solo si se pide con `measuresFPS`).
+    var measuresFPS = false
+    var onFPS: (Double) -> Void = { _ in }
     /// Se pulsó un personaje o un escritorio, en el punto dado de esta vista.
     var onPick: (OfficeAgentTag, CGPoint) -> Void = { _, _ in }
     /// Se pulsó en vacío.
     var onPickNothing: () -> Void = {}
     @State private var updates: EventSubscription?
+    /// Lo último que se pidió al render; RealityKit falla si se le vuelve a dar el mismo efecto en cada actualización.
+    @State private var applied = AppliedEffects()
     @State private var lastDrag = CGSize.zero
     @State private var lastMagnification: CGFloat = 1
 
     var body: some View {
+        // Con menos resolución la escena se dibuja en un lienzo más pequeño y se estira a la ventana.
+        let scale = CGFloat(quality.resolution)
+        GeometryReader { proxy in
+            reality(scale: scale)
+                .frame(width: proxy.size.width * scale, height: proxy.size.height * scale)
+                .scaleEffect(1 / scale, anchor: .topLeading)
+                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
+        }
+        .background(OfficeScrollZoom(onZoom: { camera.zoom(by: $0) }, onPan: { camera.pan(right: $0, forward: $1) }))
+        // Los avisos van en el centro de la escena, que ocupa todo el sitio aunque aún no haya cargado.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay { if case .failed(let message) = stage.state { OfficeStatusLabel(text: message) } }
+        .overlay { if stage.state == .loading { OfficeStatusLabel(text: "Cargando la oficina…") } }
+    }
+
+    private func reality(scale: CGFloat) -> some View {
         RealityView { content in
             content.camera = .virtual
-            content.renderingEffects.antialiasing = .multisample4X
-            if #available(macOS 26.0, *) { content.renderingEffects.customPostProcessing = .effect(OfficePostProcess()) }
+            Self.setAntialiasing(quality.antialiasing, in: &content)
+            applied.antialiasing = quality.antialiasing
+            applied.frameInterval = quality.frameRate > 0 ? 1 / Double(quality.frameRate) : 0
+            if #available(macOS 26.0, *), quality.ambientOcclusion { content.renderingEffects.customPostProcessing = .effect(OfficePostProcess()) }
+            applied.ambientOcclusion = quality.ambientOcclusion
             content.add(stage.world)
             await stage.load(resources)
+            stage.apply(quality)
             let lens = Entity()
             lens.components.set(PerspectiveCameraComponent(near: 0.1, far: 900, fieldOfViewInDegrees: OfficeCamera.fieldOfView))
             camera.place(lens)
             content.add(lens)
+            let pacing = applied
             updates = content.subscribe(to: SceneEvents.Update.self) { event in
+                pacing.pace()
+                pacing.count(report: measuresFPS ? onFPS : nil)
                 stage.update(deltaTime: event.deltaTime)
                 camera.step(event.deltaTime)
                 camera.place(lens)
             }
+        } update: { content in
+            applied.frameInterval = quality.frameRate > 0 ? 1 / Double(quality.frameRate) : 0
+            if applied.antialiasing != quality.antialiasing {
+                Self.setAntialiasing(quality.antialiasing, in: &content)
+                applied.antialiasing = quality.antialiasing
+            }
+            if #available(macOS 26.0, *), applied.ambientOcclusion != quality.ambientOcclusion {
+                content.renderingEffects.customPostProcessing = quality.ambientOcclusion ? .effect(OfficePostProcess()) : .none
+                applied.ambientOcclusion = quality.ambientOcclusion
+            }
+            stage.apply(quality)
         }
         .gesture(
             SpatialTapGesture()
@@ -158,7 +207,8 @@ struct OfficeSceneView: View {
         .simultaneousGesture(
             DragGesture(minimumDistance: 4)
                 .onChanged { value in
-                    let dx = value.translation.width - lastDrag.width, dy = value.translation.height - lastDrag.height
+                    // Al dibujar en un lienzo más pequeño, el gesto mide menos: se devuelve a puntos de la ventana.
+                    let dx = (value.translation.width - lastDrag.width) / scale, dy = (value.translation.height - lastDrag.height) / scale
                     // Con Mayúsculas, arrastrar desplaza la escena con la mano en vez de girarla.
                     if NSEvent.modifierFlags.contains(.shift) {
                         camera.pan(right: -Float(dx) * 0.0016, forward: Float(dy) * 0.0016)
@@ -177,11 +227,45 @@ struct OfficeSceneView: View {
                 }
                 .onEnded { _ in lastMagnification = 1 }
         )
-        .background(OfficeScrollZoom(onZoom: { camera.zoom(by: $0) }, onPan: { camera.pan(right: $0, forward: $1) }))
-        // Los avisos van en el centro de la escena, que ocupa todo el sitio aunque aún no haya cargado.
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .overlay { if case .failed(let message) = stage.state { OfficeStatusLabel(text: message) } }
-        .overlay { if stage.state == .loading { OfficeStatusLabel(text: "Cargando la oficina…") } }
+    }
+
+    private final class AppliedEffects {
+        var antialiasing: Int?
+        var ambientOcclusion: Bool?
+        /// Segundos mínimos entre fotogramas (0: sin límite).
+        var frameInterval = 0.0
+        private var nextFrame = CFAbsoluteTimeGetCurrent()
+        private var frames = 0
+
+        /// El motor pide un fotograma nuevo cada vez que la pantalla refresca; si llega antes de tiempo, se espera. Así el límite
+        /// vale para todo lo que se dibuja (mover la cámara incluido), no solo para las animaciones. El ritmo es fijo, sin
+        /// acumular retraso, y se despierta un poco antes del momento para que el fotograma entre en el refresco que toca.
+        func pace() {
+            let now = CFAbsoluteTimeGetCurrent()
+            guard frameInterval > 0 else { nextFrame = now; return }
+            let early = 0.004
+            if now < nextFrame - early { Thread.sleep(forTimeInterval: nextFrame - early - now) }
+            // Si el motor se atrasó más de un fotograma, no intenta recuperarlo.
+            nextFrame = max(nextFrame + frameInterval, now)
+        }
+
+        private var reportedAt = CFAbsoluteTimeGetCurrent()
+
+        func count(report: ((Double) -> Void)?) {
+            frames += 1
+            let now = CFAbsoluteTimeGetCurrent()
+            guard now - reportedAt >= 1 else { return }
+            report?(Double(frames) / (now - reportedAt))
+            frames = 0
+            reportedAt = now
+        }
+    }
+
+    private static func setAntialiasing(_ samples: Int, in content: inout RealityViewCameraContent) {
+        switch samples {
+        case 0: content.renderingEffects.antialiasing = .none
+        default: content.renderingEffects.antialiasing = .multisample4X
+        }
     }
 }
 

@@ -116,7 +116,10 @@ enum OfficeCommand: Equatable {
         case .sofa:
             apply(sofaPose)
             setChair(offset: pulledChair)
-            if case .sofa(let failed) = command { play(failed ? "no" : "idle_sit") }
+            if case .sofa(let failed) = command {
+                play(failed ? "no" : "idle_sit")
+                updateFreeze(shouldFreeze: freezeIdle && !failed, deltaTime: deltaTime)
+            }
             if case .desk = command { begin(.toDesk) }
         case .toDesk:
             if advance(segment: slot.toDesk, poses: toDesk, deltaTime: deltaTime) { phase = .desk }
@@ -146,7 +149,33 @@ enum OfficeCommand: Equatable {
         chair?.isEnabled = opacity > 0
     }
 
+    /// Con los gráficos bajos, el personaje del sofá se queda quieto en su postura (sin animar el esqueleto).
+    var freezeIdle = false
+    private var frozen = false
+    private var idleTime = 0.0
+
+    private func updateFreeze(shouldFreeze: Bool, deltaTime: Double) {
+        if shouldFreeze {
+            idleTime += deltaTime
+            // Se espera a que la postura esté puesta antes de pararla.
+            if idleTime > 1.2, !frozen {
+                controller?.pause()
+                mirrorController?.pause()
+                frozen = true
+            }
+        } else if frozen {
+            controller?.resume()
+            mirrorController?.resume()
+            frozen = false
+            idleTime = 0
+        } else {
+            idleTime = 0
+        }
+    }
+
     private func begin(_ next: Phase) {
+        frozen = false
+        idleTime = 0
         phase = next
         frame = 0
     }
