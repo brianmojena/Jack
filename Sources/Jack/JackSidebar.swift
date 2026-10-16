@@ -192,6 +192,8 @@ struct JackSidebar: View {
     var officeActive = false
     var onShowClaudeCloud: (() -> Void)? = nil
     var claudeCloudActive = false
+    var onShowClaudeChat: (() -> Void)? = nil
+    var claudeChatActive = false
     @State private var query = ""
     @FocusState private var searchFocused: Bool
     /// Folded spaces, stored as newline-separated project paths.
@@ -271,6 +273,10 @@ struct JackSidebar: View {
                 if let onShowClaudeCloud {
                     navButton("cloud", "Claude Code Cloud", shortcut: "", action: onShowClaudeCloud)
                         .background(claudeCloudActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
+                }
+                if let onShowClaudeChat {
+                    navButton("bubble.left.and.bubble.right", "Claude Chat", shortcut: "", action: onShowClaudeChat)
+                        .background(claudeChatActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
                 }
                 if let onShowArtifacts {
                     navButton("square.stack.3d.up", "Artefactos", shortcut: "", action: onShowArtifacts)
@@ -367,6 +373,10 @@ struct JackSidebar: View {
                 if let onShowClaudeCloud {
                     navButton("cloud", "Claude Code Cloud", shortcut: "", action: onShowClaudeCloud)
                         .background(claudeCloudActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
+                }
+                if let onShowClaudeChat {
+                    navButton("bubble.left.and.bubble.right", "Claude Chat", shortcut: "", action: onShowClaudeChat)
+                        .background(claudeChatActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
                 }
                 if let onShowArtifacts {
                     navButton("square.stack.3d.up", "Artefactos", shortcut: "", action: onShowArtifacts)

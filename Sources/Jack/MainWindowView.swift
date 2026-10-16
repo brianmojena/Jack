@@ -36,6 +36,7 @@ struct MainWindowView: View {
     @State private var showingAutomations = false
     @State private var showingArtifacts = false
     @State private var showingClaudeCloud = false
+    @State private var showingClaudeChat = false
     @State private var showingOffice = false
     @State private var searchRequest = 0
     /// The composer being typed in: the main chat's or a pane's.
@@ -74,7 +75,7 @@ struct MainWindowView: View {
     private var ice: Bool { interfaceStyle == .ice }
     private var officeVisible: Bool {
         !store.lightModeEnabled && (showingOffice || interfaceStyle == .office)
-            && !showingArtifacts && !showingClaudeCloud && !showingAutomations
+            && !showingArtifacts && !showingClaudeCloud && !showingClaudeChat && !showingAutomations
     }
     private var sidebarProjectSort: SidebarProjectSort {
         SidebarProjectSort.resolve(projectSortValue, legacyAlphabetical: legacyAlphabeticalProjects)
@@ -118,7 +119,7 @@ struct MainWindowView: View {
             setLayout(layout)
         }
         .onChange(of: store.selectedID, initial: true) { previous, id in
-            if previous != id { showingArtifacts = false; showingClaudeCloud = false; showingOffice = false }
+            if previous != id { showingArtifacts = false; showingClaudeCloud = false; showingClaudeChat = false; showingOffice = false }
             guard let id else { return }
             // A plan already there when the agent is selected is not news.
             if let key = planKey { seenPlans.insert(key) }
@@ -286,8 +287,8 @@ struct MainWindowView: View {
             rows: sidebarRows,
             projectPaths: Dictionary(uniqueKeysWithValues: store.conversations.map { ($0.id, $0.projectPath) }),
             selectedID: store.selectedID,
-            onNewConversation: { _ in showingAutomations = false; showingArtifacts = false; showingClaudeCloud = false; showingOffice = false; openNewConversation() },
-            onSelect: { showingAutomations = false; showingArtifacts = false; showingClaudeCloud = false; showingOffice = false; store.select($0) },
+            onNewConversation: { _ in showingAutomations = false; showingArtifacts = false; showingClaudeCloud = false; showingClaudeChat = false; showingOffice = false; openNewConversation() },
+            onSelect: { showingAutomations = false; showingArtifacts = false; showingClaudeCloud = false; showingClaudeChat = false; showingOffice = false; store.select($0) },
             onRename: { id in store.conversations.first { $0.id == id }.map(beginRename) },
             onImproveNameWithAI: store.improveChatName(withAI:),
             onDelete: { id in deletingConversation = store.conversations.first { $0.id == id } },
@@ -301,24 +302,32 @@ struct MainWindowView: View {
             onImproveChatNames: store.improveChatNames,
             onHide: toggleSidebar,
             searchRequest: searchRequest,
-            onShowAutomations: { showingClaudeCloud = false; showingArtifacts = false; showingOffice = false; showingAutomations = true },
+            onShowAutomations: { showingClaudeCloud = false; showingClaudeChat = false; showingArtifacts = false; showingOffice = false; showingAutomations = true },
             automationsActive: showingAutomations,
-            onShowArtifacts: store.lightModeEnabled ? nil : { showingClaudeCloud = false; showingAutomations = false; showingOffice = false; showingArtifacts = true },
+            onShowArtifacts: store.lightModeEnabled ? nil : { showingClaudeCloud = false; showingClaudeChat = false; showingAutomations = false; showingOffice = false; showingArtifacts = true },
             artifactsActive: showingArtifacts,
             onShowOffice: store.lightModeEnabled ? nil : {
-                showingClaudeCloud = false; showingArtifacts = false; showingAutomations = false; showingOffice = true
+                showingClaudeCloud = false; showingClaudeChat = false; showingArtifacts = false; showingAutomations = false; showingOffice = true
             },
             officeActive: officeVisible,
             onShowClaudeCloud: store.lightModeEnabled ? nil : {
-                showingArtifacts = false; showingAutomations = false; showingOffice = false; showingClaudeCloud = true
+                showingArtifacts = false; showingAutomations = false; showingOffice = false; showingClaudeChat = false; showingClaudeCloud = true
             },
-            claudeCloudActive: showingClaudeCloud
+            claudeCloudActive: showingClaudeCloud,
+            onShowClaudeChat: store.lightModeEnabled ? nil : {
+                showingArtifacts = false; showingAutomations = false; showingOffice = false; showingClaudeCloud = false; showingClaudeChat = true
+            },
+            claudeChatActive: showingClaudeChat
         )
     }
 
     /// The chat with the workspace and file panes beside it.
     @ViewBuilder private var detailPanes: some View {
-        if showingClaudeCloud, !store.lightModeEnabled {
+        if showingClaudeChat, !store.lightModeEnabled {
+            ClaudeCloudPanel(session: workspace.claudeChat(),
+                             subtitle: "Chat de Claude sin agentes: inicia sesión en claude.ai y conversa directamente.",
+                             homeHelp: "Nuevo chat")
+        } else if showingClaudeCloud, !store.lightModeEnabled {
             ClaudeCloudPanel(session: workspace.claudeCloud())
         } else if showingArtifacts, !store.lightModeEnabled {
             ArtifactLibraryScreen(store: store, library: store.artifacts) { conversation, text in

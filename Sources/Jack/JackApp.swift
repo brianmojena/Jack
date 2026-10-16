@@ -29,6 +29,7 @@ struct JackApp: App {
                     if enabled {
                         appDelegate.workspace.suspendTerminalInterface()
                         appDelegate.workspace.suspendClaudeCloud()
+                        appDelegate.workspace.suspendClaudeChat()
                     }
                     store.setLightMode(enabled)
                     store.applySchedules()

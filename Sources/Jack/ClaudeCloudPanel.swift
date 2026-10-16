@@ -6,15 +6,21 @@ import WebKit
 /// Owned lazily by the Normal workspace; entering Light destroys the web views.
 @MainActor final class ClaudeCloudSession: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate, NSWindowDelegate {
     static let home = URL(string: "https://claude.ai/code")!
+    /// Plain chat on claude.ai, sharing the login with the cloud view.
+    static let chatHome = URL(string: "https://claude.ai/new")!
     static let dataStoreID = UUID(uuidString: "AC6788A1-1C7E-47F5-8A6C-F65104ACFE83")!
     let webView: WKWebView
+    let homeURL: URL
+    let title: String
     @Published private(set) var loading = false
     @Published private(set) var canGoBack = false
     @Published private(set) var error: String?
     private var observations: [NSKeyValueObservation] = []
     private var popups: [NSWindow] = []
 
-    init(loadImmediately: Bool = true) {
+    init(homeURL: URL? = nil, title: String = "Claude Code Cloud", loadImmediately: Bool = true) {
+        self.homeURL = homeURL ?? Self.home
+        self.title = title
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = WKWebsiteDataStore(forIdentifier: Self.dataStoreID)
         webView = WKWebView(frame: .zero, configuration: configuration)
@@ -38,7 +44,7 @@ import WebKit
         view.uiDelegate = self
     }
 
-    func home() { error = nil; webView.load(URLRequest(url: Self.home)) }
+    func home() { error = nil; webView.load(URLRequest(url: homeURL)) }
     func reload() { error = nil; webView.reload() }
     func stop() {
         webView.stopLoading()
@@ -77,7 +83,7 @@ import WebKit
         configure(popup)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 700, height: 760),
                               styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-        window.title = "Claude Code Cloud"
+        window.title = title
         window.isReleasedWhenClosed = false
         window.contentView = popup
         window.delegate = self
@@ -105,7 +111,7 @@ import WebKit
                  initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
         guard let window = webView.window else { completionHandler(); return }
         let alert = NSAlert()
-        alert.messageText = "Claude Code Cloud"
+        alert.messageText = title
         alert.informativeText = message
         alert.addButton(withTitle: "Aceptar")
         alert.beginSheetModal(for: window) { _ in completionHandler() }
@@ -114,7 +120,7 @@ import WebKit
                  initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
         guard let window = webView.window else { completionHandler(false); return }
         let alert = NSAlert()
-        alert.messageText = "Claude Code Cloud"
+        alert.messageText = title
         alert.informativeText = message
         alert.addButton(withTitle: "Aceptar")
         alert.addButton(withTitle: "Cancelar")
@@ -124,24 +130,26 @@ import WebKit
 
 struct ClaudeCloudPanel: View {
     @ObservedObject var session: ClaudeCloudSession
+    var subtitle = "Inicia sesión en Claude para crear y continuar tareas en la nube. Elige el repositorio y el entorno en Claude."
+    var homeHelp = "Lista de sesiones cloud"
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                Label("Claude Code Cloud", systemImage: "cloud").font(.system(size: 13, weight: .semibold))
+                Label(session.title, systemImage: session.homeURL == ClaudeCloudSession.chatHome ? "bubble.left.and.bubble.right" : "cloud").font(.system(size: 13, weight: .semibold))
                 Button { session.webView.goBack() } label: { Image(systemName: "chevron.left") }
                     .disabled(!session.canGoBack).help("Atrás")
-                Button { session.home() } label: { Image(systemName: "house") }.help("Lista de sesiones cloud")
+                Button { session.home() } label: { Image(systemName: "house") }.help(homeHelp)
                 Button { session.reload() } label: { Image(systemName: "arrow.clockwise") }.help("Recargar")
                 if session.loading { ProgressView().controlSize(.small) }
                 Spacer()
                 Button("Abrir en navegador", systemImage: "safari") {
-                    NSWorkspace.shared.open(session.webView.url ?? ClaudeCloudSession.home)
+                    NSWorkspace.shared.open(session.webView.url ?? session.homeURL)
                 }.help("También puedes abrir Claude en tu navegador para configurar tu cuenta")
             }
             .buttonStyle(.borderless).padding(.horizontal, 14).frame(height: 44)
             .background(JackPalette.chrome)
-            Text("Inicia sesión en Claude para crear y continuar tareas en la nube. Elige el repositorio y el entorno en Claude.")
+            Text(subtitle)
                 .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
                 .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 14).padding(.vertical, 8)
             Divider()
@@ -149,10 +157,10 @@ struct ClaudeCloudPanel: View {
                 ClaudeCloudWebHost(webView: session.webView)
                 if let error = session.error {
                     VStack(spacing: 12) {
-                        Text("No se pudo cargar Claude Code Cloud").font(.headline)
+                        Text("No se pudo cargar \(session.title)").font(.headline)
                         Text(error).font(.callout).multilineTextAlignment(.center)
                         Button("Reintentar") { session.reload() }
-                        Button("Ir a las sesiones") { session.home() }
+                        Button("Ir al inicio") { session.home() }
                     }.padding(24).frame(maxWidth: 420).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
                 }
             }

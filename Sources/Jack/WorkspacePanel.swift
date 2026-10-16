@@ -55,6 +55,17 @@ struct WorkspaceTab: Identifiable, Equatable {
         cloudSession?.stop()
         cloudSession = nil
     }
+    private var chatSession: ClaudeCloudSession?
+    func claudeChat() -> ClaudeCloudSession {
+        if let chatSession { return chatSession }
+        let session = ClaudeCloudSession(homeURL: ClaudeCloudSession.chatHome, title: "Claude Chat")
+        chatSession = session
+        return session
+    }
+    func suspendClaudeChat() {
+        chatSession?.stop()
+        chatSession = nil
+    }
     private var explorers: [String: FileTreeModel] = [:]
     private var gits: [String: GitSession] = [:]
     /// Shared by every agent: there is one set of simulators on the Mac.
@@ -181,6 +192,7 @@ struct WorkspaceTab: Identifiable, Equatable {
 
     func terminateAll() {
         suspendClaudeCloud()
+        suspendClaudeChat()
         suspendTerminalInterface()
         cancelAutomaticGitCommits()
         terminals.values.forEach { $0.terminate() }

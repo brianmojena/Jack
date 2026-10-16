@@ -4,7 +4,7 @@ Chat nativo y compacto para gestionar varios agentes de desarrollo en macOS. Int
 
 ## Versionado
 
-La versión actual es **0.3.55**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
+La versión actual es **0.3.56**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
 
 ## Construir
 
@@ -103,6 +103,10 @@ La entrada **Oficina** de la barra lateral (Basic e Ice) abre la oficina 3D, y e
 Al pulsar un personaje o su escritorio aparece el menú: **Trabajar** con el último modelo recordado, con **otro modelo** o retomando un **trabajo previo**; ya en marcha, puedes **hablar** con la persona, **ver pantalla** —la cámara se pone delante del monitor y sobre el cristal se ve el chat real del agente, donde puedes seguir escribiendo— o **terminar de trabajar**. Sobre cada personaje con agente flota su modelo, que se cambia con un toque, y un aviso verde, amarillo o rojo cuando el agente contestó, te necesita o falló. La sala lleva focos con sombra, sombras de contacto, oclusión ambiental y gradación, logos en neón, el nombre del chat sobre cada escritorio y una tele con los límites de uso de Claude; la cámara gira al arrastrar, se desplaza con Mayúsculas + arrastrar o las flechas y acerca con la rueda o el gesto de pinza.
 
 La Oficina no existe en Light.
+
+## Claude Chat (modo Normal)
+
+La entrada **Claude Chat** de la barra lateral abre `claude.ai/new` en el navegador integrado: un chat de Claude sin agentes ni puente nativo de Jack. Comparte el inicio de sesión con Claude Code Cloud y no existe en Light.
 
 ## Progreso y descargas
 
