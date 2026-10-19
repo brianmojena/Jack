@@ -18,7 +18,7 @@ struct OfficePostProcess: PostProcessEffect {
 
     /// Radio de la oclusión en unidades de la escena (un personaje mide unas 6).
     var radius: Float = 2.4
-    var strength: Float = 1.5
+    var strength: Float = 1.3
 
     mutating func prepare(for device: MTLDevice) {
         guard state.compose == nil, let library = try? device.makeLibrary(source: Self.source, options: nil) else { return }
@@ -203,15 +203,16 @@ struct OfficePostProcess: PostProcessEffect {
         // Rango más parejo: las luces altas se comprimen con suavidad y las sombras se levantan un poco, como la
         // exposición de una cámara real; encima, apenas un punto más de color.
         float luma = dot(rgb, float3(0.2126, 0.7152, 0.0722));
-        if (luma > 0.6) {
-            float over = luma - 0.6;
-            rgb *= (0.6 + over / (1.0 + over * 3.0)) / luma;
+        if (luma > 0.65) {
+            float over = luma - 0.65;
+            rgb *= (0.65 + over / (1.0 + over * 2.6)) / luma;
         }
-        rgb = mix(rgb, sqrt(max(rgb, 0.0)), 0.1);
+        rgb = mix(rgb, sqrt(max(rgb, 0.0)), 0.2);
         luma = dot(rgb, float3(0.2126, 0.7152, 0.0722));
-        rgb = mix(float3(luma), rgb, 1.05);
-        // Un leve tono cálido rojizo en toda la imagen.
-        rgb *= float3(1.035, 0.985, 0.965);
+        rgb = mix(float3(luma), rgb, 1.12);
+        // Gradación cyberpunk suave: las sombras tiran a azul violeta y las luces altas a cálido.
+        float3 tone = mix(float3(0.95, 0.96, 1.08), float3(1.05, 0.99, 0.96), smoothstep(0.08, 0.7, luma));
+        rgb *= tone;
 
         // Viñeteado muy suave.
         float2 uv = (float2(gid) + 0.5) / float2(size);

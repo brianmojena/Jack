@@ -1,0 +1,570 @@
+{
+ "units": "coordenadas de Blender (x, y, z arriba), como OfficeLayout.json",
+ "square": 0.36,
+ "squares": [
+  [
+   5.94,
+   -4.94,
+   2.552
+  ],
+  [
+   5.94,
+   -5.3,
+   2.552
+  ],
+  [
+   5.94,
+   -5.66,
+   2.552
+  ],
+  [
+   5.94,
+   -6.02,
+   2.552
+  ],
+  [
+   5.94,
+   -6.38,
+   2.552
+  ],
+  [
+   5.94,
+   -6.74,
+   2.552
+  ],
+  [
+   5.94,
+   -7.1,
+   2.552
+  ],
+  [
+   5.94,
+   -7.46,
+   2.552
+  ],
+  [
+   6.3,
+   -4.94,
+   2.552
+  ],
+  [
+   6.3,
+   -5.3,
+   2.552
+  ],
+  [
+   6.3,
+   -5.66,
+   2.552
+  ],
+  [
+   6.3,
+   -6.02,
+   2.552
+  ],
+  [
+   6.3,
+   -6.38,
+   2.552
+  ],
+  [
+   6.3,
+   -6.74,
+   2.552
+  ],
+  [
+   6.3,
+   -7.1,
+   2.552
+  ],
+  [
+   6.3,
+   -7.46,
+   2.552
+  ],
+  [
+   6.66,
+   -4.94,
+   2.552
+  ],
+  [
+   6.66,
+   -5.3,
+   2.552
+  ],
+  [
+   6.66,
+   -5.66,
+   2.552
+  ],
+  [
+   6.66,
+   -6.02,
+   2.552
+  ],
+  [
+   6.66,
+   -6.38,
+   2.552
+  ],
+  [
+   6.66,
+   -6.74,
+   2.552
+  ],
+  [
+   6.66,
+   -7.1,
+   2.552
+  ],
+  [
+   6.66,
+   -7.46,
+   2.552
+  ],
+  [
+   7.02,
+   -4.94,
+   2.552
+  ],
+  [
+   7.02,
+   -5.3,
+   2.552
+  ],
+  [
+   7.02,
+   -5.66,
+   2.552
+  ],
+  [
+   7.02,
+   -6.02,
+   2.552
+  ],
+  [
+   7.02,
+   -6.38,
+   2.552
+  ],
+  [
+   7.02,
+   -6.74,
+   2.552
+  ],
+  [
+   7.02,
+   -7.1,
+   2.552
+  ],
+  [
+   7.02,
+   -7.46,
+   2.552
+  ],
+  [
+   7.38,
+   -4.94,
+   2.552
+  ],
+  [
+   7.38,
+   -5.3,
+   2.552
+  ],
+  [
+   7.38,
+   -5.66,
+   2.552
+  ],
+  [
+   7.38,
+   -6.02,
+   2.552
+  ],
+  [
+   7.38,
+   -6.38,
+   2.552
+  ],
+  [
+   7.38,
+   -6.74,
+   2.552
+  ],
+  [
+   7.38,
+   -7.1,
+   2.552
+  ],
+  [
+   7.38,
+   -7.46,
+   2.552
+  ],
+  [
+   7.74,
+   -4.94,
+   2.552
+  ],
+  [
+   7.74,
+   -5.3,
+   2.552
+  ],
+  [
+   7.74,
+   -5.66,
+   2.552
+  ],
+  [
+   7.74,
+   -6.02,
+   2.552
+  ],
+  [
+   7.74,
+   -6.38,
+   2.552
+  ],
+  [
+   7.74,
+   -6.74,
+   2.552
+  ],
+  [
+   7.74,
+   -7.1,
+   2.552
+  ],
+  [
+   7.74,
+   -7.46,
+   2.552
+  ],
+  [
+   8.1,
+   -4.94,
+   2.552
+  ],
+  [
+   8.1,
+   -5.3,
+   2.552
+  ],
+  [
+   8.1,
+   -5.66,
+   2.552
+  ],
+  [
+   8.1,
+   -6.02,
+   2.552
+  ],
+  [
+   8.1,
+   -6.38,
+   2.552
+  ],
+  [
+   8.1,
+   -6.74,
+   2.552
+  ],
+  [
+   8.1,
+   -7.1,
+   2.552
+  ],
+  [
+   8.1,
+   -7.46,
+   2.552
+  ],
+  [
+   8.46,
+   -4.94,
+   2.552
+  ],
+  [
+   8.46,
+   -5.3,
+   2.552
+  ],
+  [
+   8.46,
+   -5.66,
+   2.552
+  ],
+  [
+   8.46,
+   -6.02,
+   2.552
+  ],
+  [
+   8.46,
+   -6.38,
+   2.552
+  ],
+  [
+   8.46,
+   -6.74,
+   2.552
+  ],
+  [
+   8.46,
+   -7.1,
+   2.552
+  ],
+  [
+   8.46,
+   -7.46,
+   2.552
+  ]
+ ],
+ "pieces": [
+  {
+   "name": "CHESS_bB_c8",
+   "color": "black",
+   "kind": "bishop",
+   "square": "c8"
+  },
+  {
+   "name": "CHESS_bB_f8",
+   "color": "black",
+   "kind": "bishop",
+   "square": "f8"
+  },
+  {
+   "name": "CHESS_bK_e8",
+   "color": "black",
+   "kind": "king",
+   "square": "e8"
+  },
+  {
+   "name": "CHESS_bN_b8",
+   "color": "black",
+   "kind": "knight",
+   "square": "b8"
+  },
+  {
+   "name": "CHESS_bN_g8",
+   "color": "black",
+   "kind": "knight",
+   "square": "g8"
+  },
+  {
+   "name": "CHESS_bP_a7",
+   "color": "black",
+   "kind": "pawn",
+   "square": "a7"
+  },
+  {
+   "name": "CHESS_bP_b7",
+   "color": "black",
+   "kind": "pawn",
+   "square": "b7"
+  },
+  {
+   "name": "CHESS_bP_c7",
+   "color": "black",
+   "kind": "pawn",
+   "square": "c7"
+  },
+  {
+   "name": "CHESS_bP_d7",
+   "color": "black",
+   "kind": "pawn",
+   "square": "d7"
+  },
+  {
+   "name": "CHESS_bP_e7",
+   "color": "black",
+   "kind": "pawn",
+   "square": "e7"
+  },
+  {
+   "name": "CHESS_bP_f7",
+   "color": "black",
+   "kind": "pawn",
+   "square": "f7"
+  },
+  {
+   "name": "CHESS_bP_g7",
+   "color": "black",
+   "kind": "pawn",
+   "square": "g7"
+  },
+  {
+   "name": "CHESS_bP_h7",
+   "color": "black",
+   "kind": "pawn",
+   "square": "h7"
+  },
+  {
+   "name": "CHESS_bQ_d8",
+   "color": "black",
+   "kind": "queen",
+   "square": "d8"
+  },
+  {
+   "name": "CHESS_bR_a8",
+   "color": "black",
+   "kind": "rook",
+   "square": "a8"
+  },
+  {
+   "name": "CHESS_bR_h8",
+   "color": "black",
+   "kind": "rook",
+   "square": "h8"
+  },
+  {
+   "name": "CHESS_wB_c1",
+   "color": "white",
+   "kind": "bishop",
+   "square": "c1"
+  },
+  {
+   "name": "CHESS_wB_f1",
+   "color": "white",
+   "kind": "bishop",
+   "square": "f1"
+  },
+  {
+   "name": "CHESS_wK_e1",
+   "color": "white",
+   "kind": "king",
+   "square": "e1"
+  },
+  {
+   "name": "CHESS_wN_b1",
+   "color": "white",
+   "kind": "knight",
+   "square": "b1"
+  },
+  {
+   "name": "CHESS_wN_g1",
+   "color": "white",
+   "kind": "knight",
+   "square": "g1"
+  },
+  {
+   "name": "CHESS_wP_a2",
+   "color": "white",
+   "kind": "pawn",
+   "square": "a2"
+  },
+  {
+   "name": "CHESS_wP_b2",
+   "color": "white",
+   "kind": "pawn",
+   "square": "b2"
+  },
+  {
+   "name": "CHESS_wP_c2",
+   "color": "white",
+   "kind": "pawn",
+   "square": "c2"
+  },
+  {
+   "name": "CHESS_wP_d2",
+   "color": "white",
+   "kind": "pawn",
+   "square": "d2"
+  },
+  {
+   "name": "CHESS_wP_e2",
+   "color": "white",
+   "kind": "pawn",
+   "square": "e2"
+  },
+  {
+   "name": "CHESS_wP_f2",
+   "color": "white",
+   "kind": "pawn",
+   "square": "f2"
+  },
+  {
+   "name": "CHESS_wP_g2",
+   "color": "white",
+   "kind": "pawn",
+   "square": "g2"
+  },
+  {
+   "name": "CHESS_wP_h2",
+   "color": "white",
+   "kind": "pawn",
+   "square": "h2"
+  },
+  {
+   "name": "CHESS_wQ_d1",
+   "color": "white",
+   "kind": "queen",
+   "square": "d1"
+  },
+  {
+   "name": "CHESS_wR_a1",
+   "color": "white",
+   "kind": "rook",
+   "square": "a1"
+  },
+  {
+   "name": "CHESS_wR_h1",
+   "color": "white",
+   "kind": "rook",
+   "square": "h1"
+  }
+ ],
+ "table": {
+  "center": [
+   7.199999809265137,
+   -6.199999809265137
+  ],
+  "half": 2.2,
+  "top": 2.48
+ },
+ "seats": [
+  {
+   "color": "white",
+   "position": [
+    4.099999809265137,
+    -6.199999809265137
+   ],
+   "yaw": 90.0
+  },
+  {
+   "color": "black",
+   "position": [
+    10.299999809265136,
+    -6.199999809265137
+   ],
+   "yaw": 270.0
+  }
+ ],
+ "graveyards": {
+  "white": {
+   "start": [
+    5.699999809265137,
+    -4.299999809265136,
+    2.48
+   ],
+   "step": [
+    0.2,
+    0.0
+   ]
+  },
+  "black": {
+   "start": [
+    5.699999809265137,
+    -8.099999809265135,
+    2.48
+   ],
+   "step": [
+    0.2,
+    0.0
+   ]
+  }
+ }
+}

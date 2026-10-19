@@ -25,10 +25,14 @@ import simd
     }
 
     @Published private(set) var state = LoadState.idle
+    /// De dónde se cargan los modelos de los avatares que se eligen después de abrir la oficina.
+    private var resources = Resources.bundled
     let world = Entity()
     private(set) var layout: OfficeLayout?
     private(set) var actors: [OfficeActor] = []
     private(set) var room: Entity?
+    /// La mesa de ajedrez (si el archivo de la sala la trae).
+    private(set) var chess: OfficeChessSet?
     /// La luz ambiental de la sala: un entorno sintético cálido, no el cielo (el HDRI solo es fondo).
     private var ambient: EnvironmentResource?
     private var pointLights: [Entity] = []
@@ -51,6 +55,7 @@ import simd
     func load(_ resources: Resources = .bundled) async {
         guard state == .idle else { return }
         state = .loading
+        self.resources = resources
         do {
             guard let layoutURL = resources.url("OfficeLayout", "json") else { throw OfficeError.missing("OfficeLayout.json") }
             let layout = try OfficeLayout.load(from: layoutURL)
@@ -64,12 +69,19 @@ import simd
             Self.fixBackWallCorner(in: room)
             enlargeTV(in: room)
             await prepareWalls(in: room)
+            // La mesa de ajedrez: se monta antes del espejo (para que también esté en el reflejo) y antes de que los puestos
+            // aparten sus sillas (la de la mesa se copia de la del primer puesto tal como llega).
+            if let chessURL = resources.url("OfficeChess", "json"), let chessLayout = try? OfficeChessLayout.load(from: chessURL), let first = layout.slots.first {
+                chess = OfficeChessSet(layout: chessLayout, room: room, template: first)
+                chess?.reset()
+            }
             var made: [OfficeActor] = []
             for (index, slot) in layout.slots.enumerated() {
                 guard let url = resources.url(slot.file, "usdz") else { throw OfficeError.missing("\(slot.file).usdz") }
                 let model = try await Entity(contentsOf: url)
                 let actor = OfficeActor(index: index, slot: slot, layout: layout, model: model)
                 actor.attachChair(in: room)
+                actor.chess = chess
                 world.addChild(actor.holder)
                 made.append(actor)
             }
@@ -78,11 +90,29 @@ import simd
             addGroundingShadows(room)
             for actor in made { addGroundingShadows(actor.holder) }
             if let mirror = layout.mirror { addMirror(mirror, room: room) }
+            if let mirroredRoom { chess?.attachMirror(mirroredRoom) }
             collectScreens(layout: layout, room: room)
             collectTV(room: room)
             state = .ready
         } catch {
             state = .failed(error.localizedDescription)
+        }
+    }
+
+    /// Pone a un puesto el modelo de otro avatar (el archivo `<avatar>.usdz`); el personaje no se mueve ni deja lo que hacía.
+    func setAvatar(_ avatar: String, forSlot index: Int) async {
+        guard actors.indices.contains(index), let url = resources.url(avatar, "usdz"),
+              let model = try? await Entity(contentsOf: url) else { return }
+        let actor = actors[index]
+        actor.replaceModel(with: model)
+        if let reflection = actor.mirrorHolder { Self.flipCulling(reflection) }
+        // Las sombras de contacto y de calidad: igual que el modelo al que sustituye.
+        if appliedQuality?.shadows != false {
+            addGroundingShadows(model)
+            if !groundedEntities.isEmpty {
+                func collect(_ entity: Entity) -> [Entity] { (entity.components.has(GroundingShadowComponent.self) ? [entity] : []) + entity.children.flatMap(collect) }
+                groundedEntities += collect(model)
+            }
         }
     }
 
@@ -126,7 +156,7 @@ import simd
         portalWorld.components.set(WorldComponent())
         if let ambient {
             let light = Entity()
-            light.components.set(ImageBasedLightComponent(source: .single(ambient), intensityExponent: 0.3))
+            light.components.set(ImageBasedLightComponent(source: .single(ambient), intensityExponent: 0.8))
             portalWorld.addChild(light)
             reflected.components.set(ImageBasedLightReceiverComponent(imageBasedLight: light))
         }
@@ -363,6 +393,7 @@ import simd
 
     func update(deltaTime: Double) {
         for actor in actors { actor.update(deltaTime: min(deltaTime, 0.1)) }
+        chess?.update(deltaTime: min(deltaTime, 0.1))
     }
 
     // MARK: - Gráficos
@@ -420,7 +451,7 @@ import simd
             } else if let ambient = entity.components[ImageBasedLightComponent.self] {
                 // La ambiental de la sala sube en la iluminación simple; la del reflejo, que parte más alta, también.
                 let inMirror = entity.parent?.parent === world
-                let exponent: Float = simple ? (inMirror ? 2.2 : 1.8) : (inMirror ? 0.3 : 0.0)
+                let exponent: Float = simple ? (inMirror ? 2.2 : 1.8) : (inMirror ? 0.8 : 0.5)
                 entity.components.set(ImageBasedLightComponent(source: ambient.source, intensityExponent: exponent))
             }
         }
@@ -452,13 +483,13 @@ import simd
         func tint(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat, keep: CGFloat = 0.4) -> NSColor {
             NSColor(red: r * keep + (1 - keep), green: g * keep + (1 - keep), blue: b * keep + (1 - keep), alpha: 1)
         }
-        // Focos altos y abiertos, para que la luz caiga pareja sin manchas quemadas; un aire gamer cálido y sutil: morado
-        // suave en el escritorio de REMY y en el centro, rojo en el de CH31 y rosa violáceo delante.
+        // Focos altos y abiertos, para que la luz caiga pareja sin manchas quemadas; un aire cyberpunk: morado en el
+        // escritorio de REMY y en el centro, rojo magenta en el de CH31 y rosa delante; los rellenos, violeta azulado.
         let spots: [(SIMD3<Double>, SIMD3<Double>, NSColor, Float)] = [
-            (SIMD3(-2.0, -3.5, 12.0), SIMD3(-1.5, 0.5, 0), tint(0.8, 0.6, 1.0, keep: 0.4), 580_000),
-            (SIMD3(8.5, -2.0, 12.0), SIMD3(8.5, 0.0, 0), tint(1.0, 0.28, 0.32, keep: 0.5), 600_000),
-            (SIMD3(2.0, -11.0, 12.0), SIMD3(1.0, -10.0, 0), tint(1.0, 0.62, 0.72, keep: 0.3), 640_000),
-            (SIMD3(3.2, -5.0, 12.5), SIMD3(3.2, -5.5, 0), tint(0.82, 0.66, 1.0, keep: 0.3), 220_000),
+            (SIMD3(-2.0, -3.5, 12.0), SIMD3(-1.5, 0.5, 0), tint(0.72, 0.5, 1.0, keep: 0.5), 720_000),
+            (SIMD3(8.5, -2.0, 12.0), SIMD3(8.5, 0.0, 0), tint(1.0, 0.24, 0.36, keep: 0.55), 720_000),
+            (SIMD3(2.0, -11.0, 12.0), SIMD3(1.0, -10.0, 0), tint(1.0, 0.5, 0.78, keep: 0.4), 780_000),
+            (SIMD3(3.2, -5.0, 12.5), SIMD3(3.2, -5.5, 0), tint(0.76, 0.6, 1.0, keep: 0.4), 320_000),
         ]
         for (position, target, color, intensity) in spots {
             let entity = Entity()
@@ -473,9 +504,9 @@ import simd
         }
         // Relleno suave en las esquinas y el fondo, donde los focos no llegan.
         let fills: [(SIMD3<Double>, NSColor, Float)] = [
-            (SIMD3(3.2, 3.0, 9.0), tint(1.0, 0.78, 0.78, keep: 0.25), 170_000),
-            (SIMD3(-3.5, -12.0, 7.0), tint(1.0, 0.66, 0.7, keep: 0.3), 320_000),
-            (SIMD3(10.5, -12.0, 7.0), tint(1.0, 0.32, 0.36, keep: 0.45), 320_000),
+            (SIMD3(3.2, 3.0, 9.0), tint(0.55, 0.55, 1.0, keep: 0.4), 340_000),
+            (SIMD3(-3.5, -12.0, 7.0), tint(0.5, 0.58, 1.0, keep: 0.4), 500_000),
+            (SIMD3(10.5, -12.0, 7.0), tint(1.0, 0.3, 0.55, keep: 0.5), 460_000),
         ]
         for (position, color, intensity) in fills {
             let entity = Entity()
@@ -490,7 +521,7 @@ import simd
         let bounces: [SIMD3<Double>] = [SIMD3(0.5, -3.5, 2.5), SIMD3(6.5, -6.0, 2.5)]
         for position in bounces {
             let entity = Entity()
-            entity.components.set(PointLightComponent(color: tint(1.0, 0.64, 0.45, keep: 0.4), intensity: 170_000, attenuationRadius: 30))
+            entity.components.set(PointLightComponent(color: tint(1.0, 0.64, 0.45, keep: 0.4), intensity: 260_000, attenuationRadius: 30))
             entity.position = OfficePose.world(x: position.x, y: position.y, z: position.z)
             world.addChild(entity)
             pointLights.append(entity)
@@ -558,7 +589,7 @@ import simd
         if let gradient = Self.ambientImage(), let environment = try? await EnvironmentResource(equirectangular: gradient) {
             ambient = environment
             let source = Entity()
-            source.components.set(ImageBasedLightComponent(source: .single(environment), intensityExponent: 0.0))
+            source.components.set(ImageBasedLightComponent(source: .single(environment), intensityExponent: 0.5))
             world.addChild(source)
             world.components.set(ImageBasedLightReceiverComponent(imageBasedLight: source))
         }
@@ -581,9 +612,9 @@ import simd
     private static func ambientImage() -> CGImage? {
         let width = 64, height = 32
         var pixels = [UInt8](repeating: 255, count: width * height * 4)
-        let top: SIMD3<Float> = [0.30, 0.27, 0.28]
-        let horizon: SIMD3<Float> = [0.34, 0.27, 0.26]
-        let bottom: SIMD3<Float> = [0.42, 0.26, 0.17]
+        let top: SIMD3<Float> = [0.42, 0.37, 0.52]
+        let horizon: SIMD3<Float> = [0.48, 0.38, 0.47]
+        let bottom: SIMD3<Float> = [0.56, 0.37, 0.26]
         for y in 0..<height {
             let t = Float(y) / Float(height - 1)
             let color = t < 0.5 ? top + (horizon - top) * (t / 0.5) : horizon + (bottom - horizon) * ((t - 0.5) / 0.5)
