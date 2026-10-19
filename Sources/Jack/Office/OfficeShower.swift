@@ -61,6 +61,9 @@ import simd
         water.components.set(emitter)
     }
 
+    /// La puerta se está abriendo o cerrando.
+    var isBusy: Bool { angle != target }
+
     func update(deltaTime: Double) {
         if angle != target {
             let next = angle + (target - angle) * Float(1 - exp(-deltaTime * 4.5))
@@ -199,66 +202,35 @@ import simd
     }
 }
 
-/// Los recorridos para ducharse, con los tramos de Blender (levantarse, sentarse en el sofá) y caminos calculados entre medias.
+/// Los recorridos para ducharse: salir del sofá, esperar a que se abra la puerta, entrar; y al revés.
 enum OfficeShowerRoute {
     /// Cuánto se espera delante de la ducha a que la puerta se abra (y dentro, al salir).
     private static let doorWait = 0.9
 
-    /// Del sofá a la ducha: levantarse, caminar hasta delante de la ducha, esperar a que se abra y entrar. `openAt` es el fotograma
-    /// en que llega delante (ahí se abre la puerta).
+    /// Del sofá a la ducha. `openAt` es el fotograma en que llega delante (ahí se abre la puerta).
     static func toShower(actor: OfficeLayout.Slot, template: OfficeLayout.Slot, shower: OfficeShower, fps: Double,
                          obstacles: [OfficeChessRoute.Obstacle], bounds: OfficeChessRoute.Rect?) -> (path: OfficeRoutePath, openAt: Int)? {
-        let own = actor.toDesk
-        guard let stand = own.clips.first(where: { $0.clip == "stand_up" }), stand.to > stand.from, own.root.count >= stand.to else { return nil }
-        var poses = Array(own.poses[stand.from..<stand.to])
-        var clips = [OfficeLayout.Segment.ClipRange(clip: "stand_up", from: 0, to: poses.count)]
-        let speed = OfficeChessRoute.walkSpeed(of: template)
-        // La silla del escritorio se queda como está (apartada) durante todo el paseo.
-        let chair = poses[poses.count - 1].chairOffset
-        var outside = shower.outside, inside = shower.inside
-        outside.chairOffset = chair
-        inside.chairOffset = chair
-
-        var steps = OfficeChessRoute.walkAround(from: poses[poses.count - 1], to: outside, obstacles: obstacles, bounds: bounds, speed: speed)
-        poses += steps
-        clips.append(.init(clip: "walk", from: poses.count - steps.count, to: poses.count))
-        let openAt = poses.count
-        poses += Array(repeating: outside, count: Int(doorWait * fps))
-        clips.append(.init(clip: "stand_idle", from: openAt, to: poses.count))
-        steps = OfficeChessRoute.walkAround(from: outside, to: inside, obstacles: [], bounds: nil, speed: speed, lead: false)
-        poses += steps
-        clips.append(.init(clip: "walk", from: poses.count - steps.count, to: poses.count))
-        return (OfficeRoutePath(poses: poses, clips: clips), openAt)
+        guard let leave = OfficeOutingRoute.leave(actor: actor, template: template, to: shower.outside, obstacles: obstacles, bounds: bounds),
+              let outside = leave.poses.last else { return nil }
+        var inside = shower.inside
+        inside.chairOffset = outside.chairOffset
+        let path = OfficeOutingRoute.join(OfficeOutingRoute.join(leave, OfficeOutingRoute.hold(outside, seconds: doorWait, fps: fps)),
+                                          OfficeOutingRoute.step(from: outside, to: inside, template: template))
+        return (path, leave.poses.count)
     }
 
-    /// De la ducha al sofá: esperar a que se abra la puerta, salir, y volver y sentarse como al dejar el escritorio. `closeAt` es el
-    /// fotograma en que ya está fuera (ahí se cierra la puerta).
+    /// De la ducha al sofá. `closeAt` es el fotograma en que ya está fuera (ahí se cierra la puerta).
     static func toSofa(actor: OfficeLayout.Slot, template: OfficeLayout.Slot, shower: OfficeShower, fps: Double,
                        obstacles: [OfficeChessRoute.Obstacle], bounds: OfficeChessRoute.Rect?) -> (path: OfficeRoutePath, closeAt: Int)? {
-        let own = actor.toSofa
-        guard let arrive = own.clips.first(where: { $0.clip == "stand_idle" }), own.root.count > arrive.from else { return nil }
-        let ownPoses = own.poses
-        let speed = OfficeChessRoute.walkSpeed(of: template)
-        let chair = ownPoses[arrive.from].chairOffset
-        var inside = shower.inside, outside = shower.outside
-        inside.chairOffset = chair
-        outside.chairOffset = chair
+        var outside = shower.outside
         outside.yaw = 0  // al salir, de espaldas a la ducha
-
-        let hold = Int(doorWait * fps)
-        var poses = Array(repeating: inside, count: hold)
-        var clips = [OfficeLayout.Segment.ClipRange(clip: "stand_idle", from: 0, to: hold)]
-        var steps = OfficeChessRoute.walkAround(from: inside, to: outside, obstacles: [], bounds: nil, speed: speed, lead: false)
-        poses += steps
-        let closeAt = poses.count
-        steps = OfficeChessRoute.walkAround(from: outside, to: ownPoses[arrive.from], obstacles: obstacles, bounds: bounds, speed: speed, lead: false)
-        poses += steps
-        clips.append(.init(clip: "walk", from: hold, to: poses.count))
-        let base = poses.count
-        poses += Array(ownPoses[arrive.from...])
-        for range in own.clips where range.to > arrive.from {
-            clips.append(.init(clip: range.clip, from: base + max(range.from - arrive.from, 0), to: base + range.to - arrive.from))
-        }
-        return (OfficeRoutePath(poses: poses, clips: clips), closeAt)
+        guard let back = OfficeOutingRoute.back(actor: actor, template: template, from: outside, obstacles: obstacles, bounds: bounds),
+              let first = back.poses.first else { return nil }
+        var inside = shower.inside
+        inside.chairOffset = first.chairOffset
+        outside.chairOffset = first.chairOffset
+        let out = OfficeOutingRoute.join(OfficeOutingRoute.hold(inside, seconds: doorWait, fps: fps),
+                                         OfficeOutingRoute.step(from: inside, to: outside, template: template))
+        return (OfficeOutingRoute.join(out, back), out.poses.count)
     }
 }

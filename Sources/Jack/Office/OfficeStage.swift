@@ -37,10 +37,15 @@ import simd
     private(set) var shower: OfficeShower?
     /// La cafetera de la mesita, con su vapor animado (viene aparte de la sala, en `OfficeCoffee.usdz`).
     private var coffee: Entity?
+    /// La mesita del café (dónde se toma y la taza) y quién se está tomando uno.
+    private(set) var coffeeBar: OfficeCoffeeBar?
+    @Published private(set) var drinking: Int?
     @Published private(set) var showering: Int?
     /// La luz ambiental de la sala: un entorno sintético cálido, no el cielo (el HDRI solo es fondo).
     private var ambient: EnvironmentResource?
     private var pointLights: [Entity] = []
+    /// Si los PC de los escritorios tienen su animación en marcha.
+    private var pcAnimating = false
     private var mirroredRoom: Entity?
     /// Los cristales de los monitores por puesto: el de la sala y el de su reflejo.
     private var screens: [String: [(entity: Entity, reflected: Bool)]] = [:]
@@ -74,6 +79,9 @@ import simd
             Self.solidWalls(in: room)
             Self.fixBackWallCorner(in: room)
             enlargeTV(in: room)
+            enlargePCs(in: room)
+            Self.playLoop(room)
+            pcAnimating = true
             await prepareWalls(in: room)
             // La mesa de ajedrez: se monta antes del espejo (para que también esté en el reflejo) y antes de que los puestos
             // aparten sus sillas (la de la mesa se copia de la del primer puesto tal como llega).
@@ -172,6 +180,8 @@ import simd
         world.addChild(model)
         Self.playLoop(model)
         coffee = model
+        coffeeBar = OfficeCoffeeBar(coffee: model, room: room, world: world)
+        for actor in actors { actor.coffee = coffeeBar }
     }
 
     /// Su gemela en la sala del espejo, con el mismo vapor.
@@ -180,6 +190,7 @@ import simd
         Self.flipCulling(copy)
         reflected.addChild(copy)
         Self.playLoop(copy)
+        coffeeBar?.attachMirror(copy, in: reflected)
     }
 
     private static func playLoop(_ entity: Entity) {
@@ -199,6 +210,15 @@ import simd
             entity.components.set(model)
         }
         for child in entity.children { softenSteam(child, inSteam: steam) }
+    }
+
+    /// Manda al personaje de un puesto a tomarse un café (si la mesita está libre). Vuelve solo a su sofá al terminar.
+    func startCoffee(slot index: Int) {
+        guard coffeeBar != nil, drinking == nil, actors.indices.contains(index) else { return }
+        drinking = index
+        actors[index].onCoffeeDone = { [weak self] in
+            if self?.drinking == index { self?.drinking = nil }
+        }
     }
 
     func command(_ command: OfficeCommand, forSlot index: Int) {
@@ -221,6 +241,7 @@ import simd
         Self.flipCulling(copy)
         reflected.addChild(copy)
         mirroredRoom = copy
+        if pcAnimating { Self.playLoop(copy) }
         // Las luces también se reflejan: sin ellas el reflejo queda a oscuras.
         for light in pointLights {
             let copy = light.clone(recursive: false)
@@ -333,6 +354,20 @@ import simd
         let after = tv.visualBounds(relativeTo: tv.parent)
         tv.position += before.center - after.center
     }
+
+    /// Los PC de los escritorios, un poco más grandes, sin separarse de la mesa: crecen desde el centro de su base.
+    private func enlargePCs(in room: Entity) {
+        for name in ["PROP_pc_gamer_animation", "PROP_pc_gamer_animation_03"] {
+            guard let pc = room.findEntity(named: name) else { continue }
+            let before = pc.visualBounds(relativeTo: pc.parent)
+            pc.scale *= Self.pcScale
+            let after = pc.visualBounds(relativeTo: pc.parent)
+            pc.position += SIMD3(before.center.x - after.center.x, before.min.y - after.min.y, before.center.z - after.center.z)
+        }
+    }
+
+    /// Cuánto crecen los PC respecto al modelo.
+    private static let pcScale: Float = 1.15
 
     private func collectTV(room: Entity) {
         func models(under entity: Entity) -> [Entity] {
@@ -481,6 +516,12 @@ import simd
         }
     }
 
+    /// Si algo de la sala se mueve (alguien camina, se ducha o toma café, juega al ajedrez o se abre la puerta de la ducha);
+    /// con todos sentados y nada en marcha, la escena puede dibujarse a menos fotogramas por segundo.
+    var isBusy: Bool {
+        actors.contains { $0.isActive } || chess?.isBusy == true || shower?.isBusy == true
+    }
+
     func update(deltaTime: Double) {
         for actor in actors { actor.update(deltaTime: min(deltaTime, 0.1)) }
         chess?.update(deltaTime: min(deltaTime, 0.1))
@@ -552,8 +593,9 @@ import simd
             if quality.neon { logos.components.set(BloomComponent(scope: .hierarchical)) } else { logos.components.remove(BloomComponent.self) }
         }
         // El espejo: sin él no se dibuja la sala reflejada y el cristal pasa a ser un panel oscuro.
-        world.children.first { $0.name == "mirror-world" }?.isEnabled = quality.mirror
-        world.findEntity(named: "mirror-portal")?.isEnabled = quality.mirror
+        mirrorOn = quality.mirror
+        refreshMirror()
+        applyMirrorDetail(light: quality.mirror && quality.mirrorLight)
         if let glass = world.findEntity(named: "mirror-glass") as? ModelEntity, var model = glass.model {
             model.materials = model.materials.map { material in
                 guard var pbr = material as? PhysicallyBasedMaterial else { return material }
@@ -563,6 +605,70 @@ import simd
             glass.model = model
         }
         for actor in actors { actor.freezeIdle = !quality.idleAnimation }
+        setPCAnimation(quality.idleAnimation)
+    }
+
+    /// Los PC de la sala (y los de su reflejo) se animan igual que los personajes en reposo: con la calidad baja se quedan quietos.
+    private func setPCAnimation(_ on: Bool) {
+        guard on != pcAnimating, let room else { return }
+        pcAnimating = on
+        for entity in [room, mirroredRoom].compactMap({ $0 }) {
+            if on { Self.playLoop(entity) } else { entity.stopAllAnimations() }
+        }
+    }
+
+    // MARK: - Espejo
+
+    /// El espejo está encendido en los gráficos, y la cámara lo tiene (o puede tenerlo) a la vista.
+    private var mirrorOn = true
+    private var mirrorInView = true
+    /// Los muebles pequeños de la sala reflejada, que el reflejo ligero no dibuja (se buscan la primera vez que hacen falta).
+    private var mirrorSmallProps: [Entity]?
+    /// Lo que mide, como mucho, un objeto que el reflejo ligero se salta (en unidades de la escena; un personaje mide unas 6).
+    private static let mirrorSmallSize: Float = 1.0
+
+    /// Las cuatro esquinas del cristal del espejo y hacia dónde mira, para saber si la cámara lo ve.
+    var mirrorGlass: (corners: [SIMD3<Float>], normal: SIMD3<Float>)? {
+        guard let mirror = layout?.mirror else { return nil }
+        let center = OfficePose.world(x: mirror.center[0], y: mirror.center[1], z: mirror.center[2])
+        let half = SIMD3<Float>(0, Float(mirror.height) / 2, Float(mirror.width) / 2)
+        return ([SIMD3(1, 1, 1), SIMD3(1, 1, -1), SIMD3(1, -1, 1), SIMD3(1, -1, -1)].map { center + $0 * half }, SIMD3(1, 0, 0))
+    }
+
+    /// Con la cámara de espaldas al espejo o mirando a otro lado, no se dibuja la sala reflejada (no se ve).
+    func setMirrorInView(_ visible: Bool) {
+        guard visible != mirrorInView else { return }
+        mirrorInView = visible
+        refreshMirror()
+    }
+
+    private func refreshMirror() {
+        let enabled = mirrorOn && mirrorInView
+        world.children.first { $0.name == "mirror-world" }?.isEnabled = enabled
+        world.findEntity(named: "mirror-portal")?.isEnabled = enabled
+    }
+
+    /// El reflejo ligero: sin sombras de contacto ni de los focos, sin los halos y el rebote del suelo (solo los rellenos) y sin
+    /// los muebles pequeños, que en un espejo apenas se aprecian. Con `light: false` el reflejo queda completo.
+    private func applyMirrorDetail(light: Bool) {
+        guard let reflected = mirroredRoom?.parent else { return }
+        func all(_ entity: Entity) -> [Entity] { [entity] + entity.children.flatMap(all) }
+        let entities = all(reflected)
+        if light {
+            for entity in entities {
+                if entity.components.has(GroundingShadowComponent.self) { entity.components.remove(GroundingShadowComponent.self) }
+                if entity.components.has(SpotLightComponent.Shadow.self) { entity.components.remove(SpotLightComponent.Shadow.self) }
+                if let point = entity.components[PointLightComponent.self], point.attenuationRadius < 40 { entity.isEnabled = false }
+            }
+        }
+        if mirrorSmallProps == nil, light, let room = mirroredRoom {
+            mirrorSmallProps = all(room).filter { entity in
+                guard entity.components.has(ModelComponent.self) else { return false }
+                let bounds = entity.visualBounds(relativeTo: nil)
+                return !bounds.isEmpty && max(bounds.extents.x, bounds.extents.y, bounds.extents.z) < Self.mirrorSmallSize
+            }
+        }
+        for entity in mirrorSmallProps ?? [] { entity.isEnabled = !light }
     }
 
     // MARK: - Luces

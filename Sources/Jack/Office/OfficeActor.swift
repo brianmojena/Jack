@@ -15,6 +15,8 @@ enum OfficeCommand: Equatable {
     case chess(OfficeChessSeat)
     /// A ducharse, como en Los Sims; al terminar vuelve a su sofá (`OfficeActor.onShowerDone`).
     case shower
+    /// A tomarse un café a la mesita; al terminar vuelve a su sofá (`OfficeActor.onCoffeeDone`).
+    case coffee
 }
 
 /// Qué hace un jugador sentado a la mesa de ajedrez.
@@ -35,7 +37,7 @@ enum OfficeChessMood: Equatable {
 /// Un personaje de la oficina: un esqueleto de Mixamo con todos sus clips en una sola línea de tiempo,
 /// que se recorta por clip, y los recorridos calculados en Blender para ir del sofá al escritorio y volver.
 @MainActor final class OfficeActor {
-    private enum Phase { case sofa, toDesk, desk, toSofa, toChess, chess, fromChess, toShower, showering, fromShower }
+    private enum Phase { case sofa, toDesk, desk, toSofa, toChess, chess, fromChess, toShower, showering, fromShower, toCoffee, drinking, fromCoffee }
 
     let index: Int
     let slot: OfficeLayout.Slot
@@ -85,6 +87,14 @@ enum OfficeChessMood: Equatable {
     private var moodTime = 0.0
     /// Ya está sentado a la mesa y listo para jugar.
     var isSeatedAtChess: Bool { phase == .chess }
+    /// Está caminando o haciendo algo más que teclear en su escritorio o estar sentado (ducha, café, jugada de ajedrez).
+    var isActive: Bool {
+        switch phase {
+        case .sofa, .desk: opacity != (concealed ? 0 : 1)  // solo si se está desvaneciendo
+        case .chess: chessMood != .waiting && chessMood != .thinking
+        default: true
+        }
+    }
     /// Ha vuelto a su sofá (o nunca salió de él).
     var isOnSofa: Bool { phase == .sofa }
 
@@ -95,6 +105,15 @@ enum OfficeChessMood: Equatable {
     private var showerRoute: (toShower: OfficeRoutePath, openAt: Int, toSofa: OfficeRoutePath, closeAt: Int)?
     private var showerTime = 0.0
     private var mosaic: (real: Entity, reflected: Entity?)?
+
+    /// La mesita del café, si la sala la tiene.
+    var coffee: OfficeCoffeeBar?
+    /// Se llama al volver del café al sofá (o si no se pudo ir).
+    var onCoffeeDone: (() -> Void)?
+    private var coffeeRoute: (toBar: OfficeRoutePath, toSofa: OfficeRoutePath)?
+    private var drinkTime = 0.0
+    /// La articulación de la mano izquierda: el modelo con esqueleto y los índices de la cadena desde la raíz.
+    private var leftHandJoint: (model: ModelEntity, chain: [Int])?
 
     /// Con `true` el personaje y su silla se desvanecen, para que no tapen su pantalla cuando la cámara se pone delante.
     var concealed = false
@@ -150,6 +169,7 @@ enum OfficeChessMood: Equatable {
         timeline = newModel.availableAnimations.max { $0.definition.duration < $1.definition.duration }
         // Los clips y reproductores eran del modelo anterior: se vuelven a crear con el siguiente fotograma.
         resources = [:]
+        leftHandJoint = nil
         controller = nil
         mirrorController = nil
         playing = nil
@@ -207,6 +227,9 @@ enum OfficeChessMood: Equatable {
             if case .shower = command {
                 if startShower() { begin(.toShower) } else { onShowerDone?() }
             }
+            if case .coffee = command {
+                if startCoffee() { begin(.toCoffee) } else { onCoffeeDone?() }
+            }
         case .toDesk:
             if advance(clips: deskRoutes?.toDesk.clips ?? slot.toDesk.clips, poses: deskRoutes?.toDesk.poses ?? toDesk, deltaTime: deltaTime) { phase = .desk }
         case .desk:
@@ -254,7 +277,7 @@ enum OfficeChessMood: Equatable {
             }
         case .showering:
             guard let shower else { finishShower(); break }
-            apply(shower.inside)
+            apply(away(shower.inside))
             play("stand_idle")
             showerTime += deltaTime
             if showerTime > OfficeShower.duration {
@@ -269,6 +292,27 @@ enum OfficeChessMood: Equatable {
             let arrived = advance(clips: route.toSofa.clips, poses: route.toSofa.poses, deltaTime: deltaTime)
             if before < Double(route.closeAt), frame >= Double(route.closeAt) { shower.closeDoor() }
             if arrived { finishShower() }
+        case .toCoffee:
+            guard let route = coffeeRoute, let coffee else { finishCoffee(); break }
+            if advance(clips: route.toBar.clips, poses: route.toBar.poses, deltaTime: deltaTime) {
+                // Delante de la mesita: coge la taza y se la bebe.
+                coffee.takeCup()
+                drinkTime = 0
+                phase = .drinking
+            }
+        case .drinking:
+            guard let coffee else { finishCoffee(); break }
+            apply(away(coffee.spot))
+            play("drink")
+            coffee.follow(hand: leftHand())
+            drinkTime += deltaTime
+            if drinkTime > (layout.clips["drink"]?.duration ?? 8.9) {
+                coffee.returnCup()
+                begin(.fromCoffee)
+            }
+        case .fromCoffee:
+            guard let route = coffeeRoute else { finishCoffee(); break }
+            if advance(clips: route.toSofa.clips, poses: route.toSofa.poses, deltaTime: deltaTime) { finishCoffee() }
         }
     }
 
@@ -374,6 +418,62 @@ enum OfficeChessMood: Equatable {
         showerRoute = nil
         phase = .sofa
         onShowerDone?()
+    }
+
+    /// Una pose lejos del escritorio, con su silla apartada como está mientras el personaje anda por la sala.
+    private func away(_ pose: OfficePose) -> OfficePose {
+        var pose = pose
+        pose.chairOffset = pulledChair
+        return pose
+    }
+
+    /// Prepara los recorridos a la mesita del café y de vuelta; `false` si no hay mesita, está ocupada o no se pueden calcular.
+    private func startCoffee() -> Bool {
+        guard let coffee, coffee.occupant == nil || coffee.occupant == index, layout.clips["drink"] != nil, let template = layout.slots.first,
+              let there = OfficeCoffeeRoute.toBar(actor: slot, template: template, bar: coffee, obstacles: walkObstacles, bounds: walkBounds),
+              let back = OfficeCoffeeRoute.toSofa(actor: slot, template: template, bar: coffee, obstacles: walkObstacles, bounds: walkBounds) else { return false }
+        coffee.occupant = index
+        coffeeRoute = (there, back)
+        return true
+    }
+
+    private func finishCoffee() {
+        if let coffee, coffee.occupant == index {
+            coffee.returnCup()
+            coffee.occupant = nil
+        }
+        coffeeRoute = nil
+        phase = .sofa
+        onCoffeeDone?()
+    }
+
+    /// Dónde está ahora la mano izquierda (la articulación de la muñeca), en la escena.
+    func leftHand() -> simd_float4x4? {
+        if leftHandJoint == nil { leftHandJoint = Self.joint(endingWith: "LeftHand", in: model) }
+        guard let (skinned, chain) = leftHandJoint else { return nil }
+        let transforms = skinned.jointTransforms
+        var matrix = matrix_identity_float4x4
+        for index in chain where transforms.indices.contains(index) { matrix *= transforms[index].matrix }
+        return skinned.transformMatrix(relativeTo: nil) * matrix
+    }
+
+    /// La articulación cuyo nombre acaba en `suffix` y la cadena de articulaciones desde la raíz hasta ella (los nombres son
+    /// rutas, «Hips/Spine/…»; cada transformación es relativa a la de su padre).
+    private static func joint(endingWith suffix: String, in entity: Entity) -> (model: ModelEntity, chain: [Int])? {
+        if let model = entity as? ModelEntity, let target = model.jointNames.first(where: { $0.hasSuffix(suffix) }) {
+            let names = model.jointNames
+            var chain: [Int] = []
+            var prefix = ""
+            for part in target.split(separator: "/") {
+                prefix = prefix.isEmpty ? String(part) : prefix + "/" + part
+                if let index = names.firstIndex(of: prefix) { chain.append(index) }
+            }
+            return (model, chain)
+        }
+        for child in entity.children {
+            if let found = joint(endingWith: suffix, in: child) { return found }
+        }
+        return nil
     }
 
     /// El mosaico de Los Sims, colgado del personaje y de su reflejo.

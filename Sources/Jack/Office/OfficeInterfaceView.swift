@@ -47,6 +47,8 @@ struct OfficeInterfaceView<Content: View>: View {
     /// La partida de ajedrez en curso (si la hay) y el puesto cuyo personaje está preparando una.
     @StateObject private var chess = OfficeChessGame()
     @State private var settingUpChess: Int?
+    /// La tarjeta de la partida es para jugar contra el personaje (el usuario se sienta a la mesa), no entre dos personajes.
+    @State private var versusSetup = false
     /// Dos personajes del sofá charlando de un tema al azar.
     @StateObject private var talk = OfficeSofaTalk()
     @State private var camera = OfficeCamera(target: OfficePose.world(x: 3.2, y: -4.5, z: 2.4))
@@ -79,11 +81,14 @@ struct OfficeInterfaceView<Content: View>: View {
     private func name(of slot: OfficeLayout.Slot) -> String { persona(of: slot)?.name ?? slot.name }
 
     var body: some View {
-        OfficeSceneView(stage: stage, camera: camera, quality: graphics.quality, measuresFPS: graphics.showFPS, onFPS: { graphics.fps = $0 }, onPick: { tag, _ in if viewing == nil { pick(tag.index) } }, onPickNothing: { actions = nil; choosingAvatar = nil; settingUpChess = nil })
+        OfficeSceneView(stage: stage, camera: camera, quality: graphics.quality, measuresFPS: graphics.showFPS, onFPS: { graphics.fps = $0 }, onPick: { tag, _ in if viewing == nil, !chess.humanSeated { pick(tag.index) } }, onPickNothing: { actions = nil; choosingAvatar = nil; settingUpChess = nil })
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(JackPalette.chrome)
             .onGeometryChange(for: CGSize.self) { $0.size } action: { sceneSize = $0 }
+            .overlay { chessBoard }
             .overlay { anchoredOverlay }
+            .overlay(alignment: .bottomTrailing) { chessPanel }
+            .overlay(alignment: .top) { chessReturn }
             .overlay(alignment: .bottom) { dockOverlay }
             .overlay { screenContent }
             .overlay(alignment: .top) { screenOverlay }
@@ -105,6 +110,7 @@ struct OfficeInterfaceView<Content: View>: View {
                 if slots.indices.contains(where: { working.contains(slots[$0].id) && talk.involves($0) }) { talk.stop() }
             }
             .onChange(of: store.lightModeEnabled) { _, light in if light { chess.stop(stage: stage); talk.stop() } }
+            .onChange(of: chess.humanSeated) { _, seated in moveCameraToChessSeat(seated) }
             .onChange(of: talk.pair) { _, pair in updateTalkAnimations(pair) }
             .task(id: stage.state) { await refreshScreens() }
             .task(id: stage.state) { await runTV() }
@@ -241,6 +247,7 @@ struct OfficeInterfaceView<Content: View>: View {
             && !chess.involves(slots.firstIndex { $0.id == slot.id } ?? -1)
             && !talk.involves(slots.firstIndex { $0.id == slot.id } ?? -1)
             && stage.showering != slots.firstIndex { $0.id == slot.id }
+            && stage.drinking != slots.firstIndex { $0.id == slot.id }
     }
 
     /// Los compañeros de una persona, para que decida a quién pedir ayuda y sepa cómo van los que ya la ayudan.
@@ -422,6 +429,8 @@ struct OfficeInterfaceView<Content: View>: View {
         slots.enumerated().map { index, slot in
             // Duchándose: acaba y vuelve a su sofá antes de hacer otra cosa.
             if stage.showering == index { return .shower }
+            // Tomando café: igual, acaba y vuelve a su sofá.
+            if stage.drinking == index { return .coffee }
             let atDesk = assignments.working.contains(slot.id)
             // Jugando al ajedrez, sentado a la mesa (salvo que su agente se ponga a trabajar).
             if !atDesk, let color = chess.seat(of: index), let seat = stage.chess?.seats[color],
@@ -479,7 +488,11 @@ struct OfficeInterfaceView<Content: View>: View {
                 var items = [OfficePill(title: "Trabajar", symbol: "keyboard", tint: .orange, action: go(.work))]
                 // El ajedrez necesita la mesa, un compañero libre y que no se esté ahorrando (lo juega Gemma, en la nube).
                 if canPlayChess(index) {
-                    items.append(OfficePill(title: "Jugar ajedrez", symbol: "checkerboard.rectangle", tint: .teal) { actions = nil; settingUpChess = index })
+                    items.append(OfficePill(title: "Jugar ajedrez", symbol: "checkerboard.rectangle", tint: .teal) { actions = nil; versusSetup = false; settingUpChess = index })
+                }
+                // Contra el usuario: se sienta a la mesa frente al personaje (con la cámara en su silla) y chatean mientras juegan.
+                if canPlayChessAgainstMe {
+                    items.append(OfficePill(title: "Jugar contra mí", symbol: "person.2.fill", tint: .teal) { actions = nil; versusSetup = true; settingUpChess = index })
                 }
                 // Charlar: con cada compañero libre, de un tema curioso al azar (habla Gemma por los dos).
                 if !store.lightModeEnabled, !talk.isActive, !chess.isActive, onSofa(index) {
@@ -496,6 +509,10 @@ struct OfficeInterfaceView<Content: View>: View {
                 // Bañarse, como en Los Sims: va a la ducha, se ducha unos segundos y vuelve a su sofá.
                 if stage.shower != nil, stage.showering == nil, onSofa(index) {
                     items.append(OfficePill(title: "Bañarse", symbol: "shower", tint: .blue) { actions = nil; stage.startShower(slot: index) })
+                }
+                // Tomar café: va a la mesita, coge una taza, se la bebe y vuelve a su sofá.
+                if stage.coffeeBar != nil, stage.drinking == nil, onSofa(index) {
+                    items.append(OfficePill(title: "Tomar café", symbol: "cup.and.saucer", tint: .orange) { actions = nil; stage.startCoffee(slot: index) })
                 }
                 items.append(changeAvatar)
                 items.append(close)
@@ -576,6 +593,10 @@ struct OfficeInterfaceView<Content: View>: View {
 
     /// Solo charla quien está sentado en su sofá.
     private func onSofa(_ index: Int) -> Bool { stage.actors[safe: index]?.isOnSofa == true }
+
+    private var canPlayChessAgainstMe: Bool {
+        stage.chess != nil && !chess.isActive && !store.lightModeEnabled
+    }
 
     private func canPlayChess(_ index: Int) -> Bool {
         stage.chess != nil && !chess.isActive && !store.lightModeEnabled && slots.indices.contains(where: { $0 != index && isFree(slots[$0]) })
@@ -786,8 +807,17 @@ struct OfficeInterfaceView<Content: View>: View {
                             me: .init(id: index, name: name(of: slots[index])),
                             rivals: slots.indices.filter { $0 != index && isFree(slots[$0]) }.map { .init(id: $0, name: name(of: slots[$0])) },
                             anchor: chest, bounds: sceneSize,
+                            versusMe: versusSetup,
                             onStart: { white, black in
                                 settingUpChess = nil
+                                let names = Dictionary(uniqueKeysWithValues: slots.enumerated().map { ($0.offset, name(of: $0.element)) })
+                                if versusSetup {
+                                    // El lado con puesto -1 es el usuario.
+                                    let (character, color) = white.slot >= 0 ? (white, ChessColor.white) : (black, ChessColor.black)
+                                    chess.start(against: .init(slot: character.slot, master: character.master, color: color), as: Self.playerName,
+                                                stage: stage, names: names, lightMode: { store.lightModeEnabled })
+                                    return
+                                }
                                 chess.start(white: .init(slot: white.slot, master: white.master, color: .white),
                                             black: .init(slot: black.slot, master: black.master, color: .black),
                                             stage: stage, names: Dictionary(uniqueKeysWithValues: slots.enumerated().map { ($0.offset, name(of: $0.element)) }),
@@ -798,6 +828,63 @@ struct OfficeInterfaceView<Content: View>: View {
                     }
                 }
             }
+        }
+    }
+
+    // MARK: - Ajedrez contra el usuario
+
+    /// Cómo se llama quien juega: el nombre de su cuenta del Mac.
+    private static var playerName: String {
+        NSFullUserName().split(separator: " ").first.map(String.init) ?? "Tú"
+    }
+
+    /// Sentado a la mesa, la cámara pasa a su silla; al levantarse, vuelve a la sala donde estuviera.
+    private func moveCameraToChessSeat(_ seated: Bool) {
+        guard seated else {
+            camera.leaveFocus()
+            return
+        }
+        actions = nil
+        choosingAvatar = nil
+        closeDock()
+        if viewing != nil { leaveScreen() }
+        if let color = chess.human, let pose = stage.chess?.cameraPose(for: color) { camera.seat(pose) }
+    }
+
+    private var chessOpponent: String {
+        chess.players.first.flatMap { slots.indices.contains($0.slot) ? name(of: slots[$0.slot]) : nil } ?? "Tu rival"
+    }
+
+    /// Las casillas del tablero, para mover las piezas con el ratón.
+    @ViewBuilder private var chessBoard: some View {
+        if chess.humanSeated, viewing == nil, let set = stage.chess {
+            OfficeChessBoardOverlay(game: chess, set: set, camera: camera, size: sceneSize, interval: graphics.quality.hudInterval)
+        }
+    }
+
+    /// Los controles de la partida (botón de la charla, levantarse, recolocar la vista y abandonar), mientras el usuario está sentado.
+    @ViewBuilder private var chessPanel: some View {
+        if chess.humanSeated, chess.phase != .idle, viewing == nil {
+            OfficeChessDock(game: chess, opponent: chessOpponent,
+                            onStandUp: { OfficeSound.back.play(); chess.standUp(stage: stage) },
+                            onResetView: {
+                                OfficeSound.select.play()
+                                if let color = chess.human, let pose = stage.chess?.cameraPose(for: color) { camera.seat(pose) }
+                            },
+                            onQuit: { OfficeSound.back.play(); chess.stop(stage: stage) },
+                            onSend: { chess.send($0, lightMode: { store.lightModeEnabled }) })
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+        }
+    }
+
+    /// Levantado de la mesa con la partida en marcha: un botón para volver a sentarse (avisa si le toca mover).
+    @ViewBuilder private var chessReturn: some View {
+        if chess.human != nil, !chess.humanSeated, chess.phase == .playing || chess.phase == .finishing, viewing == nil {
+            OfficeChessReturnButton(game: chess, opponent: chessOpponent) {
+                OfficeSound.select.play()
+                chess.sit(stage: stage)
+            }
+            .transition(.move(edge: .top).combined(with: .opacity))
         }
     }
 

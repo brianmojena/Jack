@@ -196,7 +196,46 @@ struct OfficeChessSeat: Equatable {
         chairs[color]?.set(offset: offset)
     }
 
+    /// Desliza una silla hasta `target` (0 metida, 1,5 apartada) en vez de saltar; para quien se sienta o se levanta de ella.
+    func slideChair(_ color: ChessColor, to target: Float, duration: Double = 0.7) async {
+        let from = offset(of: color)
+        let steps = max(1, Int(duration * 60))
+        for step in 1...steps {
+            guard !Task.isCancelled else { return }
+            let t = Float(step) / Float(steps)
+            setChair(color, offset: from + (target - from) * t * t * (3 - 2 * t))
+            try? await Task.sleep(for: .milliseconds(16))
+        }
+    }
+
     // MARK: - Tablero
+
+    /// Dónde cae el centro de una casilla en la escena, a la altura de la base de las piezas.
+    func worldPosition(of square: Int) -> SIMD3<Float>? {
+        guard let parent = pieces.first?.real.parent else { return nil }
+        return parent.convert(position: position(of: square), to: nil)
+    }
+
+    /// El lado de una casilla, en metros de la escena.
+    var squareSize: Float { Float(layout.square) }
+
+    /// Lo que mide de alto una pieza, en metros de la escena (la media de las de la mesa); para pulsarlas por el cuerpo.
+    var pieceHeight: Float {
+        let heights = pieces.map { $0.real.visualBounds(relativeTo: nil).extents.y }.filter { $0 > 0 }
+        return heights.isEmpty ? squareSize : heights.reduce(0, +) / Float(heights.count)
+    }
+
+    /// Dónde pone la cámara quien juega con `color`: sentado en su silla, mirando el tablero desde su lado, con el rival al fondo.
+    func cameraPose(for color: ChessColor) -> OfficeCamera.Pose? {
+        guard let seat = seats[color], let first = worldPosition(of: 0), let last = worldPosition(of: 63) else { return nil }
+        let center = (first + last) / 2
+        var toward = SIMD3(seat.pose.position.x - center.x, 0, seat.pose.position.z - center.z)
+        guard simd_length(toward) > 0.001 else { return nil }
+        toward = simd_normalize(toward)
+        // Un poco más allá del centro y más arriba, para que quepa el rival sentado detrás del tablero.
+        let target = center - toward * squareSize * 0.8 + SIMD3(0, squareSize * 1.6, 0)
+        return OfficeCamera.Pose(target: target, azimuth: atan2(toward.x, toward.z), elevation: 0.62, distance: squareSize * 17)
+    }
 
     /// La posición de una casilla (al nivel de la base de las piezas), en coordenadas locales de la sala.
     func position(of square: Int) -> SIMD3<Float> {

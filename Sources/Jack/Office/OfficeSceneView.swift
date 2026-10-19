@@ -21,6 +21,9 @@ import SwiftUI
 
     /// Si la cámara está delante de una pantalla; mientras tanto no se gira ni se acerca.
     var isFocused: Bool { room != nil }
+    /// Sentada a la mesa de ajedrez: se puede girar alrededor del tablero y acercarse o alejarse, pero no desplazarse.
+    private var seated = false
+    private var canLook: Bool { room == nil || seated }
 
     init(target: SIMD3<Float>) {
         let pose = Pose(target: target, azimuth: atan2(21, 25), elevation: asin(17 / 36.2), distance: 36.2)
@@ -29,7 +32,7 @@ import SwiftUI
     }
 
     func orbit(dx: CGFloat, dy: CGFloat) {
-        guard room == nil else { return }
+        guard canLook else { return }
         goal.azimuth -= Float(dx) * 0.008
         goal.elevation = min(max(goal.elevation + Float(dy) * 0.006, 0.12), 1.4)
     }
@@ -48,8 +51,9 @@ import SwiftUI
     }
 
     func zoom(by factor: Float) {
-        guard room == nil else { return }
-        goal.distance = min(max(goal.distance * factor, 5.5), 70)
+        guard canLook else { return }
+        // En la mesa de ajedrez el tablero es pequeño: se puede acercar mucho más.
+        goal.distance = seated ? min(max(goal.distance * factor, 2.2), 14) : min(max(goal.distance * factor, 5.5), 70)
     }
 
     /// Lleva la cámara justo delante de una pantalla, de frente y a su altura, encuadrándola entera con margen para la barra de arriba.
@@ -62,6 +66,13 @@ import SwiftUI
         goal = Pose(target: center, azimuth: atan2(facing.x, facing.z), elevation: 0, distance: distance)
     }
 
+    /// Lleva la cámara a una pose fija (la de quien se sienta a la mesa de ajedrez); mientras tanto no se gira ni se acerca.
+    func seat(_ pose: Pose) {
+        if room == nil { room = goal }
+        seated = true
+        goal = pose
+    }
+
     /// Si la cámara ya llegó a su meta (para cambiar a la vista real de un monitor sin que se note).
     var isSettled: Bool {
         simd_distance(current.target, goal.target) < 0.004 && abs(current.distance - goal.distance) < 0.004
@@ -71,6 +82,7 @@ import SwiftUI
     /// Vuelve a la vista de la sala que había antes de mirar la pantalla.
     func leaveFocus() {
         guard let room else { return }
+        seated = false
         goal = room
         self.room = nil
     }
@@ -87,6 +99,24 @@ import SwiftUI
     }
 
     func place(_ camera: Entity) { Self.place(camera, current) }
+
+    /// Si alguna parte del rectángulo (cuatro esquinas) que mira hacia `normal` cae ahora en la vista, con un margen para
+    /// que aparezca antes de entrar del todo. La cámara por detrás del plano no lo ve.
+    func sees(_ corners: [SIMD3<Float>], facing normal: SIMD3<Float>, aspect: Float, margin: CGFloat = 0.15) -> Bool {
+        guard let first = corners.first else { return true }
+        let eye = current.target + Self.offset(current)
+        guard simd_dot(eye - first, normal) > 0 else { return false }
+        let size = CGSize(width: CGFloat(aspect) * 100, height: 100)
+        let projected = corners.map { project($0, in: size, from: current)?.point }
+        let points = projected.compactMap { $0 }
+        if points.isEmpty { return false }
+        // Con una esquina detrás de la cámara el rectángulo la cruza: se da por visto.
+        if points.count < corners.count { return true }
+        let minX = points.map(\.x).min()!, maxX = points.map(\.x).max()!
+        let minY = points.map(\.y).min()!, maxY = points.map(\.y).max()!
+        return maxX >= -margin * size.width && minX <= (1 + margin) * size.width
+            && maxY >= -margin * size.height && minY <= (1 + margin) * size.height
+    }
 
     private static func place(_ camera: Entity, _ pose: Pose) {
         camera.look(at: pose.target, from: pose.target + offset(pose), relativeTo: nil)
@@ -146,6 +176,7 @@ struct OfficeSceneView: View {
         // Con menos resolución la escena se dibuja en un lienzo más pequeño y se estira a la ventana.
         let scale = CGFloat(quality.resolution)
         GeometryReader { proxy in
+            let _ = applied.aspect = Float(proxy.size.width / max(proxy.size.height, 1))
             reality(scale: scale)
                 .frame(width: proxy.size.width * scale, height: proxy.size.height * scale)
                 .scaleEffect(1 / scale, anchor: .topLeading)
@@ -163,7 +194,8 @@ struct OfficeSceneView: View {
             content.camera = .virtual
             Self.setAntialiasing(quality.antialiasing, in: &content)
             applied.antialiasing = quality.antialiasing
-            applied.frameInterval = quality.frameRate > 0 ? 1 / Double(quality.frameRate) : 0
+            applied.activeInterval = quality.frameInterval(resting: false)
+            applied.restInterval = quality.frameInterval(resting: true)
             if #available(macOS 26.0, *), quality.ambientOcclusion { content.renderingEffects.customPostProcessing = .effect(OfficePostProcess()) }
             applied.ambientOcclusion = quality.ambientOcclusion
             content.add(stage.world)
@@ -175,14 +207,18 @@ struct OfficeSceneView: View {
             content.add(lens)
             let pacing = applied
             updates = content.subscribe(to: SceneEvents.Update.self) { event in
+                // A pleno ritmo mientras se mueve la cámara o alguien camina; quieto todo, al de reposo.
+                pacing.noteActivity(!camera.isSettled || stage.isBusy)
                 pacing.pace()
                 pacing.count(report: measuresFPS ? onFPS : nil)
                 stage.update(deltaTime: event.deltaTime)
                 camera.step(event.deltaTime)
                 camera.place(lens)
+                if let glass = stage.mirrorGlass { stage.setMirrorInView(camera.sees(glass.corners, facing: glass.normal, aspect: pacing.aspect)) }
             }
         } update: { content in
-            applied.frameInterval = quality.frameRate > 0 ? 1 / Double(quality.frameRate) : 0
+            applied.activeInterval = quality.frameInterval(resting: false)
+            applied.restInterval = quality.frameInterval(resting: true)
             if applied.antialiasing != quality.antialiasing {
                 Self.setAntialiasing(quality.antialiasing, in: &content)
                 applied.antialiasing = quality.antialiasing
@@ -232,16 +268,27 @@ struct OfficeSceneView: View {
     private final class AppliedEffects {
         var antialiasing: Int?
         var ambientOcclusion: Bool?
-        /// Segundos mínimos entre fotogramas (0: sin límite).
-        var frameInterval = 0.0
+        /// Proporción de la vista (ancho entre alto), para saber si la cámara ve el espejo.
+        var aspect: Float = 1.6
+        /// Segundos mínimos entre fotogramas mientras algo se mueve y cuando todo está quieto (0: sin límite).
+        var activeInterval = 0.0
+        var restInterval = 0.0
+        /// Cuánto tarda en pasar al ritmo de reposo desde el último movimiento, para no oscilar entre uno y otro.
+        private static let restDelay = 0.8
+        private var lastActivity = CFAbsoluteTimeGetCurrent()
         private var nextFrame = CFAbsoluteTimeGetCurrent()
         private var frames = 0
 
         /// El motor pide un fotograma nuevo cada vez que la pantalla refresca; si llega antes de tiempo, se espera. Así el límite
         /// vale para todo lo que se dibuja (mover la cámara incluido), no solo para las animaciones. El ritmo es fijo, sin
         /// acumular retraso, y se despierta un poco antes del momento para que el fotograma entre en el refresco que toca.
+        func noteActivity(_ active: Bool) {
+            if active { lastActivity = CFAbsoluteTimeGetCurrent() }
+        }
+
         func pace() {
             let now = CFAbsoluteTimeGetCurrent()
+            let frameInterval = now - lastActivity > Self.restDelay ? restInterval : activeInterval
             guard frameInterval > 0 else { nextFrame = now; return }
             let early = 0.004
             if now < nextFrame - early { Thread.sleep(forTimeInterval: nextFrame - early - now) }

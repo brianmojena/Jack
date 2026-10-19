@@ -8,6 +8,9 @@ struct OfficeQuality: Codable, Equatable {
     var resolution = 1.0
     /// Fotogramas por segundo máximos de toda la escena (también al mover la cámara); 0 deja que mande la pantalla.
     var frameRate = 0
+    /// Fotogramas por segundo máximos cuando nada se mueve (la cámara quieta y todos sentados); 0 los deja como `frameRate`.
+    /// En cuanto se mueve la cámara o alguien camina, vuelve a mandar `frameRate`.
+    var restFrameRate = 20
     /// Cuántas veces por segundo se recolocan las burbujas ancladas a los personajes; 0 es en cada fotograma.
     var bubbleRate = 0
     /// Suavizado de bordes: 4 (activado) o 0 (sin él).
@@ -18,6 +21,8 @@ struct OfficeQuality: Codable, Equatable {
     var shadows = true
     /// El reflejo del espejo (dibuja la sala una segunda vez).
     var mirror = true
+    /// El reflejo ligero: sin sombras ni luces de relleno, con los muebles pequeños fuera y las lámparas más simples. Solo vale con `mirror`.
+    var mirrorLight = false
     /// El brillo de los logos de neón de la pared.
     var neon = true
     /// La iluminación: 3 realista (focos, rellenos y halos), 2 realista sin los halos de los logos y 1 simple (luz natural
@@ -49,6 +54,14 @@ struct OfficeQuality: Codable, Equatable {
         }
     }
 
+    enum MirrorMode: Hashable { case off, light, full }
+
+    /// El espejo como una sola opción: apagado, ligero o completo.
+    var mirrorMode: MirrorMode {
+        get { !mirror ? .off : mirrorLight ? .light : .full }
+        set { mirror = newValue != .off; mirrorLight = newValue == .light }
+    }
+
     /// El predefinido al que se parece exactamente, o `nil` si se tocó algo a mano.
     var preset: Preset? { Preset.allCases.first { $0.quality == self } }
 
@@ -61,12 +74,18 @@ struct OfficeQuality: Codable, Equatable {
         cost *= antialiasing == 0 ? 0.8 : 1
         cost *= ambientOcclusion ? 1 : 0.8
         cost *= shadows ? 1 : 0.75
-        cost *= mirror ? 1 : 0.6
+        cost *= mirror ? (mirrorLight ? 0.85 : 1) : 0.6
         cost *= neon ? 1 : 0.95
         cost *= [1: 0.8, 2: 0.92, 3: 1][lights] ?? 1
         cost *= idleAnimation ? 1 : 0.92
         cost *= liveScreens ? 1 : 0.9
         return max(0.03, min(1, cost))
+    }
+
+    /// Cada cuánto se dibuja un fotograma: el normal mientras algo se mueve y el de reposo cuando todo está quieto (`0`: sin límite).
+    func frameInterval(resting: Bool) -> Double {
+        let rate = resting && restFrameRate > 0 ? (frameRate > 0 ? min(frameRate, restFrameRate) : restFrameRate) : frameRate
+        return rate > 0 ? 1 / Double(rate) : 0
     }
 
     /// Cada cuánto se redibujan las burbujas ancladas a los personajes (`nil`: en cada fotograma).
@@ -182,11 +201,12 @@ private struct OfficeGraphicsPanel: View {
             VStack(spacing: 8) {
                 choice("Resolución", $graphics.quality.resolution, [(1.0, "100 %"), (0.75, "75 %"), (0.5, "50 %")])
                 choice("Fotogramas", $graphics.quality.frameRate, [(0, "Auto"), (60, "60"), (30, "30"), (20, "20")])
+                choice("En reposo", $graphics.quality.restFrameRate, [(0, "Igual"), (30, "30"), (20, "20"), (15, "15")])
                 choice("Burbujas", $graphics.quality.bubbleRate, [(0, "Fluidas"), (30, "Normales"), (15, "Lentas")])
                 choice("Suavizado de bordes", $graphics.quality.antialiasing, [(4, "Sí"), (0, "No")])
                 toggle("Oclusión ambiental", $graphics.quality.ambientOcclusion)
                 toggle("Sombras", $graphics.quality.shadows)
-                toggle("Espejo", $graphics.quality.mirror)
+                choice("Espejo", $graphics.quality.mirrorMode, [(.full, "Completo"), (.light, "Ligero"), (.off, "No")])
                 toggle("Neón de los logos", $graphics.quality.neon)
                 choice("Iluminación", $graphics.quality.lights, [(3, "Realista"), (2, "Sin halos"), (1, "Simple")])
                 choice("Pantallas", $graphics.quality.liveScreens, [(true, "En vivo"), (false, "Ahorro")])

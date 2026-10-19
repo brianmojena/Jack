@@ -41,8 +41,10 @@ struct OfficePostProcess: PostProcessEffect {
             Self.copy(context)
             return
         }
-        if state.occlusionTexture?.width != depth.width || state.occlusionTexture?.height != depth.height {
-            let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .r16Float, width: depth.width, height: depth.height, mipmapped: false)
+        // La oclusión es una sombra suave: a media resolución se ve casi igual y cuesta una cuarta parte.
+        let half = (width: (depth.width + 1) / 2, height: (depth.height + 1) / 2)
+        if state.occlusionTexture?.width != half.width || state.occlusionTexture?.height != half.height {
+            let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .r16Float, width: half.width, height: half.height, mipmapped: false)
             descriptor.usage = [.shaderRead, .shaderWrite]
             descriptor.storageMode = .private
             state.occlusionTexture = context.device.makeTexture(descriptor: descriptor)
@@ -60,7 +62,7 @@ struct OfficePostProcess: PostProcessEffect {
         encoder.setTexture(depth, index: 0)
         encoder.setTexture(occlusionTexture, index: 1)
         encoder.setBytes(&parameters, length: MemoryLayout<Parameters>.stride, index: 0)
-        encoder.dispatchThreads(MTLSize(width: depth.width, height: depth.height, depth: 1), threadsPerThreadgroup: group)
+        encoder.dispatchThreads(MTLSize(width: half.width, height: half.height, depth: 1), threadsPerThreadgroup: group)
 
         encoder.setComputePipelineState(compose)
         encoder.setTexture(color, index: 0)
@@ -162,7 +164,8 @@ struct OfficePostProcess: PostProcessEffect {
                           constant Parameters &p [[buffer(0)]],
                           uint2 gid [[thread_position_in_grid]]) {
         if (gid.x >= result.get_width() || gid.y >= result.get_height()) return;
-        result.write(float4(computeOcclusion(depth, gid, p)), gid);
+        // El resultado es de media resolución: cada hilo mide el píxel de la profundidad que le toca.
+        result.write(float4(computeOcclusion(depth, gid * 2, p)), gid);
     }
 
     kernel void occlusionMS(depth2d_ms<float, access::read> depth [[texture(0)]],
@@ -170,7 +173,8 @@ struct OfficePostProcess: PostProcessEffect {
                             constant Parameters &p [[buffer(0)]],
                             uint2 gid [[thread_position_in_grid]]) {
         if (gid.x >= result.get_width() || gid.y >= result.get_height()) return;
-        result.write(float4(computeOcclusion(depth, gid, p)), gid);
+        // El resultado es de media resolución: cada hilo mide el píxel de la profundidad que le toca.
+        result.write(float4(computeOcclusion(depth, gid * 2, p)), gid);
     }
 
     kernel void compose(texture2d<float, access::read> source [[texture(0)]],
@@ -182,7 +186,7 @@ struct OfficePostProcess: PostProcessEffect {
         if (gid.x >= size.x || gid.y >= size.y) return;
         float4 color = source.read(gid);
 
-        // La oclusión, suavizada en un 5×5 para quitar el ruido del muestreo.
+        // La oclusión (de media resolución), suavizada en un 5×5 para quitar el ruido del muestreo y el escalón de los píxeles.
         uint2 aoSize = uint2(occlusion.get_width(), occlusion.get_height());
         int2 aoPixel = int2(float2(gid) * float2(aoSize) / float2(size));
         float sum = 0;
@@ -190,7 +194,7 @@ struct OfficePostProcess: PostProcessEffect {
         float centerAO = occlusion.read(uint2(clamp(aoPixel, int2(0), int2(aoSize) - 1))).r;
         for (int y = -2; y <= 2; y++) {
             for (int x = -2; x <= 2; x++) {
-                uint2 at = uint2(clamp(aoPixel + int2(x, y) * 2, int2(0), int2(aoSize) - 1));
+                uint2 at = uint2(clamp(aoPixel + int2(x, y), int2(0), int2(aoSize) - 1));
                 float value = occlusion.read(at).r;
                 float w = exp(-abs(value - centerAO) * 4.0);
                 sum += value * w;

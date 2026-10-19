@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """Empaqueta una carpeta USD (capa raíz + texturas referenciadas) como .usdz.
 
-Uso: pack_usdz.py <carpeta> <capa-raiz.usdc> <salida.usdz> [--fallback <carpeta de texturas>]
+Uso: pack_usdz.py <carpeta> <capa-raiz.usdc> <salida.usdz> [--fallback <carpeta de texturas>] [--max-texture <px>]
 
 Blender 5.1 deja sin empaquetar algunas texturas al exportar directamente a USDZ; por eso se exporta a carpeta,
 se completan las texturas que falten desde `--fallback` (mismo nombre de archivo) y se empaqueta aquí.
+Las texturas cuyo lado mayor pasa de `--max-texture` (por omisión 1024 px) se reducen al empaquetar, con el mismo nombre y
+formato: desde la cámara de la oficina no se nota y ahorran memoria de vídeo. `--max-texture 0` las deja como están.
 Un USDZ es un ZIP sin compresión cuyos archivos empiezan alineados a 64 bytes.
 """
 from __future__ import annotations
 
+import io
 import re
 import shutil
 import struct
@@ -16,6 +19,10 @@ import subprocess
 import sys
 import zipfile
 from pathlib import Path
+
+from PIL import Image
+
+MAX_TEXTURE = 1024
 
 
 def referenced_assets(folder: Path, layer: str, fallback: Path | None) -> list[str]:
@@ -32,8 +39,33 @@ def referenced_assets(folder: Path, layer: str, fallback: Path | None) -> list[s
     return found
 
 
+def asset_bytes(path: Path, limit: int) -> bytes:
+    """El contenido del archivo; si es una imagen mayor que `limit` px por su lado largo, reducida a ese tamaño."""
+    data = path.read_bytes()
+    # Las imágenes `screen_*` son las de los monitores y se ven de cerca: se dejan como están.
+    if limit <= 0 or path.name.startswith("screen_") or path.suffix.lower() not in (".png", ".jpg", ".jpeg"):
+        return data
+    with Image.open(io.BytesIO(data)) as image:
+        if max(image.size) <= limit:
+            return data
+        scale = limit / max(image.size)
+        size = (max(1, round(image.width * scale)), max(1, round(image.height * scale)))
+        resized = image.resize(size, Image.LANCZOS)
+        out = io.BytesIO()
+        if path.suffix.lower() == ".png":
+            resized.save(out, "PNG", optimize=True)
+        else:
+            resized.save(out, "JPEG", quality=90)
+        return out.getvalue()
+
+
 def main() -> None:
     args = sys.argv[1:]
+    limit = MAX_TEXTURE
+    if "--max-texture" in args:
+        index = args.index("--max-texture")
+        limit = int(args[index + 1])
+        del args[index:index + 2]
     fallback = None
     if "--fallback" in args:
         index = args.index("--fallback")
@@ -43,7 +75,7 @@ def main() -> None:
     names = [layer] + referenced_assets(folder, layer, fallback)
     with zipfile.ZipFile(output, "w", zipfile.ZIP_STORED) as archive:
         for name in names:
-            data = (folder / name).read_bytes()
+            data = asset_bytes(folder / name, limit)
             info = zipfile.ZipInfo(name)
             info.compress_type = zipfile.ZIP_STORED
             offset = archive.fp.tell() + 30 + len(name.encode())

@@ -12,7 +12,9 @@ Los FBX de Mixamo (sin piel) se leen de ~/Downloads y no se guardan en el reposi
  - «Sitting Victory» → `chess_win`, «Sitting Disbelief» → `chess_lose`; los dos empiezan y acaban con las manos sobre la mesa;
  - `chess_idle`: esa postura quieta (esperando el turno);
  - `chess_think`: la mano derecha sube a la barbilla (la distancia sale de «Thinking») y se queda ahí, en bucle;
- - `chess_move`: el brazo derecho se estira hacia el tablero, coge, sube y vuelve (cinemática inversa, horneada).
+ - `chess_move`: el brazo derecho se estira hacia el tablero, coge, sube y vuelve (cinemática inversa, horneada);
+ - «Sitting Talking» (y su copia «(1)») → `talk_right` y `talk_left`, sentados en el sofá;
+ - «Drinking» → `drink`: de pie, con una taza en la mano izquierda que se lleva a la boca.
 Cada clip se reorienta al esqueleto de cada personaje (como `retarget` de office_add_character.py) y se pega detrás de lo que
 ya hay (fotograma 618 en adelante), con la cadera a la misma altura que al teclear para que se siente igual en la silla.
 También añade los clips a Runtime/OfficeLayout.json.
@@ -40,6 +42,7 @@ HAND_TOP = 2.56
 SEAT_HIPS = 2.13
 LOOK_DOWN = 22.0  # inclinación de la cabeza hacia el tablero (grados)
 SOFA_FRAME = 40    # un fotograma dentro del clip `idle_sit`
+STAND_FRAME = 590  # un fotograma dentro del clip `stand_idle` (empieza en el 588)
 TYPE_FRAME = 300  # un fotograma dentro del clip «type» (empieza en el 298)
 
 
@@ -262,6 +265,10 @@ def build(key_name, options, sources, thinking, preview):
     scene.frame_set(SOFA_FRAME)
     bpy.context.view_layer.update()
     on_sofa = rig.pose.bones[HIPS].matrix.translation.copy()
+    # La cadera de pie (la postura `stand_idle`): lo que se hace de pie, como beber, se pone igual.
+    scene.frame_set(STAND_FRAME)
+    bpy.context.view_layer.update()
+    standing = rig.pose.bones[HIPS].matrix.translation.copy()
 
     # Se resuelve todo con la animación quitada (para que no pise la postura que se prueba) y después se hornean los fotogramas.
     rig.animation_data.action = None
@@ -345,6 +352,13 @@ def build(key_name, options, sources, thinking, preview):
         talk_solver = Solver(rig, source, spin, delta_torso)
         offset = on_sofa - talk_solver.hips_position(1)
         pending.append((name, [talk_solver.solve(frame, offset) for frame in range(1, count + 1, 2)], True, 2))
+
+    # Beber de pie un café, con la taza en la mano izquierda (Mixamo «Drinking»): se la lleva a la boca y la vuelve a bajar.
+    source = sources["drink"]
+    count = int(round(source.animation_data.action.frame_range[1]))
+    drink_solver = Solver(rig, source, spin, delta_torso)
+    offset = standing - drink_solver.hips_position(1)
+    pending.append(("drink", [drink_solver.solve(frame, offset) for frame in range(1, count + 1)], False))
 
     rig.animation_data.action = action
     rig.animation_data.action_slot = action.slots[0]
@@ -437,7 +451,8 @@ def main():
     preview = argv[argv.index("--preview") + 1] if "--preview" in argv else None
     thinking = measure_thinking()
     sources = {}
-    for name, file in (("win", "Sitting Victory"), ("lose", "Sitting Disbelief"), ("talk_right", "Sitting Talking"), ("talk_left", "Sitting Talking (1)")):
+    for name, file in (("win", "Sitting Victory"), ("lose", "Sitting Disbelief"), ("talk_right", "Sitting Talking"), ("talk_left", "Sitting Talking (1)"),
+                       ("drink", "Drinking")):
         sources[name] = import_fbx(file)
     rigs = {name: rig for name, (rig, _) in sources.items()}
     clips, last = {}, 0
