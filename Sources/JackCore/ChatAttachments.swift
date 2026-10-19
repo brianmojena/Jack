@@ -53,11 +53,14 @@ public enum ChatAttachments {
     }
 
     /// The message plus where each attachment lives, so the agent can open any of them.
-    static func promptText(_ prompt: String, attachments: [String]) -> String {
+    /// `inlineImages` is false for providers such as Antigravity that only receive file paths.
+    static func promptText(_ prompt: String, attachments: [String], inlineImages: Bool = true) -> String {
         guard !attachments.isEmpty else { return prompt }
         let list = attachments.map { "- \($0)" }.joined(separator: "\n")
-        return (prompt.isEmpty ? "" : prompt + "\n\n")
-            + "Archivos adjuntos por el usuario (ábrelos desde estas rutas antes de responder sobre ellos; las imágenes también van incluidas en el mensaje):\n" + list
+        let note = inlineImages
+            ? "Archivos adjuntos por el usuario (ábrelos desde estas rutas antes de responder sobre ellos; las imágenes también van incluidas en el mensaje):"
+            : "Archivos adjuntos por el usuario (ábrelos desde estas rutas antes de responder sobre ellos; las imágenes no se incluyen en el mensaje):"
+        return (prompt.isEmpty ? "" : prompt + "\n\n") + note + "\n" + list
     }
 }
 

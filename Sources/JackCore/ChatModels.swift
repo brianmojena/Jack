@@ -1,14 +1,18 @@
 import Foundation
 
 public enum ChatProvider: String, Codable, CaseIterable, Identifiable {
-    case codex, claude, opencode, stellar
+    case codex, claude, opencode, stellar, antigravity
     public var id: String { rawValue }
-    public var title: String { switch self { case .codex: return "Codex"; case .claude: return "Claude Code"; case .opencode: return "OpenCode"; case .stellar: return "Stellar Code" } }
+    public var title: String { switch self { case .codex: return "Codex"; case .claude: return "Claude Code"; case .opencode: return "OpenCode"; case .stellar: return "Stellar Code"; case .antigravity: return "Antigravity" } }
+    /// The command Jack looks for on disk. Most providers use the raw value; Antigravity installs `agy`.
+    public var executableName: String { self == .antigravity ? "agy" : rawValue }
+    /// Providers Jack only offers in the Normal window. Light keeps its original, smaller set.
+    public var isNormalOnly: Bool { self == .antigravity }
     /// Jack's own agent; it runs local models and needs no executable.
     public var isBuiltIn: Bool { self == .stellar }
     /// Shown on its cards while it is being built.
     public var isBeta: Bool { self == .stellar }
-    public var defaultModel: String { switch self { case .codex: return "gpt-6-luna"; case .claude: return "sonnet"; case .opencode, .stellar: return "" } }
+    public var defaultModel: String { switch self { case .codex: return "gpt-6-luna"; case .claude: return "sonnet"; case .opencode, .stellar, .antigravity: return "" } }
 }
 public enum ChatStatus: String, Codable { case idle, queued, running, waiting, failed }
 public struct ChatMessage: Identifiable, Codable, Equatable {
@@ -150,6 +154,7 @@ public struct ChatRunMode: Identifiable, Equatable {
         case .claude: return [.init(id: "manual", title: "Manual"), .init(id: "plan", title: "Plan"), .init(id: "auto", title: "Auto"), .init(id: "acceptEdits", title: "Aceptar ediciones"), .init(id: "dontAsk", title: "Sin preguntas")]
         case .opencode: return []
         case .stellar: return [.init(id: "manual", title: "Manual"), .init(id: "acceptEdits", title: "Aceptar ediciones"), .init(id: "auto", title: "Auto")]
+        case .antigravity: return [.init(id: "plan", title: "Plan"), .init(id: "accept-edits", title: "Aceptar ediciones"), .init(id: "auto", title: "Auto")]
         }
     }
 }

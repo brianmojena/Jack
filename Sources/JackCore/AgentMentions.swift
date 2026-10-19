@@ -27,7 +27,7 @@ public enum AgentMentionRouteResult: Equatable {
 /// Parsing and matching for the composer mention syntax. Existing agents use their UUID prefix as a
 /// structured reference, so duplicate titles never route a message to the wrong conversation.
 public enum AgentMentions {
-    public static let providers: [ChatProvider] = [.codex, .claude, .opencode]
+    public static let providers: [ChatProvider] = [.codex, .claude, .opencode, .antigravity]
 
     /// The one unfinished mention at the start of a composer draft, if any.
     public static func query(in draft: String) -> String? {

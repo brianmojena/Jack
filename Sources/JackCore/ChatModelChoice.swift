@@ -16,6 +16,8 @@ public extension ChatModelChoice {
         ChatModelChoice(id: "sonnet", title: "Sonnet", efforts: claudeEfforts(for: "sonnet")),
         ChatModelChoice(id: "haiku", title: "Haiku", efforts: claudeEfforts(for: "haiku")),
     ]
+    /// Antigravity accepts these levels through `--effort`; the selected model decides which it implements.
+    static let antigravityEfforts = ["low", "medium", "high", "xhigh", "max"]
     /// Levels Claude Code accepts for `--effort` with an alias or full model id.
     /// Haiku and models before Opus 4.5 reject effort; Opus 4.5 lacks xhigh/max; the 4.6 family lacks xhigh.
     static func claudeEfforts(for model: String) -> [String] {
@@ -32,6 +34,7 @@ public extension ChatModelChoice {
         case .claude: claudeEfforts(for: model)
         case .codex: ["low", "medium", "high"]
         case .opencode, .stellar: []
+        case .antigravity: antigravityEfforts
         }
     }
     static func effortTitle(_ effort: String) -> String {
@@ -49,6 +52,36 @@ public extension ChatModelChoice {
 
 enum ChatModelCatalog {
     // Reuse the CLI's local catalog: opening the picker never starts an agent.
+    /// Reads the CLI's own model list: one `slug<TAB>title` line per model. No inference is started.
+    static func parseAntigravityModels(_ output: String) -> [ChatModelChoice] {
+        output.components(separatedBy: .newlines).compactMap { line -> ChatModelChoice? in
+            let parts = line.split(separator: "\t", maxSplits: 1, omittingEmptySubsequences: false)
+            guard let slug = parts.first?.trimmingCharacters(in: .whitespaces), !slug.isEmpty,
+                  !slug.contains(" "), !slug.hasPrefix("No ") else { return nil }
+            let title = parts.count > 1 ? String(parts[1]).trimmingCharacters(in: .whitespaces) : slug
+            return ChatModelChoice(id: slug, title: title.isEmpty ? slug : title, efforts: ChatModelChoice.antigravityEfforts)
+        }
+    }
+    /// Asynchronous because it runs the CLI; callers update their catalog when it returns.
+    static func antigravityModels(executable: String, override: String?) async -> [ChatModelChoice] {
+        guard let path = ExecutableResolver.resolve(executable, override: override),
+              let child = try? StructuredChild(executable: path, arguments: ["models"], directory: NSTemporaryDirectory()) else { return [] }
+        child.closeInput()
+        let timer = Task { try? await Task.sleep(for: .seconds(15)); if !Task.isCancelled { child.terminate() } }
+        var text = ""
+        do {
+            try await withTaskCancellationHandler {
+                for try await line in child.lines {
+                    guard text.utf8.count < 256 * 1024 else { break }
+                    text += String(decoding: line, as: UTF8.self) + "\n"
+                }
+            } onCancel: { child.terminate() }
+        } catch {}
+        timer.cancel()
+        if Task.isCancelled { child.terminate() }
+        await child.waitForExit()
+        return Task.isCancelled ? [] : parseAntigravityModels(text)
+    }
     static func cachedCodex(at url: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/models_cache.json")) -> [ChatModelChoice] {
         guard let bytes = try? Data(contentsOf: url),
               let root = (try? JSONSerialization.jsonObject(with: bytes)) as? [String: Any],

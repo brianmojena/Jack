@@ -32,6 +32,7 @@ public enum AgentUpdater {
         switch provider {
         case .claude: return .selfUpdate(["update"])
         case .opencode: return .selfUpdate(["upgrade"])
+        case .antigravity: return .selfUpdate(["update"])
         case .codex, .stellar: return .unsupported
         }
     }
@@ -53,7 +54,7 @@ public enum AgentUpdater {
     }
 
     public static func method(for provider: ChatProvider, override: String? = nil) -> AgentInstallMethod? {
-        guard let executable = ExecutableResolver.resolve(provider.rawValue, override: override) else { return nil }
+        guard let executable = ExecutableResolver.resolve(provider.executableName, override: override) else { return nil }
         return method(for: provider, resolvedPath: URL(fileURLWithPath: executable).resolvingSymlinksInPath().path)
     }
 
@@ -63,14 +64,14 @@ public enum AgentUpdater {
     }
 
     public static func installedVersion(of provider: ChatProvider, override: String? = nil) async -> String? {
-        guard let executable = ExecutableResolver.resolve(provider.rawValue, override: override) else { return nil }
+        guard let executable = ExecutableResolver.resolve(provider.executableName, override: override) else { return nil }
         let result = await run(executable, ["--version"], timeout: .seconds(15))
         return result.status == 0 ? parseVersion(result.output) : nil
     }
 
     /// Runs the update and reports the version before and after. Throws the tool's own message when it fails.
     public static func update(_ provider: ChatProvider, override: String? = nil) async throws -> AgentUpdateResult {
-        guard let executable = ExecutableResolver.resolve(provider.rawValue, override: override) else {
+        guard let executable = ExecutableResolver.resolve(provider.executableName, override: override) else {
             throw AgentUpdateError("No se encontró \(provider.title): elige o escanea su ejecutable primero.")
         }
         let method = method(for: provider, resolvedPath: URL(fileURLWithPath: executable).resolvingSymlinksInPath().path)

@@ -226,12 +226,12 @@ func displayPath(_ path: String, project: String) -> String {
 
 /// Official provider logos, stored as template vectors in the asset catalog.
 func providerLogo(_ provider: ChatProvider) -> String {
-    switch provider { case .codex: "ProviderCodex"; case .claude: "ProviderClaude"; case .opencode: "ProviderOpenCode"; case .stellar: "ProviderStellar" }
+    switch provider { case .codex: "ProviderCodex"; case .claude: "ProviderClaude"; case .opencode: "ProviderOpenCode"; case .stellar: "ProviderStellar"; case .antigravity: "ProviderAntigravity" }
 }
 
 /// Fallback when the asset catalog is not bundled (e.g. `swift run`).
 func providerSymbol(_ provider: ChatProvider) -> String {
-    switch provider { case .codex: "chevron.left.forwardslash.chevron.right"; case .claude: "asterisk"; case .opencode: "terminal"; case .stellar: "sparkle" }
+    switch provider { case .codex: "chevron.left.forwardslash.chevron.right"; case .claude: "asterisk"; case .opencode: "terminal"; case .stellar: "sparkle"; case .antigravity: "sparkles" }
 }
 
 /// The provider's logo at `size` points, falling back to its SF Symbol.
@@ -256,6 +256,7 @@ func providerColor(_ provider: ChatProvider) -> Color {
     case .codex: Color.primary
     case .opencode: Color(nsColor: .systemTeal)
     case .stellar: Color(nsColor: .systemIndigo)
+    case .antigravity: Color(nsColor: .systemGreen)
     }
 }
 

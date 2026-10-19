@@ -637,6 +637,16 @@ struct MainWindowView: View {
         let status = store.statuses[conversation.id] ?? .idle
         return VStack(spacing: 0) {
             if !inPane, let error = store.errorMessage, !error.isEmpty { errorBanner(error) }
+            if !store.lightModeEnabled, conversation.provider == .antigravity, conversation.remote == nil,
+               conversation.sessionID?.isEmpty == false {
+                HStack {
+                    Text("Los permisos interactivos se resuelven en la terminal de Antigravity.")
+                        .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
+                    Spacer()
+                    Button("Continuar en terminal") { continueInTerminal(conversation.id) }
+                        .controlSize(.small).disabled(store.isBusy(conversation.id))
+                }.padding(.horizontal, 12).padding(.vertical, 6)
+            }
             messageHistory(conversation)
                 .jackEdgeBar(.top) { if !inPane { iceTabs } }
                 .jackEdgeBar(.bottom) { bottomPanels(conversation, status: status, inPane: inPane) }
@@ -1340,6 +1350,19 @@ struct MainWindowView: View {
     /// so both never write to the session at once.
     private func continueInTerminal(_ id: UUID) {
         guard let conversation = store.conversations.first(where: { $0.id == id }) else { return }
+        if conversation.provider == .antigravity {
+            guard !store.lightModeEnabled else { return }
+            let terminal = workspace.terminalInterface()
+            terminal.attach(store)
+            Task {
+                do {
+                    try await terminal.handOffAntigravity(id, allowed: !store.lightModeEnabled)
+                    guard !store.lightModeEnabled else { return }
+                    interfaceStyle = .terminal
+                } catch { store.errorMessage = error.localizedDescription }
+            }
+            return
+        }
         guard let session = conversation.sessionID, !session.isEmpty else {
             store.errorMessage = "Esta conversación aún no tiene sesión de Claude Code: envía un mensaje primero."
             return

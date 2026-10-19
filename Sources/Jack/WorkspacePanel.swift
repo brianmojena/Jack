@@ -353,6 +353,9 @@ struct TerminalProcessLaunch {
 /// A login shell in the agent's project folder.
 @MainActor final class TerminalSession: NSObject, ObservableObject, LocalProcessTerminalViewDelegate {
     @Published private(set) var running = false
+    /// Unlike `running`, this changes only after SwiftTerm confirms the child exited.
+    private(set) var hasExited = false
+    var onProcessExit: (() -> Void)?
     @Published private(set) var directory: String
     let projectPath: String
     /// Set for agents that run on another machine: the tab is an ssh session there.
@@ -374,6 +377,7 @@ struct TerminalProcessLaunch {
     }
 
     func start() {
+        hasExited = false
         let shell = ProcessInfo.processInfo.environment["SHELL"].flatMap { $0.isEmpty ? nil : $0 } ?? "/bin/zsh"
         var environment = directLaunch == nil ? ProcessInfo.processInfo.environment : ExecutableResolver.childEnvironment()
         environment["TERM"] = "xterm-256color"
@@ -424,6 +428,19 @@ struct TerminalProcessLaunch {
         running = false
     }
 
+    /// Preserve SwiftTerm's exit monitor until it reaps this agent. `view.terminate()` cancels that
+    /// monitor immediately, so it cannot acknowledge ownership transfer for a native agent session.
+    func terminateAfterAcknowledgement() {
+        let pid = view.process.shellPid
+        guard !hasExited, pid > 0 else { return }
+        kill(pid, SIGTERM)
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard let self, !self.hasExited, self.view.process.shellPid == pid else { return }
+            kill(pid, SIGKILL)
+        }
+    }
+
     nonisolated func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
     nonisolated func setTerminalTitle(source: LocalProcessTerminalView, title: String) {}
     nonisolated func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {
@@ -431,7 +448,13 @@ struct TerminalProcessLaunch {
         Task { @MainActor in if self.directory != path { self.directory = path } }
     }
     nonisolated func processTerminated(source: TerminalView, exitCode: Int32?) {
-        Task { @MainActor in self.running = false }
+        Task { @MainActor in
+            self.running = false
+            self.hasExited = true
+            let callback = self.onProcessExit
+            self.onProcessExit = nil
+            callback?()
+        }
     }
 }
 

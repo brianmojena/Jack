@@ -19,6 +19,7 @@
 		13E5587D2DFD397AFB57C9B5 /* ProgressTasks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BD8FE80738952666BEDFBA7 /* ProgressTasks.swift */; };
 		1426FBDE33222743A7485D0A /* JackCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A669F4C23030DFB614FB88C4 /* JackCore.framework */; };
 		1498D1DF8A8083084BF82604 /* JackDesign.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12A56C2DEDA3D8023FD61366 /* JackDesign.swift */; };
+		15322D1AC3D6B11097E60825 /* AntigravityIntegration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032BBF62CE8545A33F6498ED /* AntigravityIntegration.swift */; };
 		166A26F7D4105C984E303849 /* AsideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AA8C81C6A84E8DDF53B0226 /* AsideView.swift */; };
 		1758CFAF8C920737DFED7D85 /* JackCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A669F4C23030DFB614FB88C4 /* JackCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		185690F8D6DC3A3439597B70 /* JackCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A669F4C23030DFB614FB88C4 /* JackCore.framework */; };
@@ -198,6 +199,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		032BBF62CE8545A33F6498ED /* AntigravityIntegration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AntigravityIntegration.swift; sourceTree = "<group>"; };
 		05109BEC027632469B1BE7E8 /* OfficeAssignments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeAssignments.swift; sourceTree = "<group>"; };
 		0665C3AFD39156575CA767CA /* OfficeQuality.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeQuality.swift; sourceTree = "<group>"; };
 		067FC34731494377F242C1EA /* OfficeLayout.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = OfficeLayout.json; sourceTree = "<group>"; };
@@ -374,6 +376,7 @@
 				112E9D6E62140F40A3F29A21 /* AgentBridge.swift */,
 				9864BADC2C8516EF2CD7C854 /* AgentMentions.swift */,
 				EFF06CBC57D40F317FC649F6 /* AgentUpdater.swift */,
+				032BBF62CE8545A33F6498ED /* AntigravityIntegration.swift */,
 				DB9EBFF77446878230D70940 /* AppInstaller.swift */,
 				C25E6C8DB178859ECD873C96 /* Artifacts.swift */,
 				2CFA10CB841F5A058AC09FE4 /* ArtifactTools.swift */,
@@ -799,6 +802,7 @@
 				26F33593401C4D6EF10CC974 /* AgentBridge.swift in Sources */,
 				31E3313DC51961979D4DFD8D /* AgentMentions.swift in Sources */,
 				5074BA1370040975AAB81985 /* AgentUpdater.swift in Sources */,
+				15322D1AC3D6B11097E60825 /* AntigravityIntegration.swift in Sources */,
 				A2E8E05038BC1F06CFDD8C89 /* AppInstaller.swift in Sources */,
 				961257F1331631473551DE16 /* ArtifactTools.swift in Sources */,
 				50B143FC44D72601C56EA034 /* Artifacts.swift in Sources */,

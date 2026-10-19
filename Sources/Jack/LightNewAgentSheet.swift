@@ -47,7 +47,8 @@ struct LightNewAgentSheet: View {
         self.localModels = localModels
         self.onCreate = onCreate
         self.onCancel = onCancel
-        let provider = initialProvider ?? Self.lastProvider
+        let requested = initialProvider ?? Self.lastProvider
+        let provider = requested.isNormalOnly ? .codex : requested
         _projectPath = State(initialValue: initialSpace ?? "")
         _provider = State(initialValue: provider)
         _model = State(initialValue: provider == .stellar ? Self.firstLocal(localModels) : provider.defaultModel)
@@ -151,9 +152,9 @@ struct LightNewAgentSheet: View {
         }
         .task {
             var found: [ChatProvider: Bool] = [:]
-            for provider in ChatProvider.allCases where !provider.isBuiltIn {
+            for provider in ChatProvider.allCases where !provider.isBuiltIn && !provider.isNormalOnly {
                 let override = UserDefaults.standard.string(forKey: "providerExecutablePath.\(provider.rawValue)")
-                found[provider] = ExecutableResolver.resolve(provider.rawValue, override: override?.isEmpty == false ? override : nil) != nil
+                found[provider] = ExecutableResolver.resolve(provider.executableName, override: override?.isEmpty == false ? override : nil) != nil
             }
             installed = found
         }
@@ -261,7 +262,7 @@ struct LightNewAgentSheet: View {
 
     private var providerCards: some View {
         HStack(spacing: 8) {
-            ForEach(ChatProvider.allCases) { option in
+            ForEach(ChatProvider.allCases.filter { !$0.isNormalOnly }) { option in
                 let selected = option == provider
                 let available = option == .stellar ? !localModels.isEmpty : installed[option] ?? true
                 Button { provider = option } label: {
@@ -287,7 +288,7 @@ struct LightNewAgentSheet: View {
                 .buttonStyle(.plain)
                 .help(option == .stellar
                       ? (available ? "Stellar Code (beta): el agente de Jack, solo con modelos locales" : "Stellar Code (beta) necesita un modelo local: inicia Ollama, MLX o LM Studio")
-                      : available ? option.title : "No se encontró \(option.rawValue). Configura su ruta en Ajustes.")
+                      : available ? option.title : "No se encontró \(option.executableName). Configura su ruta en Ajustes.")
             }
         }
     }

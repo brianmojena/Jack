@@ -569,6 +569,8 @@ func listServers(all: Bool) -> Int32 {
 
 let arguments = Array(CommandLine.arguments.dropFirst())
 switch arguments.first {
+case "antigravity-mcp":
+    exit(AntigravityIntegration.runMCPProxy())
 case "run":
     let options = parseOptions(Array(arguments.dropFirst()), allowsCommand: true)
     guard !options.command.isEmpty else { fail("run needs a command: jack-progress run --title \"…\" -- <command>") }

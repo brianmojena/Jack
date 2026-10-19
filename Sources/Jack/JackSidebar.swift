@@ -587,10 +587,12 @@ struct JackSidebar: View {
                 NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
             }
         }
-        if row.provider == .claude {
+        if row.provider == .claude || row.provider == .antigravity {
             Divider()
             Button("Continuar en la terminal", systemImage: "apple.terminal") { onContinueInTerminal(row.id) }
                 .disabled(!row.canEdit)
+        }
+        if row.provider == .claude {
             Button("Actualizar desde Claude Code", systemImage: "arrow.clockwise") { onReloadFromClaude(row.id) }
                 .disabled(!row.canEdit)
         }

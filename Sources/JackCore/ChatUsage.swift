@@ -96,6 +96,8 @@ enum UsageDecoder {
             return ProviderUsage(provider: .stellar, note: note)
         case .opencode:
             return ProviderUsage(provider: .opencode, note: "OpenCode no expone una cuota unificada: depende de la cuenta del proveedor del modelo. El consumo de tokens y coste se muestra en cada conversación.")
+        case .antigravity:
+            return ProviderUsage(provider: .antigravity, note: "Antigravity no publica una lectura local de cuotas para la CLI. La cuota se consulta en la cuenta de Google.")
         }
     }
     /// `/usage` is answered locally by Claude Code, without inference, and stores a fresh reading in `~/.claude.json`.

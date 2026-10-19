@@ -23,8 +23,9 @@ struct LightWindowView: View {
         case conversations, options, commands, activity, usage, progress, servers, files, formatted
         var id: String { rawValue }
     }
-    private var conversation: ChatConversation? { store.selectedConversation }
-    private var spaces: [String] { Array(Set(store.conversations.map(\.projectPath))).sorted() }
+    private var chats: [ChatConversation] { store.conversations.filter { !$0.provider.isNormalOnly } }
+    private var conversation: ChatConversation? { store.selectedConversation.flatMap { $0.provider.isNormalOnly ? nil : $0 } }
+    private var spaces: [String] { Array(Set(chats.map(\.projectPath))).sorted() }
     private var imported: Set<String> { Set(store.conversations.filter { $0.provider == .claude }.compactMap(\.sessionID)) }
 
     var body: some View {
@@ -71,7 +72,7 @@ struct LightWindowView: View {
             defer { previousStatuses = statuses }
             guard !previousStatuses.isEmpty, !windowVisible || !NSApp.isActive else { return }
             for (id, status) in statuses where status != previousStatuses[id] {
-                guard let chat = store.conversations.first(where: { $0.id == id }), chat.parentID == nil else { continue }
+                guard let chat = chats.first(where: { $0.id == id }), chat.parentID == nil else { continue }
                 let title: String
                 switch status {
                 case .idle where previousStatuses[id]?.isActive == true: title = "Terminó: " + chat.title
@@ -134,7 +135,7 @@ struct LightWindowView: View {
             Menu {
                 Button("Buscar conversaciones…") { panel = .conversations }
                 Divider()
-                ForEach(store.conversations) { chat in
+                ForEach(chats) { chat in
                     Button {
                         store.select(chat.id)
                     } label: {
@@ -143,9 +144,9 @@ struct LightWindowView: View {
                     }
                 }
             } label: { Text(conversation?.title ?? "Conversaciones").lineLimit(1) }
-            .disabled(store.conversations.isEmpty)
+            .disabled(chats.isEmpty)
             Spacer(minLength: 4)
-            if let waiting = store.conversations.first(where: { $0.id != store.selectedID && store.statuses[$0.id] == .waiting }) {
+            if let waiting = chats.first(where: { $0.id != store.selectedID && store.statuses[$0.id] == .waiting }) {
                 Button("Atención", systemImage: "hand.raised") { store.select(waiting.id) }
                     .help("\(waiting.title) necesita tu respuesta")
             }
@@ -268,7 +269,7 @@ struct LightWindowView: View {
         case .conversations:
             LightConversationsPanel(store: store) { store.select($0); panel = nil }
         case .usage:
-            ProviderUsageView(usage: store.usage, refreshing: store.refreshingUsage, refresh: { Task { await store.refreshUsage() } })
+            ProviderUsageView(usage: store.usage, refreshing: store.refreshingUsage, refresh: { Task { await store.refreshUsage() } }, showsNormalOnly: false)
         case .options:
             VStack(alignment: .leading, spacing: 16) {
                 Text("Opciones de Light").font(.headline)
@@ -343,22 +344,22 @@ struct LightWindowView: View {
         }
     }
     private func move(_ delta: Int) {
-        let ids = store.conversations.map(\.id)
+        let ids = chats.map(\.id)
         guard !ids.isEmpty else { return }
         let index = store.selectedID.flatMap { ids.firstIndex(of: $0) } ?? 0
         store.select(ids[(index + delta + ids.count) % ids.count])
     }
     private var actions: JackActions {
         JackActions(newAgent: { newAgent = true }, resumeClaudeSession: { resumeSession = true }, move: move,
-                    selectIndex: { index in if store.conversations.indices.contains(index) { store.select(store.conversations[index].id) } },
-                    nextAttention: { if let chat = store.conversations.first(where: { store.statuses[$0.id] == .waiting }) { store.select(chat.id) } },
+                    selectIndex: { index in if chats.indices.contains(index) { store.select(chats[index].id) } },
+                    nextAttention: { if let chat = chats.first(where: { store.statuses[$0.id] == .waiting }) { store.select(chat.id) } },
                     focusComposer: { focusRequest += 1 }, focusSearch: { panel = .conversations },
                     toggleUnread: { if let chat = conversation { store.setUnread(chat.id, chat.hasUnread != true) } },
                     toggleTerminal: { panel = .activity }, toggleBrowser: {}, toggleSimulator: {}, toggleGit: {},
                     toggleExplorer: { panel = .files }, toggleSidebar: {}, closeTab: { store.selectedID = nil },
                     cyclePane: { _ in }, closePanes: {}, paneCount: 0,
                     enterBatterySaver: { NSApp.keyWindow?.miniaturize(nil) },
-                    hasSelection: conversation != nil, agentCount: store.conversations.count)
+                    hasSelection: conversation != nil, agentCount: chats.count)
     }
 }
 
@@ -366,11 +367,12 @@ private struct LightConversationsPanel: View {
     @ObservedObject var store: ChatStore
     let onSelect: (UUID) -> Void
     @State private var query = ""
+    private var chats: [ChatConversation] { store.conversations.filter { !$0.provider.isNormalOnly } }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Conversaciones").font(.headline)
             TextField("Buscar por título o carpeta", text: $query).textFieldStyle(.roundedBorder)
-            List(store.conversations.filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || $0.projectPath.localizedCaseInsensitiveContains(query) }) { chat in
+            List(chats.filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || $0.projectPath.localizedCaseInsensitiveContains(query) }) { chat in
                 Button { onSelect(chat.id) } label: {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(chat.title).font(.system(size: 12, weight: .medium))

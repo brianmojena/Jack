@@ -1,6 +1,17 @@
 import Combine
 import Foundation
 
+enum AntigravityTerminalError: LocalizedError {
+    case unavailable, notClaimed, invalidated
+    var errorDescription: String? {
+        switch self {
+        case .unavailable: return "La terminal de Antigravity solo está disponible en Normal."
+        case .notClaimed: return "La sesión de Antigravity ya no está reservada para esta terminal."
+        case .invalidated: return "La sesión o el modo cambió mientras se preparaba la terminal. Vuelve a intentarlo."
+        }
+    }
+}
+
 @MainActor public final class ChatStore: ObservableObject {
     @Published public private(set) var conversations: [ChatConversation] = []
     @Published public var selectedID: UUID?
@@ -55,6 +66,13 @@ import Foundation
     private var budgetTurnUsage: [UUID: Int] = [:]
     private let loadCommandList: (ChatProvider, String) async throws -> [ChatCommand]
     private let codexModels = ChatModelCatalog.cachedCodex()
+    /// Filled from `agy models` on first use. It starts empty so the CLI's own default applies until answered.
+    @Published public private(set) var antigravityModels: [ChatModelChoice] = []
+    private var antigravityModelsTask: Task<Void, Never>?
+    private var antigravityModelsRequest: UUID?
+    var loadAntigravityModels: (String?) async -> [ChatModelChoice] = { override in
+        await ChatModelCatalog.antigravityModels(executable: ChatProvider.antigravity.executableName, override: override)
+    }
     public var activeCount: Int { runs.count }
     public var selectedConversation: ChatConversation? { conversations.first { $0.id == selectedID } }
     private let archive: ChatArchive
@@ -209,7 +227,11 @@ import Foundation
         lightModeEnabled = enabled
         modelDiscoveryGeneration += 1
         modeGeneration += 1
+        antigravityModelsTask?.cancel(); antigravityModelsTask = nil; antigravityModelsRequest = nil
         if enabled {
+            if let selectedID, conversations.first(where: { $0.id == selectedID })?.provider.isNormalOnly == true {
+                self.selectedID = nil
+            }
             chatNameImprovementTask?.cancel(); chatNameImprovementTask = nil
             improvingChatNames = false
             let hiddenCloudIDs = Set(localModels.filter(\.isCloud).map(\.id))
@@ -218,6 +240,7 @@ import Foundation
             localModels.removeAll(where: \.isCloud)
             loadingLocalModels = false
             asides.cancelCloudAsides()
+            asides.cancelNormalOnlyAsides()
             for state in flowDiagramStates.values { state.cancel() }
         }
         notebookWorkspace?.setEnabled(!enabled)
@@ -227,11 +250,11 @@ import Foundation
         progressMonitor?.setWatching(!enabled)
         serverMonitor?.setWatching(!enabled)
         for (id, driver) in liveDrivers {
-            if enabled, conversations.first(where: { $0.id == id }).map({ Self.isKnownCloud($0.model, known: knownCloudModelIDs, linked: linkedCloudModelIDs) }) == true { driver.stop() }
+            if enabled, conversations.first(where: { $0.id == id }).map({ $0.provider.isNormalOnly || Self.isKnownCloud($0.model, known: knownCloudModelIDs, linked: linkedCloudModelIDs) }) == true { driver.stop() }
             driver.setEnergySaving(enabled)
         }
         for (id, driver) in drivers {
-            if enabled, conversations.first(where: { $0.id == id }).map({ Self.isKnownCloud($0.model, known: knownCloudModelIDs, linked: linkedCloudModelIDs) }) == true { driver.stop() }
+            if enabled, conversations.first(where: { $0.id == id }).map({ $0.provider.isNormalOnly || Self.isKnownCloud($0.model, known: knownCloudModelIDs, linked: linkedCloudModelIDs) }) == true { driver.stop() }
             driver.setEnergySaving(enabled)
         }
         if enabled {
@@ -260,8 +283,33 @@ import Foundation
         lightDetailsVisible = visible
         if visible { for id in Array(pending.keys) { flush(id) } }
     }
+    /// Reads the model list from `agy models`. It starts no inference and never runs in Light.
+    /// Only the latest request may publish, and Light or shutdown cancels it.
+    public func refreshAntigravityModels() async {
+        guard !lightModeEnabled, !stopped else { return }
+        antigravityModelsTask?.cancel()
+        let request = UUID()
+        antigravityModelsRequest = request
+        let discovery = modelDiscoveryGeneration
+        let mode = modeGeneration
+        let override = preferences?.string(forKey: "providerExecutablePath.\(ChatProvider.antigravity.rawValue)")
+        let task = Task { [weak self] in
+            guard let self else { return }
+            let models = await self.loadAntigravityModels(override?.isEmpty == false ? override : nil)
+            guard !Task.isCancelled, !models.isEmpty, !self.stopped, !self.lightModeEnabled,
+                  self.antigravityModelsRequest == request,
+                  self.modelDiscoveryGeneration == discovery, self.modeGeneration == mode else { return }
+            self.antigravityModels = models
+            self.antigravityModelsTask = nil
+            self.antigravityModelsRequest = nil
+        }
+        antigravityModelsTask = task
+        await task.value
+    }
     public func refreshUsage(_ providers: [ChatProvider] = ChatProvider.allCases) async {
         guard !refreshingUsage else { return }
+        let providers = providers.filter { !(lightModeEnabled && $0.isNormalOnly) }
+        guard !providers.isEmpty else { return }
         refreshingUsage = true
         defer { refreshingUsage = false }
         let allowsCloud = !lightModeEnabled
@@ -296,7 +344,9 @@ import Foundation
     }
     /// El modo con que empiezan los agentes nuevos: Auto en el modo Normal; Light conserva el suyo de siempre (Manual).
     func defaultMode(for provider: ChatProvider) -> String? {
-        guard !lightModeEnabled, ChatRunMode.choices(for: provider).contains(where: { $0.id == "auto" }) else { return nil }
+        // Antigravity respects its own permission settings until the user picks a mode.
+        guard !lightModeEnabled, provider != .antigravity,
+              ChatRunMode.choices(for: provider).contains(where: { $0.id == "auto" }) else { return nil }
         return "auto"
     }
     public func defaultEffort(for provider: ChatProvider) -> String {
@@ -328,6 +378,10 @@ import Foundation
             if select { errorMessage = "Selecciona una carpeta de proyecto válida." }
             return nil
         }
+        guard !(lightModeEnabled && provider.isNormalOnly) else {
+            errorMessage = "\(provider.title) solo está disponible en el modo Normal."
+            return nil
+        }
         let effort = effort ?? defaultEffort(for: provider)
         var conversation = ChatConversation(projectPath: projectPath, provider: provider, model: model, effort: effort)
         if provider == .stellar {
@@ -352,6 +406,7 @@ import Foundation
         }
         save(conversation.id)
         if select { evictInactiveTranscripts() }
+        if provider == .antigravity { Task { [weak self] in await self?.refreshAntigravityModels() } }
         return conversation.id
     }
     /// Creates an agent for `message` without a folder: Jack resolves known projects, then its model
@@ -667,6 +722,100 @@ import Foundation
     }
     public func releaseClaudeSessionFromTerminal(_ session: UUID) { terminalClaudeSessions.remove(session) }
 
+    // MARK: Antigravity terminal ownership
+
+    /// An Antigravity session handed to the native terminal TUI. Keyed by conversation so releasing is
+    /// stable even if the chat's session changes, and remembering the `agy` session so a clone cannot reuse it.
+    private struct AntigravityTerminalOwnership: Equatable {
+        let nonce = UUID()
+        let conversationID: UUID
+        let sessionID: String
+    }
+
+    /// Conversations whose session is resumed inside the terminal. `agy` can only run one process per session.
+    @Published private var antigravityTerminalOwners: [UUID: AntigravityTerminalOwnership] = [:]
+
+    /// Test seam for Antigravity's delegation in chat and terminal; nil uses the real bridge.
+    var antigravityDelegationProvider: (@MainActor (UUID, Bool, Bool, Bool) async throws -> ChatDelegation?)?
+    /// Builds the MCP environment for the terminal's `agy`; a seam so tests never touch the real config.
+    var antigravityEnvironmentBuilder: @MainActor (ChatDelegation) throws -> [String: String] = { try AntigravityIntegration.environment(delegation: $0) }
+
+    /// A Normal terminal may take an idle Antigravity session, never one with pending work or a duplicate.
+    /// Ownership is registered by conversation and by `agy` session, so a clone cannot resume it too.
+    public func claimAntigravitySessionForTerminal(_ conversationID: UUID) -> Bool {
+        guard !stopped, !lightModeEnabled else { return false }
+        guard let conversation = conversations.first(where: { $0.id == conversationID }),
+              conversation.provider == .antigravity, conversation.remote == nil,
+              let sessionID = conversation.sessionID, !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        // One owner per conversation and one owner per `agy` session.
+        guard antigravityTerminalOwners[conversationID] == nil,
+              !antigravityTerminalOwners.values.contains(where: { $0.sessionID == sessionID }) else { return false }
+        // Only an idle session may leave the chat: no turn, queued or waiting message, aside,
+        // compaction, handoff, pending permission or folder search.
+        let matching = conversations.filter { $0.provider == .antigravity && $0.sessionID == sessionID }
+        guard matching.allSatisfy({ chat in
+            runs[chat.id] == nil && !queue.contains(where: { $0.0 == chat.id })
+                && compactions[chat.id] == nil && handoffs[chat.id] == nil
+                && waiting[chat.id]?.isEmpty != false && approvals[chat.id]?.isEmpty != false
+                && asides.items[chat.id]?.finished != false && locateTasks[chat.id] == nil
+        }) else { return false }
+        // Close any dormant kept-alive process: it would otherwise stay attached to this session.
+        for chat in matching {
+            guard closeSession(chat.id) else { return false }
+            drivers.removeValue(forKey: chat.id)?.close()
+        }
+        antigravityTerminalOwners[conversationID] = AntigravityTerminalOwnership(conversationID: conversationID, sessionID: sessionID)
+        return true
+    }
+
+    /// Returns the session to the chat. Keyed by conversation, so it works after the chat's session changed.
+    public func releaseAntigravitySessionFromTerminal(_ conversationID: UUID) {
+        antigravityTerminalOwners.removeValue(forKey: conversationID)
+    }
+
+    /// Whether this conversation's session is currently owned by the terminal, or by another chat on the same session.
+    public func antigravitySessionIsInTerminal(_ conversationID: UUID) -> Bool {
+        if antigravityTerminalOwners[conversationID] != nil { return true }
+        guard let chat = conversations.first(where: { $0.id == conversationID }), chat.provider == .antigravity,
+              let session = chat.sessionID, !session.isEmpty else { return false }
+        return antigravityTerminalOwners.values.contains { $0.sessionID == session }
+    }
+
+    /// The environment a terminal's `agy` needs to reach Jack's MCP server, without secrets in its config.
+    /// Only while this conversation owns its session, in Normal mode, with the chat's exact capabilities.
+    public func antigravityTerminalEnvironment(_ conversationID: UUID) async throws -> [String: String] {
+        guard !stopped, !lightModeEnabled else { throw AntigravityTerminalError.unavailable }
+        guard let conversation = conversations.first(where: { $0.id == conversationID }),
+              conversation.provider == .antigravity, conversation.remote == nil,
+              let sessionID = conversation.sessionID, !sessionID.isEmpty,
+              antigravityTerminalOwners[conversationID]?.sessionID == sessionID else { throw AntigravityTerminalError.notClaimed }
+        let ownership = antigravityTerminalOwners[conversationID]
+        let generation = modeGeneration
+        // The same capabilities a normal run gets, so the terminal's MCP matches the chat exactly.
+        let delegates = conversation.parentID == nil && delegationEnabled
+        let images = imageGenerationAvailable
+        let notebooks = !lightModeEnabled
+        let delegation: ChatDelegation?
+        if let provider = antigravityDelegationProvider {
+            delegation = (delegates || images || notebooks) ? try await provider(conversationID, delegates, images, notebooks) : nil
+        } else if delegates || images || notebooks {
+            delegation = try await bridge.delegation(for: conversationID, delegates: delegates, images: images, notebooks: notebooks)
+        } else {
+            delegation = nil
+        }
+        // A mode or ownership change during the await must not install MCP in Light or onto another session.
+        guard !stopped, !lightModeEnabled, modeGeneration == generation,
+              let current = conversations.first(where: { $0.id == conversationID }),
+              current.provider == .antigravity, current.remote == nil, current.sessionID == sessionID,
+              antigravityTerminalOwners[conversationID] == ownership else {
+            throw AntigravityTerminalError.invalidated
+        }
+        guard let delegation else { throw AntigravityTerminalError.unavailable }
+        var environment = ProgressFiles.environment(for: conversationID)
+        environment.merge(try antigravityEnvironmentBuilder(delegation)) { _, new in new }
+        return environment
+    }
+
     /// Ends the agent's open process, e.g. before the same session continues in a terminal.
     /// Returns false while it is working.
     @discardableResult
@@ -678,6 +827,8 @@ import Foundation
     public func select(_ id: UUID) {
         if lightModeEnabled { flush(id) }
         guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
+        guard !(lightModeEnabled && conversations[index].provider.isNormalOnly) else { return }
+        let needsAntigravityModels = conversations[index].provider == .antigravity && antigravityModels.isEmpty
         if !loaded.contains(id) {
             do { if let transcript = try archive.load(id) { conversations[index].messages = transcript.messages }; loaded.insert(id); settleBackground(id) }
             catch { errorMessage = "No se pudo leer esta conversación: \(error.localizedDescription)"; return }
@@ -691,6 +842,7 @@ import Foundation
         }
         if changed { save(id) }
         evictInactiveTranscripts()
+        if needsAntigravityModels { Task { [weak self] in await self?.refreshAntigravityModels() } }
     }
     private static func commandKey(_ provider: ChatProvider, _ projectPath: String) -> String { "\(provider.rawValue)|\(projectPath)" }
     public func commands(for conversation: ChatConversation) -> [ChatCommand]? {
@@ -796,7 +948,7 @@ import Foundation
         send(prompt, attachments: attachments, to: id)
     }
     /// Messages can always be written: while the agent works they wait until it reads them.
-    public func canSend(to id: UUID) -> Bool { !stopped }
+    public func canSend(to id: UUID) -> Bool { !stopped && !antigravitySessionIsInTerminal(id) }
     /// Whether the agent is busy, so a message sent now waits.
     public func isBusy(_ id: UUID) -> Bool { runs[id] != nil || queue.contains { $0.0 == id } }
     /// Whether the agent reads waiting messages while it works, rather than after its turn.
@@ -808,9 +960,17 @@ import Foundation
             errorMessage = "Esta sesión está abierta en la interfaz Terminal. Cierra su proceso antes de usar el chat."
             return
         }
+        if !lightModeEnabled, antigravitySessionIsInTerminal(id) {
+            errorMessage = "Esta sesión de Antigravity está abierta en la interfaz Terminal. Cierra su proceso antes de usar el chat."
+            return
+        }
 
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !attachments.isEmpty, conversations.contains(where: { $0.id == id }), !stopped else { return }
+        if lightModeEnabled, conversations.first(where: { $0.id == id })?.provider.isNormalOnly == true {
+            errorMessage = "Este agente solo está disponible en el modo Normal."
+            return
+        }
         clearSuggestion(id)
         if isUnplaced(id), JackCommandCatalog.parse(text) == nil {
             // Without a folder yet, the message helps the model choose it.
@@ -1054,9 +1214,10 @@ import Foundation
     }
     /// Answers a question about the conversation from a copy of its session, without interrupting the agent.
     public func askAside(_ question: String, in id: UUID) {
-        guard !stopped else { return }
+        guard !stopped, !antigravitySessionIsInTerminal(id) else { return }
         if !lightModeEnabled { loadTranscript(id) }
-        guard let conversation = conversations.first(where: { $0.id == id }) else { return }
+        guard let conversation = conversations.first(where: { $0.id == id }),
+              !(lightModeEnabled && conversation.provider.isNormalOnly) else { return }
         asides.ask(question, about: conversation, allowCloud: !lightModeEnabled, cloudAllowed: { [weak self] in
             guard let self else { return false }
             return !self.lightModeEnabled
@@ -1381,6 +1542,7 @@ import Foundation
         case .claude: catalog = ChatModelChoice.claudeCatalog
         case .opencode: catalog = [ChatModelChoice(id: "", efforts: [])]
         case .stellar: catalog = Self.visibleStellarModels(localModels, lightMode: lightModeEnabled).map { ChatModelChoice(id: $0.id, title: $0.title, efforts: []) }
+        case .antigravity: catalog = [ChatModelChoice(id: "", title: "Predeterminado", efforts: ChatModelChoice.antigravityEfforts)] + antigravityModels
         }
         var ids = (recentModels[provider] ?? []) + conversations.filter { $0.provider == provider }.map(\.model) + [provider.defaultModel] + catalog.map(\.id)
         if provider == .stellar {
@@ -1394,7 +1556,7 @@ import Foundation
         }
     }
     public func supportedEfforts(provider: ChatProvider, model: String) -> [String] {
-        let catalog = provider == .codex ? codexModels : provider == .claude ? ChatModelChoice.claudeCatalog : []
+        let catalog = provider == .codex ? codexModels : provider == .claude ? ChatModelChoice.claudeCatalog : provider == .antigravity ? antigravityModels : []
         return catalog.first { $0.id == model }?.efforts ?? ChatModelChoice.fallbackEfforts(provider: provider, model: model)
     }
     /// Keeps the stored effort when the model has no levels, so switching back restores it.
@@ -1411,7 +1573,9 @@ import Foundation
     }
     public func shutdown() {
         stopped = true; queue.removeAll(); flushTask?.cancel(); flushTask = nil
+        modelDiscoveryGeneration += 1
         modeGeneration += 1
+        antigravityModelsTask?.cancel(); antigravityModelsTask = nil; antigravityModelsRequest = nil
         for state in flowDiagramStates.values { state.cancel() }
         flowDiagramStates.removeAll()
         for id in Array(locateTasks.keys) { cancelLocating(id) }
@@ -1433,6 +1597,19 @@ import Foundation
               let next = queue.firstIndex(where: { runs[$0.0] == nil }) {
             let (id, queuedPrompt) = queue.remove(at: next)
             guard let conversation = conversations.first(where: { $0.id == id }) else { continue }
+            guard !antigravitySessionIsInTerminal(id) else {
+                statuses[id] = .failed
+                errorMessage = "Esta sesión de Antigravity sigue abierta en la terminal."
+                continue
+            }
+            guard !(lightModeEnabled && conversation.provider.isNormalOnly) else {
+                if let index = conversations.firstIndex(where: { $0.id == id }) {
+                    conversations[index].messages.append(ChatMessage(role: "error", text: "Este agente solo está disponible en el modo Normal."))
+                    save(id)
+                }
+                statuses[id] = .failed
+                continue
+            }
             let driver = driver(for: conversation)
             let prompt = preparedJackPrompt(queuedPrompt, conversation: conversation)
             // Only top-level agents may delegate, so sub-agents cannot spawn more agents. Every agent may create images.
@@ -1440,7 +1617,16 @@ import Foundation
             let images = imageGenerationAvailable
             let notebooks = !lightModeEnabled
             startRun(id, driver: driver) { [weak self] onEvent in
-                let delegation = delegates || images || notebooks ? try? await self?.bridge.delegation(for: id, delegates: delegates, images: images, notebooks: notebooks) : nil
+                let delegation: ChatDelegation?
+                if conversation.provider == .antigravity {
+                    if let provider = self?.antigravityDelegationProvider {
+                        delegation = try await provider(id, delegates, images, notebooks)
+                    } else {
+                        delegation = try await self?.bridge.delegation(for: id, delegates: delegates, images: images, notebooks: notebooks)
+                    }
+                } else {
+                    delegation = delegates || images || notebooks ? try? await self?.bridge.delegation(for: id, delegates: delegates, images: images, notebooks: notebooks) : nil
+                }
                 try Task.checkCancellation()
                 guard self?.stoppingRuns.contains(id) != true else { throw CancellationError() }
                 try await driver.run(conversation: conversation, prompt: prompt, delegation: delegation, onEvent: onEvent)

@@ -12,6 +12,7 @@ public enum ChatDriverFactory {
         case .claude: return ClaudeChatDriver()
         case .opencode: return OpenCodeChatDriver()
         case .stellar: return StellarChatDriver()
+        case .antigravity: return AntigravityChatDriver()
         }
     }
 }
@@ -1166,6 +1167,191 @@ private final class ClaudeChatDriver: ProcessChatDriver {
 }
 
 @MainActor
+enum AntigravityProtocol {
+    /// Turns one NDJSON event into transcript updates. `namespace` is unique per execution, so a second
+    /// turn never reuses a message or tool id from the transcript. `sawText` and `streamedText`
+    /// carry information a single event cannot know.
+    static func events(_ object: [String: Any], namespace: String, sawText: inout Bool,
+                       streamedText: inout String, lastContext: inout Int?) -> [ChatEvent] {
+        let message = "antigravity-\(namespace)-message"
+        switch object["event"] as? String {
+        case "init":
+            var events: [ChatEvent] = []
+            if let id = object["conversation_id"] as? String, !id.isEmpty { events.append(.session(id)) }
+            return events
+        case "step_update":
+            guard let step = object["step_update"] as? [String: Any] else { return [] }
+            let conversation = step["conversation_id"] as? String
+            let type = step["step_type"] as? String ?? ""
+            let state = (step["state"] as? String ?? "").uppercased()
+            let finished = state == "DONE"
+            let index = step["step_index"] as? Int ?? 0
+            var events: [ChatEvent] = []
+            if let conversation, !conversation.isEmpty { events.append(.session(conversation)) }
+            switch type {
+            case "agent_response":
+                if let delta = step["text_delta"] as? String, !delta.isEmpty {
+                    sawText = true
+                    streamedText += delta
+                    events.append(.text(id: message, text: delta, replace: false))
+                }
+            case "tool":
+                let info = step["tool_info"] as? [String: Any] ?? [:]
+                let name = step["tool_name"] as? String ?? info["name"] as? String ?? "Herramienta"
+                let status = finished ? (info["error"] != nil ? "failed" : "completed") : "running"
+                events.append(.tool(id: "antigravity-\(namespace)-tool-\(index)",
+                                    title: title(name: name, info: info),
+                                    detail: detail(info: info),
+                                    status: status))
+            case "thinking", "reasoning", "thought":
+                if let delta = step["text_delta"] as? String, !delta.isEmpty {
+                    events.append(.reasoning(id: "antigravity-\(namespace)-reasoning-\(index)", text: delta, replace: false))
+                }
+            default:
+                break
+            }
+            return events
+        case "result":
+            guard let result = object["result"] as? [String: Any] else { return [] }
+            var events: [ChatEvent] = []
+            if let id = result["conversation_id"] as? String, !id.isEmpty { events.append(.session(id)) }
+            let status = (result["status"] as? String ?? "").uppercased()
+            let response = result["response"] as? String ?? ""
+            events.append(contentsOf: reconcile(response: response, message: message, streamed: streamedText))
+            if let usage = result["usage"] as? [String: Any] {
+                events.append(.tokens(ChatTokenUsage(input: int(usage["input_tokens"]), output: int(usage["output_tokens"]),
+                                                     cached: int(usage["cache_read_tokens"]), reasoning: int(usage["thinking_tokens"]))))
+            }
+            switch status {
+            case "SUCCESS":
+                let denied = (result["denied_actions"] as? [[String: Any]] ?? []).compactMap { $0["tool_name"] as? String ?? $0["name"] as? String }
+                if denied.isEmpty { events.append(.completed) }
+                else { events.append(.failure("Antigravity denegó \(denied.count) acción(es): \(Set(denied).sorted().joined(separator: ", ")). Usa el modo Auto o permite esas herramientas en su configuración. Para aprobarlas manualmente, continúa esta conversación en la terminal.")) }
+            case "ERROR", "INVALID":
+                events.append(.failure(result["error"] as? String ?? "Antigravity terminó con estado \(status)."))
+            case "CANCELED", "INTERRUPTED":
+                events.append(.failure("Antigravity canceló la ejecución."))
+            default:
+                events.append(.failure(result["error"] as? String ?? "Antigravity terminó con estado \(status.isEmpty ? "desconocido" : status)."))
+            }
+            return events
+        default: return []
+        }
+    }
+
+    /// The final result is authoritative. Keep streamed output when it already contains it; append a
+    /// missing tail; otherwise replace it so an incomplete stream is never left on screen.
+    private static func reconcile(response: String, message: String, streamed: String) -> [ChatEvent] {
+        guard !response.isEmpty else { return [] }
+        if streamed.isEmpty { return [.text(id: message, text: response, replace: true)] }
+        if streamed == response || streamed.hasSuffix(response) { return [] }
+        if response.hasPrefix(streamed) {
+            let tail = String(response.dropFirst(streamed.count))
+            return tail.isEmpty ? [] : [.text(id: message, text: tail, replace: false)]
+        }
+        return [.text(id: message, text: response, replace: true)]
+    }
+
+    private static func int(_ value: Any?) -> Int {
+        if let number = value as? NSNumber { return number.intValue }
+        if let string = value as? String { return Int(string) ?? 0 }
+        return 0
+    }
+
+    private static func title(name: String, info: [String: Any]) -> String {
+        let parameters = info["parameters"] as? [String: Any] ?? [:]
+        if let command = parameters["CommandLine"] as? String, !command.isEmpty { return "Ejecutar comando" }
+        if name.contains("write") || name.contains("edit") { return "Editar archivos" }
+        if name.contains("read") { return "Leer archivos" }
+        if name.contains("search") || name.contains("grep") { return "Buscar" }
+        return name.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
+    private static func detail(info: [String: Any]) -> String {
+        let parameters = info["parameters"] as? [String: Any] ?? [:]
+        var parts: [String] = []
+        if let command = parameters["CommandLine"] as? String, !command.isEmpty { parts.append(command) }
+        else if !parameters.isEmpty { parts.append(boundedJSON(parameters)) }
+        if let output = info["output"] as? String, !output.isEmpty { parts.append(output) }
+        if let error = info["error"] as? [String: Any] {
+            parts.append(error["message"] as? String ?? boundedJSON(error))
+        } else if let error = info["error"] as? String {
+            parts.append(error)
+        }
+        return String(parts.joined(separator: "\n").suffix(64 * 1024))
+    }
+}
+
+/// Antigravity CLI's headless protocol: one process per turn, resuming the previous
+/// `conversation_id`. It has no approval or mid-turn input channel, so Jack queues
+/// messages until the turn ends.
+private final class AntigravityChatDriver: ProcessChatDriver {
+    override func run(conversation: ChatConversation, prompt: String, onEvent: @escaping @MainActor (ChatEvent) -> Void) async throws {
+        try await run(conversation: conversation, prompt: prompt, delegation: nil, onEvent: onEvent)
+    }
+
+    override func run(conversation: ChatConversation, prompt: String, delegation: ChatDelegation?,
+                      onEvent: @escaping @MainActor (ChatEvent) -> Void) async throws {
+        stop()
+        let generation = UUID()
+        runGeneration = generation
+        guard let executable = ExecutableResolver.resolve(ChatProvider.antigravity.executableName,
+                                                          override: UserDefaults.standard.string(forKey: "providerExecutablePath.antigravity")) else {
+            throw ChatDriverError.executableMissing("agy")
+        }
+        if ChatCommand.parse(prompt) != nil {
+            throw ChatDriverError.protocolFailure("Antigravity no admite comandos / dentro de una sesión de Jack. Escribe la tarea como texto.")
+        }
+        let arguments = ChatRunConfiguration.antigravityArguments(conversation)
+        var environment = ProgressFiles.environment(for: conversation.id)
+        if let delegation {
+            environment.merge(try AntigravityIntegration.environment(delegation: delegation)) { _, new in new }
+        }
+        // Antigravity has no inline image channel: the prompt carries paths and --add-dir adds their folders.
+        let promptText = ChatAttachments.promptText(prompt, attachments: conversation.turnAttachments, inlineImages: false)
+        let instructions = delegation == nil ? nil : ChatRunConfiguration.agentInstructions(
+            delegating: delegation?.delegates == true, images: delegation?.images == true,
+            notebooks: delegation?.notebooks == true, normalMode: delegation?.normalMode == true)
+        let serverHint = delegation == nil ? nil : "Jack's MCP tools are available through the server `jack_app`."
+        let content = [instructions, serverHint, promptText].compactMap { $0 }.joined(separator: "\n\n")
+        let process = try begin(executable, arguments: arguments, directory: conversation.projectPath, environment: environment)
+        let namespace = generation.uuidString.lowercased()
+        do {
+            try process.writeJSON(["event": "user", "message": ["content": content]])
+            process.closeInput()
+            let reader = StructuredLineReader(process.lines)
+            var sawText = false
+            var streamedText = ""
+            var lastContext: Int?
+            var completed = false
+            try await withTaskCancellationHandler {
+                while let line = try await reader.next() {
+                    try Task.checkCancellation()
+                    guard runGeneration == generation else { throw CancellationError() }
+                    guard let object = jsonObject(line) else { continue }
+                    for event in AntigravityProtocol.events(object, namespace: namespace, sawText: &sawText,
+                                                            streamedText: &streamedText, lastContext: &lastContext) {
+                        if case .completed = event { completed = true }
+                        if case .failure = event { completed = true }
+                        emit(event, generation: generation, to: onEvent)
+                    }
+                    if completed { break }
+                }
+            } onCancel: {
+                process.terminate()
+            }
+            if !completed {
+                try Task.checkCancellation()
+                throw ChatDriverError.process(await process.failureDescription(default: "Antigravity se cerró antes de terminar."))
+            }
+        } catch {
+            await finish(process, generation: generation)
+            throw error
+        }
+        await finish(process, generation: generation)
+    }
+}
+
 private final class OpenCodeChatDriver: ProcessChatDriver {
     private var baseURL: URL?
     private var sessionID: String?
@@ -1649,6 +1835,8 @@ public enum ChatCommandService {
         case .claude: return try await claude(directory: directory)
         case .stellar: return []
         case .codex: return try await codex(directory: directory)
+        case .antigravity:
+            throw ChatDriverError.protocolFailure("Antigravity no expone su lista de comandos por el protocolo headless.")
         case .opencode:
             return try await OpenCodeModelService.withServer(directory: directory) { root, password in
                 let (data, response) = try await request(root, path: "/command", method: "GET", body: nil, password: password)
@@ -1809,6 +1997,20 @@ enum ChatRunConfiguration {
         let directories = conversation.remote == nil ? (conversation.additionalDirectories + conversation.attachmentDirectories).flatMap { ["--add-dir", $0] } : []
         // Makes bypassPermissions selectable while the session runs; it does not turn it on by itself.
         return directories + ["--permission-mode", conversation.mode ?? "manual", "--allow-dangerously-skip-permissions", "--model", nonempty(conversation.model)] + effort
+    }
+    /// Antigravity is one process per turn: these are its headless NDJSON flags. An empty model or effort is
+    /// omitted so the CLI's own settings apply.
+    static func antigravityArguments(_ conversation: ChatConversation) -> [String] {
+        var arguments = ["--input-format", "stream-json", "--output-format", "stream-json"]
+        if let session = conversation.sessionID, !session.isEmpty { arguments += ["--conversation", session] }
+        let model = conversation.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !model.isEmpty { arguments += ["--model", model] }
+        if !conversation.effort.isEmpty { arguments += ["--effort", conversation.effort] }
+        if let mode = conversation.mode, !mode.isEmpty { arguments += ["--mode", mode] }
+        var seen = Set<String>()
+        for directory in (conversation.additionalDirectories + conversation.attachmentDirectories)
+            where seen.insert(directory).inserted { arguments += ["--add-dir", directory] }
+        return arguments
     }
     /// The launch settings a running Claude Code process cannot change. Mode and model change live, and the
     /// folders of one message's attachments are left out so attaching a file does not restart the session.

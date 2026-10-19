@@ -14,6 +14,8 @@ import SwiftUI
     private var firstVisit = false
     private weak var chatStore: ChatStore?
     private var exitObservers: [UUID: AnyCancellable] = [:]
+    private var launchGeneration = UUID()
+    private var retiredSessions: [UUID: TerminalSession] = [:]
 
     init() {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -56,6 +58,16 @@ import SwiftUI
     }
     func start(_ id: UUID, allowed: Bool) {
         guard allowed, let entry = snapshot.entries.first(where: { $0.id == id }), sessions[id]?.running != true else { return }
+        if entry.kind == .antigravity {
+            guard let conversationID = entry.antigravityConversationID else {
+                error = "Esta entrada de Antigravity ya no apunta a ninguna conversación."; return
+            }
+            Task { [weak self] in
+                do { try await self?.launchAntigravity(conversationID, entryID: id, allowed: allowed) }
+                catch { self?.error = error.localizedDescription }
+            }
+            return
+        }
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: entry.projectPath, isDirectory: &isDirectory), isDirectory.boolValue else {
             error = "La carpeta del proyecto ya no existe."; return
@@ -87,6 +99,102 @@ import SwiftUI
             }
         }
     }
+    /// Opens an idle Antigravity conversation in the native TUI. The chat process is closed and its
+    /// session claimed before anything is prepared, so the CLI and the chat never write at once.
+    /// `allowed` and the conversation are checked again after the asynchronous environment lookup.
+    func handOffAntigravity(_ conversationID: UUID, allowed: Bool) async throws {
+        try await launchAntigravity(conversationID, entryID: nil, allowed: allowed)
+    }
+
+    private func launchAntigravity(_ conversationID: UUID, entryID preferredEntryID: UUID?, allowed: Bool) async throws {
+        guard allowed, let store = chatStore, !store.lightModeEnabled else { throw TerminalWorkspaceError.normalOnly }
+        guard writable else { throw TerminalWorkspaceError.unreadableArchive }
+        let generation = launchGeneration
+        if let running = snapshot.entries.first(where: { $0.kind == .antigravity && $0.antigravityConversationID == conversationID }),
+           sessions[running.id]?.running == true {
+            select(running.id)
+            return
+        }
+        guard let conversation = store.conversations.first(where: { $0.id == conversationID }) else {
+            throw TerminalWorkspaceError.missingConversation
+        }
+        guard conversation.provider == .antigravity else { throw TerminalWorkspaceError.notAntigravity }
+        guard conversation.remote == nil else { throw TerminalWorkspaceError.remoteConversation }
+        guard conversation.sessionID?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
+            throw TerminalWorkspaceError.missingSession
+        }
+        guard let executable = ExecutableResolver.resolve(ChatProvider.antigravity.executableName,
+                                                          override: UserDefaults.standard.string(forKey: "providerExecutablePath.antigravity")) else {
+            throw TerminalWorkspaceError.executableMissing
+        }
+        guard store.claimAntigravitySessionForTerminal(conversationID) else { throw TerminalWorkspaceError.busy }
+        do {
+            let environment = try await store.antigravityTerminalEnvironment(conversationID)
+            // The wait may have let the user switch to Light, delete the chat, stop working on it,
+            // or remove the entry. None of those may start a TUI or keep the session claimed.
+            guard generation == launchGeneration, let currentStore = chatStore, !currentStore.lightModeEnabled,
+                  currentStore.antigravitySessionIsInTerminal(conversationID),
+                  let current = currentStore.conversations.first(where: { $0.id == conversationID }),
+                  current.provider == .antigravity, current.remote == nil,
+                  let currentSession = current.sessionID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !currentSession.isEmpty, currentSession == conversation.sessionID,
+                  current.projectPath == conversation.projectPath else { throw TerminalWorkspaceError.conversationChanged }
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: current.projectPath, isDirectory: &isDirectory), isDirectory.boolValue else {
+                throw TerminalWorkspaceError.conversationChanged
+            }
+            let entryID: UUID
+            let index: Int
+            if let preferredEntryID {
+                guard let found = snapshot.entries.firstIndex(where: {
+                    $0.id == preferredEntryID && $0.kind == .antigravity && $0.antigravityConversationID == conversationID
+                }) else { throw TerminalWorkspaceError.conversationChanged }
+                entryID = preferredEntryID
+                index = found
+            } else if let found = snapshot.entries.firstIndex(where: {
+                $0.kind == .antigravity && $0.antigravityConversationID == conversationID
+            }) {
+                entryID = snapshot.entries[found].id
+                index = found
+            } else {
+                guard !snapshot.entries.contains(where: { $0.id == conversationID }) else {
+                    throw TerminalWorkspaceError.entryConflict
+                }
+                let entry = TerminalWorkspaceEntry(id: conversationID, title: current.title,
+                                                   projectPath: current.projectPath, kind: .antigravity,
+                                                   antigravityConversationID: conversationID,
+                                                   antigravitySessionID: currentSession)
+                snapshot.entries.append(entry)
+                entryID = conversationID
+                index = snapshot.entries.count - 1
+            }
+            snapshot.entries[index].projectPath = current.projectPath
+            snapshot.entries[index].antigravityConversationID = conversationID
+            snapshot.entries[index].antigravitySessionID = currentSession
+            snapshot.selectedID = entryID
+            save()
+            let arguments = TerminalWorkspaceEntry.antigravityArguments(conversation: current)
+            guard arguments.contains("--conversation") else { throw TerminalWorkspaceError.missingSession }
+            exitObservers[entryID] = nil
+            sessions.removeValue(forKey: entryID)?.terminate()
+            let launch = TerminalProcessLaunch(executable: executable, arguments: arguments, environment: environment)
+            let session = TerminalSession(directory: current.projectPath, directLaunch: launch) { url in NSWorkspace.shared.open(url) }
+            sessions[entryID] = session
+            session.onProcessExit = { [weak self, weak store] in
+                store?.releaseAntigravitySessionFromTerminal(conversationID)
+                self?.retiredSessions[entryID] = nil
+            }
+            if session.view.process.shellPid == 0 {
+                session.onProcessExit?(); session.onProcessExit = nil
+                sessions[entryID] = nil
+                throw TerminalWorkspaceError.executableMissing
+            }
+        } catch {
+            store.releaseAntigravitySessionFromTerminal(conversationID)
+            throw error
+        }
+    }
+
     func importSession(_ session: ClaudeSessionSummary, allowed: Bool) {
         guard allowed, writable, let sessionID = UUID(uuidString: session.id) else { return }
         if let existing = snapshot.entries.first(where: { $0.kind == .claude && $0.claudeSessionID == sessionID }) {
@@ -101,19 +209,19 @@ import SwiftUI
         start(entry.id, allowed: allowed)
     }
     func stopAll() {
+        launchGeneration = UUID()
         exitObservers.removeAll()
-        for entry in snapshot.entries where entry.kind == .claude && sessions[entry.id] != nil {
-            chatStore?.releaseClaudeSessionFromTerminal(entry.claudeSessionID)
+        for entry in snapshot.entries {
+            if let session = sessions.removeValue(forKey: entry.id) {
+                retire(session, entry: entry)
+            }
         }
-        sessions.values.forEach { $0.terminate() }
-        sessions.removeAll()
     }
     func remove(_ id: UUID) {
+        launchGeneration = UUID()
         exitObservers[id] = nil
-        if let entry = snapshot.entries.first(where: { $0.id == id }), entry.kind == .claude, sessions[id] != nil {
-            chatStore?.releaseClaudeSessionFromTerminal(entry.claudeSessionID)
-        }
-        sessions.removeValue(forKey: id)?.terminate()
+        let entry = snapshot.entries.first(where: { $0.id == id })
+        if let session = sessions.removeValue(forKey: id), let entry { retire(session, entry: entry) }
         snapshot.entries.removeAll { $0.id == id }
         if snapshot.selectedID == id { snapshot.selectedID = snapshot.entries.last?.id }
         save()
@@ -123,10 +231,51 @@ import SwiftUI
         guard !text.isEmpty, let i = snapshot.entries.firstIndex(where: { $0.id == id }) else { return }
         snapshot.entries[i].title = String(text.prefix(120)); save()
     }
+    private func release(_ entry: TerminalWorkspaceEntry) {
+        switch entry.kind {
+        case .claude: chatStore?.releaseClaudeSessionFromTerminal(entry.claudeSessionID)
+        case .antigravity:
+            if let conversationID = entry.antigravityConversationID {
+                chatStore?.releaseAntigravitySessionFromTerminal(conversationID)
+            }
+        case .shell: break
+        }
+    }
+    private func retire(_ session: TerminalSession, entry: TerminalWorkspaceEntry) {
+        if entry.kind == .antigravity, !session.hasExited {
+            // Keep SwiftTerm's process monitor alive until its real exit callback releases ownership.
+            retiredSessions[entry.id] = session
+            session.terminateAfterAcknowledgement()
+        } else {
+            session.terminate()
+            release(entry)
+        }
+    }
     private func save() {
         guard writable else { return }
         do { try archive.save(snapshot) }
         catch { self.error = "No se pudieron guardar las terminales: \(error.localizedDescription)" }
+    }
+}
+
+/// Honest reasons a terminal handoff cannot run, surfaced in the chat or the terminal alert.
+enum TerminalWorkspaceError: LocalizedError {
+    case normalOnly, unreadableArchive, missingConversation, notAntigravity, remoteConversation
+    case missingSession, executableMissing, busy, conversationChanged, entryConflict
+
+    var errorDescription: String? {
+        switch self {
+        case .normalOnly: "Antigravity solo se puede continuar en la terminal del modo Normal."
+        case .unreadableArchive: "No se pudieron leer las terminales guardadas."
+        case .missingConversation: "Esta conversación ya no existe."
+        case .notAntigravity: "Esta conversación no es de Antigravity."
+        case .remoteConversation: "Las conversaciones remotas no se abren en la terminal nativa."
+        case .missingSession: "Esta conversación aún no tiene una sesión de Antigravity: envía un mensaje primero."
+        case .executableMissing: "No se encontró Antigravity (agy). Instálalo o indica su ejecutable en Ajustes → Agentes."
+        case .busy: "Esta sesión sigue activa o tiene trabajo pendiente en el chat. Detén ese agente antes de abrirla en la terminal."
+        case .conversationChanged: "La conversación o su sesión cambió mientras se preparaba la terminal. Vuelve a intentarlo."
+        case .entryConflict: "Ya hay una terminal con ese identificador. Ciérrala antes de continuar esta conversación."
+        }
     }
 }
 
@@ -243,7 +392,7 @@ struct TerminalInterfaceView: View {
                                 ForEach(rows) { row in
                                     Button { workspace.select(row.id) } label: {
                                         HStack(spacing: 8) {
-                                            Image(systemName: row.kind == .claude ? "sparkle" : "terminal")
+                                            Image(systemName: row.kind == .claude ? "sparkle" : row.kind == .antigravity ? "sparkles" : "terminal")
                                             Text(row.title).lineLimit(1)
                                             Spacer(minLength: 0)
                                         }
@@ -329,18 +478,40 @@ struct TerminalInterfaceView: View {
                     Button { splitID = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain)
                 }
             }.padding(.horizontal, 12).frame(height: 26).background(JackPalette.chrome)
+            if entry.kind == .antigravity {
+                Text("Las aprobaciones se resuelven aquí. El chat no recibe el transcript en vivo.")
+                    .font(.system(size: 10.5)).foregroundStyle(JackPalette.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12).frame(height: 22).background(JackPalette.panel)
+            }
             if let session = workspace.sessions[entry.id] {
                 NativeTerminalPane(session: session) { workspace.start(entry.id, allowed: normal) }
             } else {
                 VStack(spacing: 12) {
-                    Image(systemName: "terminal").font(.system(size: 28)).foregroundStyle(JackPalette.muted)
-                    Text(entry.kind == .claude ? "Claude Code directo" : "Terminal del proyecto").font(.headline)
+                    Image(systemName: entry.kind == .antigravity ? "sparkles" : "terminal")
+                        .font(.system(size: 28)).foregroundStyle(JackPalette.muted)
+                    Text(idleTitle(entry)).font(.headline)
                     Text("\(entry.projectPath)").font(.system(size: 12)).foregroundStyle(JackPalette.muted)
-                    Button(entry.kind == .claude ? "Abrir Claude Code" : "Abrir terminal") { workspace.start(entry.id, allowed: normal) }
+                    Button(openTitle(entry)) { workspace.start(entry.id, allowed: normal) }
                     Text("Se abrirá solo al pulsar el botón.").font(.system(size: 11)).foregroundStyle(JackPalette.faint)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }.frame(minWidth: 250, maxWidth: .infinity, maxHeight: .infinity).clipped().id(entry.id)
+    }
+
+    private func idleTitle(_ entry: TerminalWorkspaceEntry) -> String {
+        switch entry.kind {
+        case .claude: "Claude Code directo"
+        case .antigravity: "Antigravity nativo"
+        case .shell: "Terminal del proyecto"
+        }
+    }
+    private func openTitle(_ entry: TerminalWorkspaceEntry) -> String {
+        switch entry.kind {
+        case .claude: "Abrir Claude Code"
+        case .antigravity: "Reanudar Antigravity"
+        case .shell: "Abrir terminal"
+        }
     }
 
     private var welcome: some View {

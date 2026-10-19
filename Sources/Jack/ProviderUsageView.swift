@@ -6,6 +6,7 @@ struct ProviderUsageView: View {
     let refreshing: Bool
     let refresh: () -> Void
     var showsUsed = false
+    var showsNormalOnly = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -26,7 +27,7 @@ struct ProviderUsageView: View {
             Divider()
             ScrollView {
                 VStack(spacing: 10) {
-                    ForEach(ChatProvider.allCases) { provider in
+                    ForEach(ChatProvider.allCases.filter { showsNormalOnly || !$0.isNormalOnly }) { provider in
                         ProviderUsageCard(provider: provider, usage: usage[provider], refreshing: refreshing, showsUsed: showsUsed)
                     }
                 }

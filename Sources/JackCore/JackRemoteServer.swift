@@ -211,7 +211,7 @@ public enum JackRemoteKeychain {
     /// What each provider offers for a new agent.
     fileprivate func providerOptions() -> [JackRemote.ProviderOptions] {
         guard let store else { return [] }
-        return ChatProvider.allCases.filter { $0 != .opencode }.map { provider in
+        return ChatProvider.allCases.filter { $0 != .opencode && !$0.isNormalOnly }.map { provider in
             JackRemote.ProviderOptions(
                 id: provider.rawValue, title: provider.title, defaultModel: provider.defaultModel,
                 models: store.modelChoices(for: provider).map { JackRemote.Choice(id: $0.id, title: $0.title) },

@@ -2,15 +2,23 @@ import Foundation
 
 /// Metadata only. Terminal output, prompts and Claude's transcript stay with the CLI.
 public struct TerminalWorkspaceEntry: Codable, Equatable, Identifiable, Sendable {
-    public enum Kind: String, Codable, Sendable { case claude, shell }
+    public enum Kind: String, Codable, Sendable { case claude, shell, antigravity }
     public var id: UUID
     public var title: String
     public var projectPath: String
     public var kind: Kind
     public var claudeSessionID: UUID
+    /// Antigravity handoffs keep both identifiers as optional metadata, so archives written before
+    /// the native TUI existed still decode. Launching always rereads the live conversation: the
+    /// stored session may be stale and must never be resumed by itself.
+    public var antigravityConversationID: UUID? = nil
+    public var antigravitySessionID: String? = nil
 
-    public init(id: UUID = UUID(), title: String, projectPath: String, kind: Kind, claudeSessionID: UUID = UUID()) {
+    public init(id: UUID = UUID(), title: String, projectPath: String, kind: Kind, claudeSessionID: UUID = UUID(),
+                antigravityConversationID: UUID? = nil, antigravitySessionID: String? = nil) {
         self.id = id; self.title = title; self.projectPath = projectPath; self.kind = kind; self.claudeSessionID = claudeSessionID
+        self.antigravityConversationID = antigravityConversationID
+        self.antigravitySessionID = antigravitySessionID
     }
 
     /// Native interactive Claude: no SDK/print protocol, injected instructions or Jack MCP server.
@@ -21,6 +29,29 @@ public struct TerminalWorkspaceEntry: Codable, Equatable, Identifiable, Sendable
             .appendingPathComponent(session + ".jsonl")
         let saved = FileManager.default.fileExists(atPath: transcript.path)
         return ["--effort", "medium", "--prompt-suggestions", "false", saved ? "--resume" : "--session-id", session]
+    }
+
+    /// Native interactive Antigravity TUI. It resumes an existing conversation in the project folder
+    /// with the model, effort and permission mode the chat had. No prompt is sent and no headless
+    /// protocol is involved: approvals happen in the terminal.
+    public static func antigravityArguments(conversation: ChatConversation) -> [String] {
+        guard conversation.provider == .antigravity else { return [] }
+        var arguments: [String] = []
+        if let session = conversation.sessionID?.trimmingCharacters(in: .whitespacesAndNewlines), !session.isEmpty {
+            arguments += ["--conversation", session]
+        }
+        let model = conversation.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !model.isEmpty { arguments += ["--model", model] }
+        let effort = conversation.effort.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !effort.isEmpty { arguments += ["--effort", effort] }
+        if let mode = conversation.mode?.trimmingCharacters(in: .whitespacesAndNewlines), !mode.isEmpty {
+            arguments += ["--mode", mode]
+        }
+        var seen = Set<String>()
+        for directory in conversation.additionalDirectories where seen.insert(directory).inserted {
+            arguments += ["--add-dir", directory]
+        }
+        return arguments
     }
 }
 

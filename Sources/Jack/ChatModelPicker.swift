@@ -41,10 +41,10 @@ struct ChatModelPicker: View {
 
     /// Claude Code's colors for the modes that change what it may do without asking.
     private var modeColor: Color {
-        guard conversation.provider == .claude || conversation.provider == .stellar else { return JackPalette.muted }
+        guard conversation.provider == .claude || conversation.provider == .stellar || conversation.provider == .antigravity else { return JackPalette.muted }
         switch conversation.mode {
         case "plan": return JackPalette.blue
-        case "acceptEdits": return JackPalette.purple
+        case "acceptEdits", "accept-edits": return JackPalette.purple
         case "auto", "dontAsk": return JackPalette.amber
         case ChatRunMode.bypass.id: return JackPalette.red
         default: return JackPalette.muted
@@ -54,6 +54,7 @@ struct ChatModelPicker: View {
         switch conversation.provider {
         case .claude: return "Modo de permisos · ⇧⇥ para cambiar, también mientras trabaja. Bypass no pide ningún permiso"
         case .stellar: return "Manual pide permiso para editar y ejecutar; Aceptar ediciones solo para comandos; Auto no pregunta dentro del proyecto"
+        case .antigravity: return "Plan y Aceptar ediciones usan las reglas de permisos del CLI; Auto ejecuta sin preguntar"
         case .codex where conversation.mode == "auto": return "Auto ejecuta dentro del proyecto; las acciones que requieren permiso se deniegan"
         default: return "Modo de trabajo para el próximo mensaje"
         }
@@ -91,7 +92,7 @@ struct ChatModelPicker: View {
                 Divider()
                 Button("Otro modelo…") { linkingCloud = false; customModel = conversation.model; custom = true }
             } label: {
-                Text(selected?.title ?? conversation.model).lineLimit(1).truncationMode(.middle)
+                Text(selected?.title ?? (conversation.model.isEmpty ? "Predeterminado" : conversation.model)).lineLimit(1).truncationMode(.middle)
                     .frame(maxWidth: 150, alignment: .leading)
             }
             .menuStyle(.borderlessButton)

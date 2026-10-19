@@ -191,6 +191,7 @@ private struct AgentExecutablesSettings: View {
     @AppStorage("providerExecutablePath.codex") private var codexPath = ""
     @AppStorage("providerExecutablePath.claude") private var claudePath = ""
     @AppStorage("providerExecutablePath.opencode") private var opencodePath = ""
+    @AppStorage("providerExecutablePath.antigravity") private var antigravityPath = ""
     @AppStorage(ChatDriverFactory.claudeKeepAliveKey) private var claudeKeepAlive = 5
     @AppStorage(StellarServer.contextLengthKey) private var stellarContext = StellarServer.defaultContextLength
     @AppStorage(StellarServer.customServerURLKey) private var stellarServer = ""
@@ -220,6 +221,9 @@ private struct AgentExecutablesSettings: View {
                 ProviderExecutableRow(provider: .codex, path: $codexPath, allowsScan: !store.lightModeEnabled, allowsUpdate: !store.lightModeEnabled)
                 ProviderExecutableRow(provider: .claude, path: $claudePath, allowsScan: !store.lightModeEnabled, allowsUpdate: !store.lightModeEnabled)
                 ProviderExecutableRow(provider: .opencode, path: $opencodePath, allowsScan: !store.lightModeEnabled, allowsUpdate: !store.lightModeEnabled)
+                if !store.lightModeEnabled {
+                    ProviderExecutableRow(provider: .antigravity, path: $antigravityPath, allowsScan: true, allowsUpdate: true)
+                }
             } header: {
                 Text("Ejecutables")
             } footer: {
@@ -261,7 +265,7 @@ private struct ProviderExecutableRow: View {
     @State private var scannedPath: String?
 
     private var resolved: String? {
-        ExecutableResolver.resolve(provider.rawValue, override: path.isEmpty ? nil : path)
+        ExecutableResolver.resolve(provider.executableName, override: path.isEmpty ? nil : path)
     }
 
     var body: some View {
@@ -369,7 +373,7 @@ private struct ProviderExecutableRow: View {
         guard !isScanning else { return }
         isScanning = true
         didScan = false
-        let command = provider.rawValue
+        let command = provider.executableName
         let currentPath = path.isEmpty ? nil : path
         Task {
             let result = await Task.detached(priority: .userInitiated) {
