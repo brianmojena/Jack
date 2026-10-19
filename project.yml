@@ -36,6 +36,9 @@ targets:
       # The 3D office: rooms and characters exported from Blender (scripts/office-assets.sh).
       - path: Resources/Office/Runtime
         buildPhase: resources
+      # Card art (back, jack, queen, king, joker), prepared by scripts/office_cards_art.py.
+      - path: Resources/Office/Cards
+        buildPhase: resources
     dependencies:
       - target: JackCore
       - package: SwiftTerm

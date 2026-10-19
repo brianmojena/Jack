@@ -391,7 +391,7 @@ enum OfficeChessMood: Equatable {
     /// Prepara los recorridos a la mesa; `false` si no se pueden calcular (entonces se queda en el sofá).
     private func startChess(_ seat: OfficeChessSeat) -> Bool {
         guard let chess, let template = layout.slots.first,
-              let toSeat = OfficeChessRoute.toSeat(actor: slot, template: template, seat: seat, table: (chess.tableCenter, chess.tableHalf), obstacles: walkObstacles, bounds: walkBounds, chairStart: chess.offset(of: seat.color), fps: layout.fps),
+              let toSeat = OfficeChessRoute.toSeat(actor: slot, template: template, seat: seat, table: (chess.tableCenter, chess.tableHalf), obstacles: walkObstacles, bounds: walkBounds, chairStart: chess.offset(of: seat.id), fps: layout.fps),
               let toSofa = OfficeChessRoute.toSofa(actor: slot, template: template, seat: seat, table: (chess.tableCenter, chess.tableHalf), obstacles: walkObstacles, bounds: walkBounds, fps: layout.fps) else { return false }
         chessRoute = (toSeat, toSofa, seat)
         chessMood = .waiting
@@ -495,7 +495,7 @@ enum OfficeChessMood: Equatable {
 
     private func setChair(offset: Float) {
         if phase == .toChess || phase == .chess || phase == .fromChess, let seat = chessRoute?.seat {
-            chess?.setChair(seat.color, offset: offset)
+            chess?.setChair(seat.id, offset: offset)
             return
         }
         chair?.position = chairBase + chairDirection * offset

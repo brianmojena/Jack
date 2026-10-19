@@ -150,9 +150,16 @@ struct OfficeChessBoardOverlay: View {
 /// Los controles de la partida, abajo a la derecha, mientras el usuario está sentado a la mesa: un botón flotante que abre y cierra
 /// la charla con el maestro (con un aviso si contesta estando cerrada), y al lado los botones para levantarse, recolocar la vista
 /// y dejar la partida. Cerrado casi no ocupa sitio.
-struct OfficeChessDock: View {
-    @ObservedObject var game: OfficeChessGame
+struct OfficeTableDock: View {
+    let chat: [OfficeChessGame.ChatLine]
+    let replying: Bool
+    let status: String
+    let tint: Color
+    /// A quién se le escribe («Remy» o «la mesa») y cómo se dice que está escribiendo.
     let opponent: String
+    let typing: String
+    let canSend: Bool
+    let finished: Bool
     let onStandUp: () -> Void
     let onResetView: () -> Void
     let onQuit: () -> Void
@@ -165,7 +172,7 @@ struct OfficeChessDock: View {
 
     private let ink = Color(red: 0.11, green: 0.25, blue: 0.46)
     private let orange = Color(red: 0.96, green: 0.45, blue: 0.09)
-    private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !game.replying && game.phase != .idle }
+    private var canSendNow: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !replying && canSend }
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 10) {
@@ -176,13 +183,13 @@ struct OfficeChessDock: View {
                 if !open { statusChip.transition(.opacity) }
                 mini("figure.stand", help: "Levantarme: ver la oficina sin perder la partida", action: onStandUp)
                 mini("arrow.counterclockwise", help: "Recolocar la vista del tablero", action: onResetView)
-                mini("flag.checkered", help: game.phase == .finishing ? "Cerrar la partida" : "Abandonar la partida", action: onQuit)
+                mini("flag.checkered", help: finished ? "Cerrar la partida" : "Abandonar la partida", action: onQuit)
                 fab
             }
         }
         .padding(.trailing, 18).padding(.bottom, 18)
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: open)
-        .onChange(of: game.chat) { old, chat in
+        .onChange(of: chat) { old, chat in
             // Una respuesta nueva con la charla cerrada se avisa en el botón.
             if !open, chat.count > old.count, chat.last?.fromMe == false { unread += 1 }
         }
@@ -232,7 +239,7 @@ struct OfficeChessDock: View {
     /// De quién es el turno, en una píldora pequeña junto a los botones.
     private var statusChip: some View {
         HStack(spacing: 6) {
-            Circle().fill(statusTint).frame(width: 8, height: 8)
+            Circle().fill(tint).frame(width: 8, height: 8)
             Text(status).font(.office(12, .bold)).foregroundStyle(.white).lineLimit(1)
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
@@ -240,23 +247,12 @@ struct OfficeChessDock: View {
         .overlay(Capsule().strokeBorder(.white.opacity(0.18), lineWidth: 1))
     }
 
-    private var status: String {
-        if game.phase == .finishing || game.game.outcome.isOver { return game.game.outcome.title.prefix(1).uppercased() + game.game.outcome.title.dropFirst() }
-        if game.awaitingMove { return "Tu turno" }
-        return "\(opponent) está pensando…"
-    }
-
-    private var statusTint: Color {
-        if game.phase == .finishing { return .purple }
-        return game.awaitingMove ? Color(red: 0.3, green: 0.8, blue: 0.4) : Color(red: 1.0, green: 0.66, blue: 0.27)
-    }
-
     // MARK: - Charla
 
     private var panel: some View {
         VStack(spacing: 8) {
             HStack(spacing: 6) {
-                Circle().fill(statusTint).frame(width: 8, height: 8)
+                Circle().fill(tint).frame(width: 8, height: 8)
                 Text(status).font(.office(12.5, .bold)).foregroundStyle(ink).lineLimit(1)
                 Spacer(minLength: 0)
             }
@@ -271,33 +267,36 @@ struct OfficeChessDock: View {
     }
 
     @ViewBuilder private var log: some View {
-        if game.chat.isEmpty && !game.replying {
+        if chat.isEmpty && !replying {
             Text("Escríbele a \(opponent) mientras jugáis.").font(.system(size: 12)).foregroundStyle(ink.opacity(0.5))
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 5) {
-                        ForEach(game.chat) { line in
-                            HStack {
+                        ForEach(chat) { line in
+                            VStack(alignment: line.fromMe ? .trailing : .leading, spacing: 1) {
+                              if let speaker = line.speaker, !line.fromMe { Text(speaker).font(.system(size: 10, weight: .semibold)).foregroundStyle(ink.opacity(0.5)).padding(.leading, 6) }
+                              HStack {
                                 if line.fromMe { Spacer(minLength: 36) }
                                 Text(line.text).font(.system(size: 12.5)).foregroundStyle(line.fromMe ? .white : ink)
                                     .padding(.horizontal, 10).padding(.vertical, 5)
                                     .background(line.fromMe ? orange : Color(red: 0.93, green: 0.96, blue: 1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                                 if !line.fromMe { Spacer(minLength: 36) }
+                              }
                             }
                             .id(line.id)
                         }
-                        if game.replying {
-                            Text("\(opponent) está escribiendo…").font(.system(size: 11.5)).foregroundStyle(ink.opacity(0.5)).id("typing")
+                        if replying {
+                            Text(typing).font(.system(size: 11.5)).foregroundStyle(ink.opacity(0.5)).id("typing")
                         }
                     }
                 }
                 .frame(maxHeight: 190)
-                .onChange(of: game.chat) { _, chat in
+                .onChange(of: chat) { _, chat in
                     if let last = chat.last { withAnimation { proxy.scrollTo(last.id, anchor: .bottom) } }
                 }
-                .onChange(of: game.replying) { _, replying in
+                .onChange(of: replying) { _, replying in
                     if replying { withAnimation { proxy.scrollTo("typing", anchor: .bottom) } }
                 }
             }
@@ -317,18 +316,45 @@ struct OfficeChessDock: View {
             Button(action: send) {
                 Image(systemName: "arrow.up").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
                     .frame(width: 28, height: 28)
-                    .background(canSend ? orange : Color(red: 0.8, green: 0.84, blue: 0.9), in: Circle())
+                    .background(canSendNow ? orange : Color(red: 0.8, green: 0.84, blue: 0.9), in: Circle())
             }
-            .buttonStyle(.plain).disabled(!canSend).help("Enviar (Enter)")
+            .buttonStyle(.plain).disabled(!canSendNow).help("Enviar (Enter)")
         }
     }
 
     private func send() {
-        guard canSend else { return }
+        guard canSendNow else { return }
         let text = draft
         draft = ""
         onSend(text)
         focused = true
+    }
+}
+
+/// Los controles de la partida de ajedrez: el panel de la mesa con el estado de la partida.
+struct OfficeChessDock: View {
+    @ObservedObject var game: OfficeChessGame
+    let opponent: String
+    let onStandUp: () -> Void
+    let onResetView: () -> Void
+    let onQuit: () -> Void
+    let onSend: (String) -> Void
+
+    private var status: String {
+        if game.phase == .finishing || game.game.outcome.isOver { return game.game.outcome.title.prefix(1).uppercased() + game.game.outcome.title.dropFirst() }
+        if game.awaitingMove { return "Tu turno" }
+        return "\(opponent) está pensando…"
+    }
+
+    private var tint: Color {
+        if game.phase == .finishing { return .purple }
+        return game.awaitingMove ? Color(red: 0.3, green: 0.8, blue: 0.4) : Color(red: 1.0, green: 0.66, blue: 0.27)
+    }
+
+    var body: some View {
+        OfficeTableDock(chat: game.chat, replying: game.replying, status: status, tint: tint, opponent: opponent,
+                        typing: "\(opponent) está escribiendo…", canSend: game.phase != .idle, finished: game.phase == .finishing,
+                        onStandUp: onStandUp, onResetView: onResetView, onQuit: onQuit, onSend: onSend)
     }
 }
 

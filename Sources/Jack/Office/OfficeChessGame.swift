@@ -28,6 +28,8 @@ import JackCore
         let id = UUID()
         var fromMe: Bool
         var text: String
+        /// Quién lo dice, cuando hay más de un rival (las mesas de cartas).
+        var speaker: String? = nil
     }
 
     @Published private(set) var players: [Player] = []
