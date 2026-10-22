@@ -78,12 +78,14 @@ struct StartView: View {
                     providerValue = presetProvider.rawValue
                 }
             }
+            loadAntigravityModelsIfNeeded()
         }
         .onChange(of: providerValue) { _, _ in
             model = pendingPresetModel ?? ""
             pendingPresetModel = nil
             effort = store.defaultEffort(for: provider)
             focused = true
+            loadAntigravityModelsIfNeeded()
         }
         .onChange(of: selectedModel) { _, _ in
             if !efforts.isEmpty && !efforts.contains(effort) { effort = efforts.contains("high") ? "high" : efforts.last! }
@@ -235,6 +237,11 @@ struct StartView: View {
         focused = true
     }
 
+    private func loadAntigravityModelsIfNeeded() {
+        guard provider == .antigravity, store.antigravityModels.isEmpty, !store.loadingAntigravityModels else { return }
+        Task { await store.refreshAntigravityModels() }
+    }
+
     private var modelPicker: some View {
         Menu {
             ForEach(choices) { choice in
@@ -248,6 +255,16 @@ struct StartView: View {
                 if choices.isEmpty { Text("Sin modelos: inicia Ollama, MLX o LM Studio") }
                 Button("Vincular modelo de nube…") { linkingCloud = true; cloudLinkError = nil; customModel = ""; showingCustomModel = true }
                 Button("Actualizar modelos") { Task { await store.refreshLocalModels() } }
+            }
+            if provider == .antigravity {
+                Divider()
+                if store.loadingAntigravityModels { Text("Cargando modelos de Antigravity…") }
+                if let error = store.antigravityModelsError { Text(error) }
+                if !store.loadingAntigravityModels, store.antigravityModelsError == nil, store.antigravityModels.isEmpty {
+                    Text("Aún no hay modelos: actualiza el catálogo")
+                }
+                Button("Actualizar modelos de Antigravity") { Task { await store.refreshAntigravityModels() } }
+                    .disabled(store.loadingAntigravityModels)
             }
             Divider()
             Button("Otro modelo…") { linkingCloud = false; customModel = selectedModel; showingCustomModel = true }

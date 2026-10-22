@@ -63,6 +63,95 @@ enum UsageDecoder {
         guard !windows.isEmpty else { return nil }
         return ProviderUsage(provider: .claude, windows: windows, note: "Actualizado por Claude Code.")
     }
+    static let antigravityNote = "Cuota de Antigravity para tu cuenta de Google, compartida con el CLI."
+    /// Reads `/usage`, which the CLI answers locally without starting a model turn. The command adds its
+    /// data under `command`, both in `--output-format json` and as a `command_result` stream event; older
+    /// builds only return the tab-separated `response` table, so that shape is accepted too.
+    static func antigravity(_ data: [String: Any], observedAt: Date = Date()) -> ProviderUsage {
+        if let payload = (data["command"] as? [String: Any])?["data"] as? [String: Any],
+           let groups = payload["groups"] as? [[String: Any]] {
+            return antigravity(groups: groups, observedAt: observedAt)
+        }
+        if let groups = data["groups"] as? [[String: Any]] {
+            return antigravity(groups: groups, observedAt: observedAt)
+        }
+        if let response = data["response"] as? String {
+            return antigravity(text: response, observedAt: observedAt)
+        }
+        return ProviderUsage(provider: .antigravity, note: "Antigravity no devolvió datos de cuota.")
+    }
+    private static func antigravity(groups: [[String: Any]], observedAt: Date) -> ProviderUsage {
+        var windows: [UsageWindow] = []
+        for group in groups {
+            let groupName = group["name"] as? String ?? "Antigravity"
+            for bucket in group["buckets"] as? [[String: Any]] ?? [] {
+                guard let used = antigravityUsedPercent(bucket) else { continue }
+                let id = bucket["id"] as? String ?? "\(groupName)-\(windows.count)"
+                let period = antigravityPeriod(bucket["window"] as? String, name: bucket["name"] as? String)
+                windows.append(UsageWindow(id: "antigravity:\(id)", title: "\(antigravityGroupTitle(groupName)) · \(period)",
+                                           usedPercent: used, resetsAt: date(bucket["reset_time"] ?? bucket["resetsAt"] ?? bucket["resets_at"]),
+                                           observedAt: observedAt))
+            }
+        }
+        return ProviderUsage(provider: .antigravity, windows: windows,
+                             note: windows.isEmpty ? "Antigravity no devolvió datos de cuota." : antigravityNote)
+    }
+    private static func antigravity(text: String, observedAt: Date) -> ProviderUsage {
+        var windows: [UsageWindow] = []
+        for line in text.components(separatedBy: .newlines) {
+            let parts = line.split(separator: "\t", omittingEmptySubsequences: false).map {
+                String($0).trimmingCharacters(in: .whitespaces)
+            }
+            guard parts.count >= 3, let remaining = number(parts[2]) else { continue }
+            let group = parts[0].isEmpty ? "Antigravity" : parts[0]
+            let bucket = parts[1].isEmpty ? "Cuota" : parts[1]
+            let used = max(0, min(100, 100 - fraction(remaining) * 100))
+            let period = antigravityPeriod(nil, name: bucket)
+            let id = "\(group.lowercased())-\(bucket.lowercased())"
+            windows.append(UsageWindow(id: "antigravity:\(id)", title: "\(antigravityGroupTitle(group)) · \(period)",
+                                       usedPercent: used, resetsAt: parts.count > 3 ? date(parts[3]) : nil,
+                                       observedAt: observedAt))
+        }
+        return ProviderUsage(provider: .antigravity, windows: windows,
+                             note: windows.isEmpty ? "Antigravity no devolvió datos de cuota." : antigravityNote)
+    }
+    private static func antigravityUsedPercent(_ bucket: [String: Any]) -> Double? {
+        if let used = number(bucket["used_fraction"]) { return max(0, min(100, fraction(used) * 100)) }
+        if let used = number(bucket["used_percent"] ?? bucket["usedPercent"]) { return max(0, min(100, used)) }
+        guard let remaining = number(bucket["remaining_fraction"] ?? bucket["remainingFraction"]
+                                     ?? bucket["remaining_percent"] ?? bucket["remainingPercent"] ?? bucket["remaining"])
+        else { return nil }
+        return max(0, min(100, 100 - fraction(remaining) * 100))
+    }
+    /// The CLI reports fractions between 0 and 1; a percentage from an older build is normalized too.
+    private static func fraction(_ value: Double) -> Double { value > 1 ? value / 100 : max(0, value) }
+    private static func number(_ value: Any?) -> Double? {
+        if let value = value as? NSNumber { return value.doubleValue }
+        if let value = value as? String {
+            return Double(value.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "%", with: ""))
+        }
+        return nil
+    }
+    private static func antigravityGroupTitle(_ name: String) -> String {
+        switch name.lowercased() {
+        case "gemini models": return "Gemini"
+        case "claude and gpt models": return "Claude y GPT"
+        default: return name
+        }
+    }
+    private static func antigravityPeriod(_ window: String?, name: String?) -> String {
+        switch (window ?? "").lowercased() {
+        case "weekly": return "7 d"
+        case "daily": return "24 h"
+        case "five_hour", "five-hour", "5h": return "5 h"
+        default: break
+        }
+        let label = (name ?? "").lowercased()
+        if label.contains("week") { return "7 d" }
+        if label.contains("day") || label.contains("daily") { return "24 h" }
+        if label.contains("hour") || label.contains("5 h") { return "5 h" }
+        return name?.isEmpty == false ? name! : "Cuota"
+    }
     private static func date(_ value: Any?) -> Date? {
         if let seconds = value as? NSNumber { return Date(timeIntervalSince1970: seconds.doubleValue) }
         if let string = value as? String {
@@ -97,7 +186,14 @@ enum UsageDecoder {
         case .opencode:
             return ProviderUsage(provider: .opencode, note: "OpenCode no expone una cuota unificada: depende de la cuenta del proveedor del modelo. El consumo de tokens y coste se muestra en cada conversación.")
         case .antigravity:
-            return ProviderUsage(provider: .antigravity, note: "Antigravity no publica una lectura local de cuotas para la CLI. La cuota se consulta en la cuenta de Google.")
+            do { return try await readAntigravity() }
+            catch is CancellationError {
+                return ProviderUsage(provider: .antigravity, note: UsageDecoder.antigravityNote)
+            }
+            catch {
+                JackLog.write("cuota de Antigravity: \(error.localizedDescription)")
+                return ProviderUsage(provider: .antigravity, note: "No se pudo consultar la cuota de Antigravity: \(error.localizedDescription)")
+            }
         }
     }
     /// `/usage` is answered locally by Claude Code, without inference, and stores a fresh reading in `~/.claude.json`.
@@ -115,6 +211,52 @@ enum UsageDecoder {
             if (try? JSONSerialization.jsonObject(with: line) as? [String: Any])?["type"] as? String == "result" { break }
         }
         process.terminate(); await process.waitForExit()
+    }
+    /// `/usage` is answered by the CLI itself and returns its quota summary as JSON, so no model turn runs.
+    private static func readAntigravity() async throws -> ProviderUsage {
+        guard let executable = ExecutableResolver.resolve(ChatProvider.antigravity.executableName,
+                                                          override: UserDefaults.standard.string(forKey: "providerExecutablePath.antigravity")) else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        let process = try StructuredChild(executable: executable, arguments: ["-p", "/usage", "--output-format", "json"],
+                                          directory: NSTemporaryDirectory())
+        process.closeInput()
+        let deadline = Task { try? await Task.sleep(for: .seconds(25)); if !Task.isCancelled { process.terminate() } }
+        defer { deadline.cancel() }
+        var text = ""
+        do {
+            try await withTaskCancellationHandler {
+                for try await line in process.lines {
+                    guard text.utf8.count < 512 * 1024 else { break }
+                    text += String(decoding: line, as: UTF8.self) + "\n"
+                }
+            } onCancel: { process.terminate() }
+        } catch {}
+        await process.waitForExit()
+        if Task.isCancelled { process.terminate(); throw CancellationError() }
+        if let object = jsonObject(in: text) {
+            if let error = object["error"] as? String, !error.isEmpty {
+                throw NSError(domain: "Antigravity", code: -1, userInfo: [NSLocalizedDescriptionKey: error])
+            }
+            let usage = UsageDecoder.antigravity(object)
+            if !usage.windows.isEmpty { return usage }
+        }
+        let detail = await process.failureDescription(default: "Antigravity no devolvió una lectura de cuota.")
+        throw NSError(domain: "Antigravity", code: -1, userInfo: [NSLocalizedDescriptionKey: detail])
+    }
+    private static func jsonObject(in text: String) -> [String: Any]? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let data = trimmed.data(using: .utf8),
+           let value = try? JSONSerialization.jsonObject(with: data),
+           let object = value as? [String: Any] { return object }
+        for line in text.components(separatedBy: .newlines).reversed() {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("{"), let data = trimmed.data(using: .utf8),
+                  let value = try? JSONSerialization.jsonObject(with: data),
+                  let object = value as? [String: Any] else { continue }
+            return object
+        }
+        return nil
     }
     private static func readCodex() async throws -> ProviderUsage {
         guard let executable = ExecutableResolver.resolve("codex", override: UserDefaults.standard.string(forKey: "providerExecutablePath.codex")) else { throw CocoaError(.fileNoSuchFile) }

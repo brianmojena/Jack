@@ -68,6 +68,10 @@ enum AntigravityTerminalError: LocalizedError {
     private let codexModels = ChatModelCatalog.cachedCodex()
     /// Filled from `agy models` on first use. It starts empty so the CLI's own default applies until answered.
     @Published public private(set) var antigravityModels: [ChatModelChoice] = []
+    @Published public private(set) var loadingAntigravityModels = false
+    @Published public private(set) var antigravityModelsError: String?
+    /// Model the CLI starts with, read from its settings, for the "Predeterminado" label.
+    @Published public private(set) var antigravityDefaultTitle: String?
     private var antigravityModelsTask: Task<Void, Never>?
     private var antigravityModelsRequest: UUID?
     var loadAntigravityModels: (String?) async -> [ChatModelChoice] = { override in
@@ -201,6 +205,11 @@ enum AntigravityTerminalError: LocalizedError {
         self.preferences = preferences
         self.makeDriver = driverFactory ?? { ChatDriverFactory.make($0) }
         for provider in ChatProvider.allCases { recentModels[provider] = preferences?.stringArray(forKey: "recentModels.\(provider.rawValue)") ?? [] }
+        if !lightMode {
+            antigravityModels = ChatModelCatalog.decodeAntigravityModels(
+                preferences?.stringArray(forKey: ChatModelCatalog.antigravityModelsCacheKey) ?? [])
+            antigravityDefaultTitle = ChatModelCatalog.antigravityDefaultTitle()
+        }
         knownCloudModelIDs = Set(preferences?.stringArray(forKey: "stellar.cloudModelIDs") ?? [])
         linkedCloudModelIDs = Set(preferences?.stringArray(forKey: "stellar.linkedCloudModelIDs") ?? [])
         if let saved = preferences?.object(forKey: "maxConcurrentAgents") as? Int { maxConcurrent = max(0, min(64, saved)) }
@@ -228,6 +237,7 @@ enum AntigravityTerminalError: LocalizedError {
         modelDiscoveryGeneration += 1
         modeGeneration += 1
         antigravityModelsTask?.cancel(); antigravityModelsTask = nil; antigravityModelsRequest = nil
+        loadingAntigravityModels = false
         if enabled {
             if let selectedID, conversations.first(where: { $0.id == selectedID })?.provider.isNormalOnly == true {
                 self.selectedID = nil
@@ -242,6 +252,12 @@ enum AntigravityTerminalError: LocalizedError {
             asides.cancelCloudAsides()
             asides.cancelNormalOnlyAsides()
             for state in flowDiagramStates.values { state.cancel() }
+        } else {
+            if antigravityModels.isEmpty {
+                antigravityModels = ChatModelCatalog.decodeAntigravityModels(
+                    preferences?.stringArray(forKey: ChatModelCatalog.antigravityModelsCacheKey) ?? [])
+            }
+            antigravityDefaultTitle = antigravityDefaultTitle ?? ChatModelCatalog.antigravityDefaultTitle()
         }
         notebookWorkspace?.setEnabled(!enabled)
         lightWindowVisible = true
@@ -290,18 +306,27 @@ enum AntigravityTerminalError: LocalizedError {
         antigravityModelsTask?.cancel()
         let request = UUID()
         antigravityModelsRequest = request
-        let discovery = modelDiscoveryGeneration
         let mode = modeGeneration
         let override = preferences?.string(forKey: "providerExecutablePath.\(ChatProvider.antigravity.rawValue)")
+        loadingAntigravityModels = true
+        antigravityModelsError = nil
         let task = Task { [weak self] in
             guard let self else { return }
             let models = await self.loadAntigravityModels(override?.isEmpty == false ? override : nil)
-            guard !Task.isCancelled, !models.isEmpty, !self.stopped, !self.lightModeEnabled,
-                  self.antigravityModelsRequest == request,
-                  self.modelDiscoveryGeneration == discovery, self.modeGeneration == mode else { return }
-            self.antigravityModels = models
+            // A newer request owns the loading state; a cancelled one leaves it untouched.
+            guard self.antigravityModelsRequest == request else { return }
+            self.loadingAntigravityModels = false
             self.antigravityModelsTask = nil
             self.antigravityModelsRequest = nil
+            guard !Task.isCancelled, !self.stopped, !self.lightModeEnabled, self.modeGeneration == mode else { return }
+            if models.isEmpty {
+                self.antigravityModelsError = "No se pudieron cargar los modelos. Comprueba que agy esté instalado y con sesión iniciada."
+                return
+            }
+            self.antigravityModels = models
+            self.antigravityDefaultTitle = ChatModelCatalog.antigravityDefaultTitle()
+            self.preferences?.set(ChatModelCatalog.encodeAntigravityModels(models),
+                                  forKey: ChatModelCatalog.antigravityModelsCacheKey)
         }
         antigravityModelsTask = task
         await task.value
@@ -1542,7 +1567,9 @@ enum AntigravityTerminalError: LocalizedError {
         case .claude: catalog = ChatModelChoice.claudeCatalog
         case .opencode: catalog = [ChatModelChoice(id: "", efforts: [])]
         case .stellar: catalog = Self.visibleStellarModels(localModels, lightMode: lightModeEnabled).map { ChatModelChoice(id: $0.id, title: $0.title, efforts: []) }
-        case .antigravity: catalog = [ChatModelChoice(id: "", title: "Predeterminado", efforts: ChatModelChoice.antigravityEfforts)] + antigravityModels
+        case .antigravity:
+            let title = antigravityDefaultTitle.map { "Predeterminado · \($0)" } ?? "Predeterminado"
+            catalog = [ChatModelChoice(id: "", title: title, efforts: ChatModelChoice.antigravityEfforts)] + antigravityModels
         }
         var ids = (recentModels[provider] ?? []) + conversations.filter { $0.provider == provider }.map(\.model) + [provider.defaultModel] + catalog.map(\.id)
         if provider == .stellar {
@@ -1576,6 +1603,7 @@ enum AntigravityTerminalError: LocalizedError {
         modelDiscoveryGeneration += 1
         modeGeneration += 1
         antigravityModelsTask?.cancel(); antigravityModelsTask = nil; antigravityModelsRequest = nil
+        loadingAntigravityModels = false
         for state in flowDiagramStates.values { state.cancel() }
         flowDiagramStates.removeAll()
         for id in Array(locateTasks.keys) { cancelLocating(id) }
@@ -1700,8 +1728,9 @@ enum AntigravityTerminalError: LocalizedError {
         finishTurn(id)
         drivers.removeValue(forKey: id); runs.removeValue(forKey: id)
         completeJackTurn(id, cancelled: cancelled)
-        // Claude Code reports its quota as it works; Codex's has to be asked for.
-        if let provider = conversations.first(where: { $0.id == id })?.provider, provider == .codex { refreshUsageSoon(provider) }
+        // Claude Code reports its quota as it works; Codex and Antigravity have to be asked for.
+        if let provider = conversations.first(where: { $0.id == id })?.provider,
+           provider == .codex || provider == .antigravity { refreshUsageSoon(provider) }
         deliverWaiting(id)
         save(id); evictInactiveTranscripts(); drainQueue()
     }

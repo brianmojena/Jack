@@ -153,6 +153,59 @@ final class AntigravityTests: XCTestCase {
         XCTAssertEqual(models.first?.efforts, ChatModelChoice.antigravityEfforts)
     }
 
+    func testModelCacheRoundTripsTitlesAndEfforts() {
+        let models = ChatModelCatalog.parseAntigravityModels("""
+        gemini-3.8-flash-high\tGemini 3.8 Flash (High)
+        claude-sonnet-4-6\tClaude Sonnet 4.6
+        """)
+        let cached = ChatModelCatalog.decodeAntigravityModels(ChatModelCatalog.encodeAntigravityModels(models))
+        XCTAssertEqual(cached.map(\.id), models.map(\.id))
+        XCTAssertEqual(cached.map(\.title), models.map(\.title))
+        XCTAssertEqual(cached.first?.efforts, ChatModelChoice.antigravityEfforts)
+    }
+
+    func testDefaultTitleComesFromTheCLISettings() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("jack-antigravity-settings-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let url = folder.appendingPathComponent("settings.json")
+        try #"{"model":"Gemini 3.8 Flash (Medium)"}"#.write(to: url, atomically: true, encoding: .utf8)
+        XCTAssertEqual(ChatModelCatalog.antigravityDefaultTitle(at: url), "Gemini 3.8 Flash (Medium)")
+        XCTAssertNil(ChatModelCatalog.antigravityDefaultTitle(at: folder.appendingPathComponent("missing.json")))
+    }
+
+    func testUsageDecodingReadsGroupsAndTurnsFractionsIntoConsumption() throws {
+        let payload: [String: Any] = ["command": [
+            "name": "usage",
+            "data": ["groups": [
+                ["name": "Gemini Models", "buckets": [[
+                    "id": "gemini-weekly", "name": "Weekly Limit Remaining", "window": "weekly",
+                    "remaining_fraction": 0.9326480031013489, "reset_time": "2026-10-26T12:05:50Z"
+                ]]],
+                ["name": "Claude and GPT models", "buckets": [[
+                    "id": "3p-weekly", "name": "Weekly Limit Remaining", "window": "weekly",
+                    "remaining_fraction": 1, "reset_time": "2026-10-26T18:56:55Z"
+                ]]]
+            ]]
+        ]]
+        let usage = UsageDecoder.antigravity(payload)
+        XCTAssertEqual(usage.provider, .antigravity)
+        XCTAssertEqual(usage.windows.map(\.id), ["antigravity:gemini-weekly", "antigravity:3p-weekly"])
+        XCTAssertEqual(usage.windows.map(\.title), ["Gemini · 7 d", "Claude y GPT · 7 d"])
+        XCTAssertEqual(usage.windows[0].usedPercent ?? -1, (1 - 0.9326480031013489) * 100, accuracy: 0.0001)
+        XCTAssertEqual(usage.windows[1].usedPercent ?? -1, 0, accuracy: 0.0001)
+        XCTAssertNotNil(usage.windows[0].resetsAt)
+    }
+
+    func testUsageDecodingFallsBackToTheTSVResponse() {
+        let usage = UsageDecoder.antigravity(["response": "Gemini Models\tWeekly Limit Remaining\t93%\t2026-10-26T12:05:50Z"])
+        XCTAssertEqual(usage.windows.count, 1)
+        XCTAssertEqual(usage.windows[0].title, "Gemini · 7 d")
+        XCTAssertEqual(usage.windows[0].usedPercent ?? -1, 7, accuracy: 0.0001)
+        XCTAssertNotNil(usage.windows[0].resetsAt)
+        XCTAssertTrue(UsageDecoder.antigravity([:]).windows.isEmpty)
+    }
+
     @MainActor func testLightCannotCreateAntigravityWhileNormalLeavesItsModeToTheCli() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("jack-antigravity-light-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: folder) }

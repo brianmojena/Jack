@@ -86,6 +86,17 @@ struct ChatModelPicker: View {
                     if allowsCloud { Button("Vincular modelo de nube…") { linkingCloud = true; customModel = ""; custom = true } }
                     Button(allowsCloud ? "Actualizar modelos" : "Actualizar modelos locales") { Task { await store.refreshLocalModels() } }
                         .disabled(store.loadingLocalModels)
+                } else if conversation.provider == .antigravity {
+                    if let standard = choices.first { modelButton(standard) }
+                    ForEach(Array(choices.dropFirst())) { choice in modelButton(choice) }
+                    Divider()
+                    if store.loadingAntigravityModels { Text("Cargando modelos de Antigravity…") }
+                    if let error = store.antigravityModelsError { Text(error) }
+                    if !store.loadingAntigravityModels, store.antigravityModelsError == nil, store.antigravityModels.isEmpty {
+                        Text("Aún no hay modelos: actualiza el catálogo")
+                    }
+                    Button("Actualizar modelos de Antigravity") { Task { await store.refreshAntigravityModels() } }
+                        .disabled(store.loadingAntigravityModels)
                 } else {
                     ForEach(choices) { choice in modelButton(choice) }
                 }
@@ -187,6 +198,9 @@ struct ChatModelPicker: View {
         .task(id: conversation.id) {
             providers = []; openCodeModes = []; modelsError = nil
             if conversation.provider == .opencode { await refreshModels() }
+            if conversation.provider == .antigravity, store.antigravityModels.isEmpty, !store.loadingAntigravityModels {
+                await store.refreshAntigravityModels()
+            }
         }
     }
 

@@ -11,8 +11,8 @@
 		02FB26A412E092684DB37B1A /* UpdateChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = F92F2637817F350152A1A81C /* UpdateChecker.swift */; };
 		051E30A12B62E96A652522D3 /* FileExplorer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 138D59F70F9CA07105FD1933 /* FileExplorer.swift */; };
 		06A6CE197A69B714E98CE5B7 /* OfficeColleagueView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 961D65BF09CA18DC77CB3C3D /* OfficeColleagueView.swift */; };
-		0AD32BCA8D5467B1157EE855 /* Office2DScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7920154A0C48A8B576E4954 /* Office2DScene.swift */; };
 		072C2113618D353E495AA216 /* ChessMasters.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B0A4D0840ACD2556EE7FC91 /* ChessMasters.swift */; };
+		0AD32BCA8D5467B1157EE855 /* Office2DScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7920154A0C48A8B576E4954 /* Office2DScene.swift */; };
 		0BD576E2B4A206561BD3BED4 /* MainWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7BD885E59F4C6849E846404 /* MainWindowView.swift */; };
 		0C6E135505E0D5C043D73A2F /* Chess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3633D11E0EF5A076E63CAA21 /* Chess.swift */; };
 		0D007B95A841A3699ECD9CEE /* JackRemoteServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E6A931D3216E15958A00AFD /* JackRemoteServer.swift */; };
@@ -217,8 +217,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		032BBF62CE8545A33F6498ED /* AntigravityIntegration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AntigravityIntegration.swift; sourceTree = "<group>"; };
 		0115E6D3245B4235B6E44CAE /* Avatar_DEADPOOL.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = Avatar_DEADPOOL.png; sourceTree = "<group>"; };
+		032BBF62CE8545A33F6498ED /* AntigravityIntegration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AntigravityIntegration.swift; sourceTree = "<group>"; };
 		05109BEC027632469B1BE7E8 /* OfficeAssignments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeAssignments.swift; sourceTree = "<group>"; };
 		0665C3AFD39156575CA767CA /* OfficeQuality.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeQuality.swift; sourceTree = "<group>"; };
 		067FC34731494377F242C1EA /* OfficeLayout.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = OfficeLayout.json; sourceTree = "<group>"; };
@@ -340,8 +340,8 @@
 		C4E64BB6ED15B3A579DB97CE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		C5A12922F7A4E1E7A3623821 /* MarkdownTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownTableView.swift; sourceTree = "<group>"; };
 		C77FC7E95D4EE8768DC19D3F /* ChatImages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatImages.swift; sourceTree = "<group>"; };
-		C8C74002B7B4F6615FCCD94E /* Office2DCharacters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Office2DCharacters.swift; sourceTree = "<group>"; };
 		C7DB073F8E61D5888BF554B3 /* Avatar_REMY.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = Avatar_REMY.png; sourceTree = "<group>"; };
+		C8C74002B7B4F6615FCCD94E /* Office2DCharacters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Office2DCharacters.swift; sourceTree = "<group>"; };
 		CA9AEFCAF5C3EB12827473A9 /* ClaudeSessions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeSessions.swift; sourceTree = "<group>"; };
 		CC084525C4D6CE0EBEF1CF88 /* JackApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JackApp.swift; sourceTree = "<group>"; };
 		CCABA0283CE71A5F4ED877AC /* JackRemoteProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JackRemoteProtocol.swift; sourceTree = "<group>"; };
@@ -428,9 +428,9 @@
 				E229CF3EA3E5C8331E30BF2D /* ChatProcess.swift */,
 				55789284D46B10B50C316C86 /* ChatStore.swift */,
 				0D0A660EF197200211C217B4 /* ChatUsage.swift */,
-				2702CDD68A82EB830DC6D786 /* ClaudeArtifacts.swift */,
 				3633D11E0EF5A076E63CAA21 /* Chess.swift */,
 				9B0A4D0840ACD2556EE7FC91 /* ChessMasters.swift */,
+				2702CDD68A82EB830DC6D786 /* ClaudeArtifacts.swift */,
 				CA9AEFCAF5C3EB12827473A9 /* ClaudeSessions.swift */,
 				8A45A93DAF44DBBC83A60C50 /* ExecutableResolver.swift */,
 				23A3C12F03AEFEE7243BF5C8 /* FlowDiagram.swift */,
@@ -887,9 +887,9 @@
 				A7D328F4FA370B7E3C7FFB6F /* ChatProcess.swift in Sources */,
 				96AB78C25512D6E21C9AA45B /* ChatStore.swift in Sources */,
 				1E4B9916484367A33AC3D959 /* ChatUsage.swift in Sources */,
-				8E59269511DCE8F7162A3A1C /* ClaudeArtifacts.swift in Sources */,
 				0C6E135505E0D5C043D73A2F /* Chess.swift in Sources */,
 				072C2113618D353E495AA216 /* ChessMasters.swift in Sources */,
+				8E59269511DCE8F7162A3A1C /* ClaudeArtifacts.swift in Sources */,
 				56C38ADB49FAC17203F73ED4 /* ClaudeSessions.swift in Sources */,
 				6EB861C0B842D3CECBD7F800 /* ExecutableResolver.swift in Sources */,
 				2B63503F337D59229C435107 /* FlowDiagram.swift in Sources */,

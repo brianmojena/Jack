@@ -53,7 +53,7 @@ Las pestañas de agentes aprovechan el ancho de la barra superior en Basic e Ice
 
 ### Antigravity
 
-Antigravity (`agy`) solo aparece en el modo Normal y usa su protocolo headless NDJSON: Jack inicia un proceso por turno y reanuda la conversación con `--conversation`. El modelo **Predeterminado** no pasa `--model`, así que se respeta la configuración de la CLI; el catálogo se lee de `agy models` al crear o abrir el agente. La lista de comandos `/` no está disponible porque este protocolo no la expone.
+Antigravity (`agy`) solo aparece en el modo Normal y usa su protocolo headless NDJSON: Jack inicia un proceso por turno y reanuda la conversación con `--conversation`. El modelo **Predeterminado** no pasa `--model`, así que se respeta la configuración de la CLI; el catálogo se lee de `agy models` al crear o abrir el agente, se guarda para la siguiente apertura y puede actualizarse desde el selector. La etiqueta de Predeterminado muestra el modelo configurado en `~/.gemini/antigravity-cli/settings.json`. La cuota se consulta con `agy -p "/usage" --output-format json` (sin iniciar una conversación) y se muestra en **Uso y límites**, desglosada por grupo de modelos. La lista de comandos `/` no está disponible porque este protocolo no la expone.
 
 En Normal, Jack configura su MCP automáticamente para Antigravity: registra el servidor `jack_app` en `~/.gemini/config/mcp_config.json` y usa el subcomando `jack-progress antigravity-mcp` como puente hacia el AgentBridge local. Así llegan a este proveedor la delegación, los cuadernos y los artefactos de Jack. El registro conserva el resto de la configuración, se escribe de forma atómica y no guarda el token ni la URL efímera: ambos viajan solo en el entorno del proceso.
 

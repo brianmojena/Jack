@@ -51,7 +51,7 @@ public extension ChatModelChoice {
 }
 
 enum ChatModelCatalog {
-    // Reuse the CLI's local catalog: opening the picker never starts an agent.
+    /// Reuse the CLI's local catalog: opening the picker never starts an agent.
     /// Reads the CLI's own model list: one `slug<TAB>title` line per model. No inference is started.
     static func parseAntigravityModels(_ output: String) -> [ChatModelChoice] {
         output.components(separatedBy: .newlines).compactMap { line -> ChatModelChoice? in
@@ -62,12 +62,34 @@ enum ChatModelCatalog {
             return ChatModelChoice(id: slug, title: title.isEmpty ? slug : title, efforts: ChatModelChoice.antigravityEfforts)
         }
     }
+    /// Last catalog read is kept so the picker opens with models before `agy models` answers again.
+    static let antigravityModelsCacheKey = "antigravityModelsCache"
+    static func encodeAntigravityModels(_ models: [ChatModelChoice]) -> [String] {
+        models.map { "\($0.id)\t\($0.title)" }
+    }
+    static func decodeAntigravityModels(_ lines: [String]) -> [ChatModelChoice] {
+        lines.compactMap { line -> ChatModelChoice? in
+            let parts = line.split(separator: "\t", maxSplits: 1, omittingEmptySubsequences: false)
+            guard let id = parts.first.map(String.init), !id.isEmpty, !id.contains(" ") else { return nil }
+            let title = parts.count > 1 ? String(parts[1]).trimmingCharacters(in: .whitespaces) : id
+            return ChatModelChoice(id: id, title: title.isEmpty ? id : title, efforts: ChatModelChoice.antigravityEfforts)
+        }
+    }
+    /// The CLI stores the model it starts with in its own settings; Jack shows it beside "Predeterminado".
+    static func antigravityDefaultTitle(at url: URL = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".gemini/antigravity-cli/settings.json")) -> String? {
+        guard let bytes = try? Data(contentsOf: url),
+              let root = (try? JSONSerialization.jsonObject(with: bytes)) as? [String: Any],
+              let model = root["model"] as? String else { return nil }
+        let title = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        return title.isEmpty ? nil : title
+    }
     /// Asynchronous because it runs the CLI; callers update their catalog when it returns.
     static func antigravityModels(executable: String, override: String?) async -> [ChatModelChoice] {
         guard let path = ExecutableResolver.resolve(executable, override: override),
               let child = try? StructuredChild(executable: path, arguments: ["models"], directory: NSTemporaryDirectory()) else { return [] }
         child.closeInput()
-        let timer = Task { try? await Task.sleep(for: .seconds(15)); if !Task.isCancelled { child.terminate() } }
+        let timer = Task { try? await Task.sleep(for: .seconds(30)); if !Task.isCancelled { child.terminate() } }
         var text = ""
         do {
             try await withTaskCancellationHandler {

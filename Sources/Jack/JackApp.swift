@@ -40,11 +40,11 @@ struct JackApp: App {
                     guard !lightMode else { updateChecker.stop(); return }
                     updateChecker.start()
                     await store.refreshUsage()
-                    // Codex's quota only changes when asked for; Claude Code reports its own as it works.
+                    // Codex and Antigravity quotas only change when asked for; Claude Code reports its own as it works.
                     while !Task.isCancelled {
                         try? await Task.sleep(for: .seconds(600))
                         guard !Task.isCancelled else { return }
-                        await store.refreshUsage([.codex])
+                        await store.refreshUsage([.codex, .antigravity])
                     }
                 }
         }
