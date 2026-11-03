@@ -127,7 +127,6 @@ import XCTest
             drivers.append(driver)
             return driver
         })
-        store.gitSnapshotCaptureOverride = { _ in nil }
         store.setConcurrency(1)
         defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
 

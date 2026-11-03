@@ -9,6 +9,16 @@ public enum ProjectLocator {
             .appendingPathComponent("Jack/Sin proyecto", isDirectory: true).path
     }
 
+    /// Working folder for agents with no project: the home folder, never scanned for projects.
+    public static var homeFolder: String {
+        FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
+    }
+
+    /// Name of a space in the sidebar and the folder menu; the home folder reads "Sin carpeta".
+    public static func displayName(_ path: String) -> String {
+        path == homeFolder ? "Sin carpeta" : URL(fileURLWithPath: path).lastPathComponent
+    }
+
     /// Reuses the exact path of an existing Jack project, including when the user
     /// writes an alias or a symlink. An open project wins over an indexed namesake.
     static func knownPath(in request: String, projects: [String], openProjects: [String]) -> String? {

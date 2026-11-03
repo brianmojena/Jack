@@ -51,7 +51,6 @@ final class ClaudeIntegrationTests: XCTestCase {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("jack-live-tests-" + UUID().uuidString)
         var drivers: [LiveDriver] = []
         let store = ChatStore(archive: ChatArchive(directory: folder), preferences: nil, driverFactory: { _ in let driver = LiveDriver(); drivers.append(driver); return driver })
-        store.gitSnapshotCaptureOverride = { _ in nil }
         return (store, folder, { drivers })
     }
     private func settle() async { for _ in 0..<5 { await Task.yield() }; try? await Task.sleep(nanoseconds: 80_000_000) }
@@ -170,7 +169,6 @@ final class ClaudeIntegrationTests: XCTestCase {
         let store = ChatStore(archive: ChatArchive(directory: folder), preferences: nil, driverFactory: { _ in
             TurnDriver(started: { prompts.append($0) }, continuation: { finish = $0 })
         })
-        store.gitSnapshotCaptureOverride = { _ in nil }
         defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
         let id = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .codex))
         store.send("primero")

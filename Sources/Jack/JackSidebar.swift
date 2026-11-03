@@ -73,7 +73,7 @@ struct SidebarSections {
         let rest = rows.filter { !pinnedIDs.contains($0.id) }
         let grouped = Dictionary(grouping: rest) { projectPaths[$0.id] ?? "" }
         let groupedProjects = grouped.map { path, rows in
-            (path: path, name: URL(fileURLWithPath: path).lastPathComponent, rows: Self.nested(rows))
+            (path: path, name: ProjectLocator.displayName(path), rows: Self.nested(rows))
         }
         let sort = sort ?? (alphabetical ? .nameAscending : .manual)
         switch sort {

@@ -92,8 +92,6 @@ public struct ChatConversation: Identifiable, Codable, Equatable {
     public var preview: String? = nil
     /// The last turn finished while the conversation was not selected.
     public var hasUnread: Bool? = nil
-    /// Structured evidence and agent-declared follow-up from the last completed turn.
-    public var turnClosures: [ChatTurnClosure]? = nil
     /// When the user pinned it to the top of the sidebar; at most `ChatStore.maxPinned` chats are pinned.
     public var pinnedAt: Date? = nil
     /// Marked by the user as something to come back to: the sidebar shows a bright dot.
@@ -166,8 +164,6 @@ public enum ChatEvent {
     case session(String)
     case text(id: String, text: String, replace: Bool)
     case tool(id: String, title: String, detail: String, status: String)
-    /// Structured command completion metadata when a provider supplies an exit status.
-    case commandResult(id: String, command: String, exitStatus: Int?)
     case reasoning(id: String, text: String, replace: Bool)
     case toolOutput(id: String, text: String)
     case usage(ProviderUsage)

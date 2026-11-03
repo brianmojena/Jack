@@ -106,7 +106,7 @@ private enum ChatDriverError: LocalizedError {
 }
 
 enum CodexProtocol {
-    static func event(_ object: [String: Any], session: inout String?, approvals: inout [String: PendingApproval], permissionProfiles: Bool = false, captureCommandResults: Bool = true) -> [ChatEvent] {
+    static func event(_ object: [String: Any], session: inout String?, approvals: inout [String: PendingApproval], permissionProfiles: Bool = false) -> [ChatEvent] {
         if let method = object["method"] as? String {
             let params = object["params"] as? [String: Any] ?? [:]
             if method == "serverRequest/resolved", let rpcID = params["requestId"] {
@@ -180,9 +180,6 @@ enum CodexProtocol {
                     let id = item["id"] as? String ?? UUID().uuidString
                     let status = method == "item/started" ? "running" : (item["status"] as? String ?? "completed")
                     let tool = ChatEvent.tool(id: id, title: readableItem(type: type, item: item), detail: readableDetails(type: type, item: item), status: status)
-                    if captureCommandResults, type == "commandExecution", method == "item/completed" {
-                        return [tool, .commandResult(id: id, command: item["command"] as? String ?? "", exitStatus: item["exitCode"] as? Int)]
-                    }
                     return [tool]
                 }
             }
@@ -397,7 +394,7 @@ final class CodexChatDriver: ProcessChatDriver {
                 continue
             }
             let events = CodexProtocol.event(object, session: &self.threadID, approvals: &pendingApprovals,
-                                             permissionProfiles: !energySaving, captureCommandResults: !energySaving)
+                                             permissionProfiles: !energySaving)
             let knownRequest = pendingApprovals.values.contains {
                 String(describing: $0.payload["rpcID"] ?? "") == String(describing: object["id"] ?? "") && $0.payload["method"] as? String == object["method"] as? String
             }

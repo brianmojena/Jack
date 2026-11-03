@@ -9,8 +9,6 @@ struct ChatTranscript: View, Equatable {
     let active: Bool
     let monospaced: Bool
     let ice: Bool
-    let onOpenGit: (String?) -> Void
-    let onReviewClosure: (String) -> Void
     let onPrompt: (String) -> Void
     @State private var visibleCount = 100
     /// The user scrolled up; the chat stops following until they return to the end.
@@ -26,7 +24,6 @@ struct ChatTranscript: View, Equatable {
             && lhs.active == rhs.active && lhs.monospaced == rhs.monospaced && lhs.ice == rhs.ice
             && lhs.conversation.provider == rhs.conversation.provider && lhs.conversation.model == rhs.conversation.model
             && lhs.conversation.effort == rhs.conversation.effort && lhs.conversation.projectPath == rhs.conversation.projectPath
-            && lhs.conversation.turnClosures == rhs.conversation.turnClosures
     }
 
     var body: some View {
@@ -67,14 +64,6 @@ struct ChatTranscript: View, Equatable {
                             )
                             .equatable()
                             .id(message.id)
-                            ForEach((conversation.turnClosures ?? []).filter { $0.transcriptMessageID == message.id }) { closure in
-                                ChatTurnClosureView(closure: closure, onOpenGit: onOpenGit, onReview: { onReviewClosure(closure.id) })
-                            }
-                        }
-                        ForEach((conversation.turnClosures ?? []).filter { closure in
-                            closure.transcriptMessageID == nil || !conversation.messages.contains(where: { $0.id == closure.transcriptMessageID })
-                        }) { closure in
-                            ChatTurnClosureView(closure: closure, onOpenGit: onOpenGit, onReview: { onReviewClosure(closure.id) })
                         }
                     }
                     Color.clear.frame(height: 1).id(Self.bottomID)

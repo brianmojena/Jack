@@ -24,7 +24,6 @@ final class AgentBridgeTests: XCTestCase {
         let archive = ChatArchive(directory: folder)
         var drivers: [DelegatingDriver] = []
         let store = ChatStore(archive: archive, preferences: nil, driverFactory: { _ in let driver = DelegatingDriver(); drivers.append(driver); return driver })
-        store.gitSnapshotCaptureOverride = { _ in nil }
         defer { store.shutdown(); store.bridge.stop(); try? FileManager.default.removeItem(at: folder) }
         // One slot: the sub-agent can only run because a waiting orchestrator gives up its slot.
         store.setConcurrency(1)

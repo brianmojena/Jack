@@ -88,7 +88,6 @@ final class Office2DInteractionTests: XCTestCase {
             drivers.append(driver)
             return driver
         }, commandLoader: { _, _ in [] })
-        store.gitSnapshotCaptureOverride = { _ in nil }
         store.setConcurrency(3)
         defer {
             store.shutdown()

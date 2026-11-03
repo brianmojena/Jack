@@ -210,7 +210,7 @@ import JackCore
                         print("APPROVAL received; rejecting smoke-test tools")
                         Task { try? await driver.respond(approvalID: approval.id, allow: false) }
                     case .tool: print("TOOL event")
-                    case .approvalResolved, .reasoning, .toolOutput, .commandResult, .usage, .tokens, .context, .commands, .mode, .delivered: break
+                    case .approvalResolved, .reasoning, .toolOutput, .usage, .tokens, .context, .commands, .mode, .delivered: break
                     }
                 }
                 print("REPLY: \(String(output.prefix(300)))")

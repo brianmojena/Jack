@@ -23,7 +23,6 @@ final class CustomizationCommandTests: XCTestCase {
             .write(to: root.appendingPathComponent("commands.json"))
         let driver = CustomizationCommandDriver()
         let store = ChatStore(archive: archive, preferences: nil, driverFactory: { _ in driver })
-        store.gitSnapshotCaptureOverride = { _ in nil }
         defer { store.shutdown() }
         let id = try XCTUnwrap(store.create(projectPath: root.path, provider: .codex))
         store.applyCustomization()

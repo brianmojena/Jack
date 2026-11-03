@@ -86,7 +86,6 @@
 		630D91B0364828E0921F7120 /* OfficeChessSetupCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C3963173B64BA866E086FD5 /* OfficeChessSetupCard.swift */; };
 		65138D0E8C01F36F52CF9E9E /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 32B0BA461A610CE350B86967 /* AppIcon.icon */; };
 		6710432588B24B1A6CB97E59 /* TerminalInterfaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3130A5E80CADC1AE5B40976C /* TerminalInterfaceView.swift */; };
-		679D3FF076DF3B683F897907 /* ChatTurnClosure.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE3A75020C7431F6D64BC1E1 /* ChatTurnClosure.swift */; };
 		67ED284489A407FCBD1FA3D8 /* OfficeTVLogo.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8C0E10BF56058A3038998A6 /* OfficeTVLogo.swift */; };
 		68C89B3976CF06E200C70EC1 /* OfficeStage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35E7EAF9BD58303903C67CBB /* OfficeStage.swift */; };
 		6A89D2DA42A687D07F5F2C3F /* SimulatorPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A3D7246F7BBDA7A8018807 /* SimulatorPanel.swift */; };
@@ -141,7 +140,6 @@
 		B2A527A5463EF325C05D72A0 /* SSHKeySetup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21FADA6FCE0D89345442C744 /* SSHKeySetup.swift */; };
 		B2B738782CA7D19B82A2B3DA /* ChatModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8E5B74C47ED76F7F4E3175D /* ChatModels.swift */; };
 		B3D592FF705AF382D9633262 /* VoiceTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = B28C9861FC67C38346F78797 /* VoiceTranscriber.swift */; };
-		B4DA2D937B1A59C7BD16A54B /* ChatTurnClosureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0BA39C4C416D88E29FB2AA4 /* ChatTurnClosureView.swift */; };
 		B9766774E9F9FDA9D637016F /* AgentActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC1BBE9D45CBEC403EA22C82 /* AgentActivityView.swift */; };
 		BF0828C79F9347C25D63A7E2 /* Avatar_LAMINE.png in Resources */ = {isa = PBXBuildFile; fileRef = 2C4091408F121190C72E76A9 /* Avatar_LAMINE.png */; };
 		BF38477F58288B2D1279DF30 /* ChatModelPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D8A6CBC10C08DC5BE8F996 /* ChatModelPicker.swift */; };
@@ -410,10 +408,8 @@
 		DD0F0EC32A5D428E50E5152F /* NotebookSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotebookSession.swift; sourceTree = "<group>"; };
 		DD2509598C4FC1C9E886108E /* SSHTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHTransport.swift; sourceTree = "<group>"; };
 		DE392CC548349392081A80A6 /* NotebookPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotebookPanel.swift; sourceTree = "<group>"; };
-		DE3A75020C7431F6D64BC1E1 /* ChatTurnClosure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTurnClosure.swift; sourceTree = "<group>"; };
 		DE478C8255BAFA828A7913CE /* jack-progress */ = {isa = PBXFileReference; includeInIndex = 0; path = "jack-progress"; sourceTree = BUILT_PRODUCTS_DIR; };
 		E0B96659DFE2D6C91137CF16 /* Poker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Poker.swift; sourceTree = "<group>"; };
-		E0BA39C4C416D88E29FB2AA4 /* ChatTurnClosureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTurnClosureView.swift; sourceTree = "<group>"; };
 		E1DA779938E07CE10645928A /* ChatCommandViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatCommandViews.swift; sourceTree = "<group>"; };
 		E229CF3EA3E5C8331E30BF2D /* ChatProcess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatProcess.swift; sourceTree = "<group>"; };
 		E2E1B2F8CCC4DBA9277E4269 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -488,7 +484,6 @@
 				D8E5B74C47ED76F7F4E3175D /* ChatModels.swift */,
 				E229CF3EA3E5C8331E30BF2D /* ChatProcess.swift */,
 				55789284D46B10B50C316C86 /* ChatStore.swift */,
-				DE3A75020C7431F6D64BC1E1 /* ChatTurnClosure.swift */,
 				0D0A660EF197200211C217B4 /* ChatUsage.swift */,
 				3633D11E0EF5A076E63CAA21 /* Chess.swift */,
 				9B0A4D0840ACD2556EE7FC91 /* ChessMasters.swift */,
@@ -654,7 +649,6 @@
 				504E39FB7DA22A1B9933C4A5 /* ChatMessageRow.swift */,
 				C3D8A6CBC10C08DC5BE8F996 /* ChatModelPicker.swift */,
 				41D9B14CA52330C9B3508766 /* ChatTranscript.swift */,
-				E0BA39C4C416D88E29FB2AA4 /* ChatTurnClosureView.swift */,
 				84A5AF320597FA5C3D4BEE01 /* ClaudeArtifactImportSheet.swift */,
 				0E8F79C0D4ADDF32C1AA5996 /* ClaudeCloudPanel.swift */,
 				3789D85F443A38492640A492 /* ClaudeSessionPicker.swift */,
@@ -904,7 +898,6 @@
 				8D901B967A33198662F4A94B /* ChatMessageRow.swift in Sources */,
 				BF38477F58288B2D1279DF30 /* ChatModelPicker.swift in Sources */,
 				0D341C6641105DD295680C11 /* ChatTranscript.swift in Sources */,
-				B4DA2D937B1A59C7BD16A54B /* ChatTurnClosureView.swift in Sources */,
 				38BDF783DE0F3545ED96A4A6 /* ClaudeArtifactImportSheet.swift in Sources */,
 				3621471A9E8A3D283111D4E5 /* ClaudeCloudPanel.swift in Sources */,
 				8CFA9AFD04527815E8EC6FC0 /* ClaudeSessionPicker.swift in Sources */,
@@ -1004,7 +997,6 @@
 				B2B738782CA7D19B82A2B3DA /* ChatModels.swift in Sources */,
 				A7D328F4FA370B7E3C7FFB6F /* ChatProcess.swift in Sources */,
 				96AB78C25512D6E21C9AA45B /* ChatStore.swift in Sources */,
-				679D3FF076DF3B683F897907 /* ChatTurnClosure.swift in Sources */,
 				1E4B9916484367A33AC3D959 /* ChatUsage.swift in Sources */,
 				0C6E135505E0D5C043D73A2F /* Chess.swift in Sources */,
 				072C2113618D353E495AA216 /* ChessMasters.swift in Sources */,

@@ -25,37 +25,6 @@ enum AntigravityTerminalError: LocalizedError {
     }
 }
 
-/// Immutable inputs captured synchronously when a provider turn ends. The asynchronous
-/// Git comparison can finish later without consulting transcript or state from a newer turn.
-private struct FinishedTurnCapture {
-    let conversationID: UUID
-    let generationID: String
-    let completedAt: Date
-    let ending: ChatTurnEnding
-    let transcriptMessageID: String?
-    let capturedEvents: [ChatTurnCapturedEvent]
-    let gitBefore: ChatTurnGitSnapshot?
-    let agentSummary: String?
-    let agentPendingItems: [String]
-    let projectPath: String
-    let isRemote: Bool
-
-    func makeClosure(after: ChatTurnGitSnapshot?, diffs: [String: String]) -> ChatTurnClosure {
-        var closure = ChatTurnClosureEvaluator.evaluate(
-            conversationID: conversationID, completedAt: completedAt, ending: ending,
-            events: capturedEvents, gitBefore: gitBefore, gitAfter: after,
-            agentSummary: agentSummary, agentPendingItems: agentPendingItems,
-            transcriptMessageID: transcriptMessageID
-        )
-        closure.generationID = generationID
-        closure.id = generationID
-        for index in closure.observedFileChanges.indices {
-            closure.observedFileChanges[index].diff = diffs[closure.observedFileChanges[index].path]
-        }
-        return closure
-    }
-}
-
 @MainActor public final class ChatStore: ObservableObject {
     @Published public private(set) var conversations: [ChatConversation] = []
     @Published public var selectedID: UUID?
@@ -170,8 +139,6 @@ private struct FinishedTurnCapture {
     private let archive: ChatArchive
     private let preferences: UserDefaults?
     private let makeDriver: (ChatProvider) -> any ChatDriver
-    /// Optional test seam; nil keeps the production Git snapshot capture enabled.
-    var gitSnapshotCaptureOverride: (@MainActor (String) async -> ChatTurnGitSnapshot?)?
     private var loaded = Set<UUID>()
     /// Agents shown in panes beside the selected one: their transcripts stay loaded.
     private var paned = Set<UUID>()
@@ -181,12 +148,8 @@ private struct FinishedTurnCapture {
     private var runGenerations: [UUID: UUID] = [:]
     /// Resolved Normal-mode permissions cannot be reopened by a duplicate event in the same turn.
     private var resolvedApprovalIDs: [UUID: Set<String>] = [:]
-    /// Transcript boundary captured before each turn so its closure cannot reuse an older reply.
+    /// Transcript boundary captured before each turn, so only this turn's reply is kept as the last one.
     private var turnMessageStartIndices: [UUID: Int] = [:]
-    /// Git status captured around Normal-mode turns. Missing snapshots remain explicitly unavailable.
-    private var turnGitBefore: [UUID: ChatTurnGitSnapshot] = [:]
-    /// Latest structured tool state per provider event ID, captured only while Normal is active.
-    private var turnCapturedEvents: [UUID: [String: ChatTurnCapturedEvent]] = [:]
     private var stoppingRuns = Set<UUID>()
     private var drivers: [UUID: any ChatDriver] = [:]
     /// Drivers whose agent stays open between turns, reused for the conversation's next message.
@@ -1000,7 +963,7 @@ private struct FinishedTurnCapture {
         let needsAntigravityModels = conversations[index].provider == .antigravity && antigravityModels.isEmpty
         let needsQoderModels = conversations[index].provider == .qoder && qoderModels.isEmpty
         if !loaded.contains(id) {
-            do { if let transcript = try archive.load(id) { conversations[index].messages = transcript.messages; conversations[index].turnClosures = transcript.turnClosures }; loaded.insert(id); settleBackground(id) }
+            do { if let transcript = try archive.load(id) { conversations[index].messages = transcript.messages }; loaded.insert(id); settleBackground(id) }
             catch { errorMessage = "No se pudo leer esta conversación: \(error.localizedDescription)"; return }
         }
         readPendingClaudeHistory(id)
@@ -1014,14 +977,6 @@ private struct FinishedTurnCapture {
         evictInactiveTranscripts()
         if needsAntigravityModels { Task { [weak self] in await self?.refreshAntigravityModels() } }
         if needsQoderModels { Task { [weak self] in await self?.refreshQoderModels() } }
-    }
-    public func markTurnClosureReviewed(_ closureID: String, in conversationID: UUID) {
-        guard !lightModeEnabled, let index = conversations.firstIndex(where: { $0.id == conversationID }),
-              var closures = conversations[index].turnClosures,
-              let closureIndex = closures.firstIndex(where: { $0.id == closureID }) else { return }
-        closures[closureIndex].reviewedAt = Date()
-        conversations[index].turnClosures = closures
-        save(conversationID)
     }
     private static func commandKey(_ provider: ChatProvider, _ projectPath: String) -> String { "\(provider.rawValue)|\(projectPath)" }
     public func commands(for conversation: ChatConversation) -> [ChatCommand]? {
@@ -1439,7 +1394,7 @@ private struct FinishedTurnCapture {
     }
     private func loadTranscript(_ id: UUID) {
         guard !loaded.contains(id), let index = conversations.firstIndex(where: { $0.id == id }) else { return }
-        if let transcript = try? archive.load(id) { conversations[index].messages = transcript.messages; conversations[index].turnClosures = transcript.turnClosures }
+        if let transcript = try? archive.load(id) { conversations[index].messages = transcript.messages }
         loaded.insert(id)
         settleBackground(id)
         readPendingClaudeHistory(id)
@@ -1890,12 +1845,6 @@ private struct FinishedTurnCapture {
             do {
                 try Task.checkCancellation()
                 guard self?.stoppingRuns.contains(id) != true else { throw CancellationError() }
-                if let self, !self.lightModeEnabled {
-                    let snapshot = await self.captureGitSnapshot(id)
-                    try Task.checkCancellation()
-                    guard self.runGenerations[id] == generation else { throw CancellationError() }
-                    if let snapshot { self.turnGitBefore[id] = snapshot }
-                }
                 try await body { [weak self] event in
                     guard let self, self.runGenerations[id] == generation else { return }
                     if case .completed = event {
@@ -1915,41 +1864,17 @@ private struct FinishedTurnCapture {
         guard runGenerations[id] == generation else { return }
         let wasStopping = stoppingRuns.remove(id) != nil
         let cancelled = cancelled || wasStopping
-        let capture = finishRunNow(id, generation: generation, cancelled: cancelled)
-        guard let capture, !lightModeEnabled else { return }
-        Task { [weak self] in
-            guard let self, !self.lightModeEnabled else { return }
-            let after = await self.captureGitSnapshot(at: capture.projectPath)
-            guard !self.lightModeEnabled else { return }
-            let diffs = await self.captureGitDiffs(conversationID: capture.conversationID, projectPath: capture.projectPath,
-                                                   before: capture.gitBefore, after: after)
-            guard !self.lightModeEnabled,
-                  self.conversations.contains(where: { $0.id == capture.conversationID }) else { return }
-            // The turn may have been evicted after completion. Reload the just-saved transcript
-            // before enriching it so save(id) writes the closure back to its transcript file.
-            self.loadTranscript(capture.conversationID)
-            guard !self.lightModeEnabled,
-                  let index = self.conversations.firstIndex(where: { $0.id == capture.conversationID }) else { return }
-            var closure = capture.makeClosure(after: after, diffs: diffs)
-            if let current = self.conversations[index].turnClosures?.first(where: { $0.generationID == capture.generationID }) {
-                closure.reviewedAt = current.reviewedAt
-            } else {
-                return
-            }
-            guard self.replaceExistingClosure(closure, for: capture.conversationID) else { return }
-            self.save(capture.conversationID)
-            self.evictInactiveTranscripts()
-        }
+        finishRunNow(id, generation: generation, cancelled: cancelled)
     }
-    private func finishRunNow(_ id: UUID, generation: UUID, cancelled: Bool) -> FinishedTurnCapture? {
-        guard runGenerations[id] == generation else { return nil }
+    private func finishRunNow(_ id: UUID, generation: UUID, cancelled: Bool) {
+        guard runGenerations[id] == generation else { return }
         runGenerations.removeValue(forKey: id)
         resolvedApprovalIDs.removeValue(forKey: id)
         flush(id)
         settleActivities(id)
         if statuses[id] != .failed { statuses[id] = .idle }
         approvals[id] = []
-        let capture = finishTurn(id, generation: generation, cancelled: cancelled)
+        finishTurn(id)
         drivers.removeValue(forKey: id); runs.removeValue(forKey: id)
         completeJackTurn(id, cancelled: cancelled)
         // Claude Code reports its quota as it works; Codex and Antigravity have to be asked for.
@@ -1957,7 +1882,6 @@ private struct FinishedTurnCapture {
            provider == .codex || provider == .antigravity { refreshUsageSoon(provider) }
         deliverWaiting(id)
         save(id); evictInactiveTranscripts(); drainQueue()
-        return capture
     }
 
     private func restoreStatus(_ id: UUID) {
@@ -1985,13 +1909,9 @@ private struct FinishedTurnCapture {
         flush(id)
         save(id)
     }
-    private func finishTurn(_ id: UUID, generation: UUID, cancelled: Bool) -> FinishedTurnCapture? {
+    private func finishTurn(_ id: UUID) {
         let startIndex = turnMessageStartIndices.removeValue(forKey: id) ?? 0
-        guard let index = conversations.firstIndex(where: { $0.id == id }) else {
-            turnGitBefore.removeValue(forKey: id)
-            turnCapturedEvents.removeValue(forKey: id)
-            return nil
-        }
+        guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
         let messages = conversations[index].messages
         if let last = messages.last(where: { ($0.role == "assistant" || $0.role == "error") && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
             conversations[index].preview = Self.preview(of: last.text)
@@ -2001,44 +1921,6 @@ private struct FinishedTurnCapture {
             lastReplies[id] = String(reply.text.prefix(24_000))
         }
         if selectedID != id { conversations[index].hasUnread = true }
-        guard !lightModeEnabled else {
-            turnGitBefore.removeValue(forKey: id)
-            turnCapturedEvents.removeValue(forKey: id)
-            return nil
-        }
-        let completedAt = Date()
-        let ending: ChatTurnEnding = cancelled ? .interrupted : statuses[id] == .failed ? .failed : .completed
-        let message = turnMessages.last(where: { $0.role == "assistant" && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
-        let capturedEvents = (turnCapturedEvents.removeValue(forKey: id)?.values.map { $0 } ?? []).sorted { $0.observedAt < $1.observedAt }
-        let agentSummary = message.map { String($0.text.prefix(8_000)) }
-        let agentPendingItems = ChatTurnClosureEvaluator.extractPendingDeclarations(from: agentSummary ?? "")
-        let before = turnGitBefore.removeValue(forKey: id)
-        let capture = FinishedTurnCapture(
-            conversationID: id, generationID: generation.uuidString, completedAt: completedAt,
-            ending: ending, transcriptMessageID: turnMessages.last(where: { $0.role == "assistant" || $0.role == "error" })?.id,
-            capturedEvents: capturedEvents, gitBefore: before, agentSummary: agentSummary,
-            agentPendingItems: agentPendingItems, projectPath: conversations[index].projectPath,
-            isRemote: conversations[index].remote != nil
-        )
-        let closure = capture.makeClosure(after: nil, diffs: [:])
-        updateClosure(closure, for: id)
-        return capture.isRemote ? nil : capture
-    }
-
-    private func updateClosure(_ closure: ChatTurnClosure, for id: UUID) {
-        guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
-        var closures = conversations[index].turnClosures ?? []
-        closures.append(closure)
-        if closures.count > 20 { closures.removeFirst(closures.count - 20) }
-        conversations[index].turnClosures = closures
-    }
-    private func replaceExistingClosure(_ closure: ChatTurnClosure, for id: UUID) -> Bool {
-        guard let index = conversations.firstIndex(where: { $0.id == id }),
-              var closures = conversations[index].turnClosures,
-              let closureIndex = closures.firstIndex(where: { $0.generationID == closure.generationID }) else { return false }
-        closures[closureIndex] = closure
-        conversations[index].turnClosures = closures
-        return true
     }
 
     // MARK: Delegation
@@ -2084,12 +1966,6 @@ private struct FinishedTurnCapture {
         if conversation != conversations[index] { conversations[index] = conversation }
     }
     private func receive(_ event: ChatEvent, for id: UUID) {
-        // Many tool events take the deferred flush path and never reach apply(_:for:).
-        // Capture structured activity here, before choosing either delivery path.
-        if !lightModeEnabled, runGenerations[id] != nil, case let .tool(eventID, title, _, status) = event {
-            turnCapturedEvents[id, default: [:]][eventID] = ChatTurnCapturedEvent(
-                id: eventID, kind: .tool, title: title, status: status, observedAt: Date())
-        }
         switch event {
         case .text, .reasoning, .toolOutput, .tool:
             if lightModeEnabled { bufferLight(event, for: id) }
@@ -2179,12 +2055,6 @@ private struct FinishedTurnCapture {
             if !list.isEmpty { commands[Self.commandKey(conversations[index].provider, conversations[index].projectPath)] = list }
         case .suggestion(let text): suggestions[id] = text
         case .session(let sessionID): conversations[index].sessionID = sessionID; save(id)
-        case let .commandResult(eventID, command, exitStatus):
-            if !lightModeEnabled, runGenerations[id] != nil {
-                turnCapturedEvents[id, default: [:]][eventID] = ChatTurnCapturedEvent(
-                    id: eventID, kind: .tool, title: "Ejecución de comando", command: command,
-                    exitStatus: exitStatus, observedAt: Date())
-            }
         case let .tool(messageID, title, detail, status):
             let message = ChatMessage(id: messageID, role: "tool", text: title, detail: String(detail.prefix(65_536)), status: status)
             if let existing = conversations[index].messages.firstIndex(where: { $0.id == messageID }) { conversations[index].messages[existing] = message }
@@ -2217,61 +2087,6 @@ private struct FinishedTurnCapture {
         guard !lightModeEnabled, !approvalIDs.isEmpty, runGenerations[id] == generation else { return }
         resolvedApprovalIDs[id, default: []].formUnion(approvalIDs)
     }
-    private func captureGitSnapshot(_ id: UUID) async -> ChatTurnGitSnapshot? {
-        guard !lightModeEnabled, let conversation = conversations.first(where: { $0.id == id }), conversation.remote == nil else { return nil }
-        return await captureGitSnapshot(at: conversation.projectPath)
-    }
-    private func captureGitSnapshot(at projectPath: String) async -> ChatTurnGitSnapshot? {
-        guard !lightModeEnabled else { return nil }
-        if let gitSnapshotCaptureOverride { return await gitSnapshotCaptureOverride(projectPath) }
-        return await ChatTurnGitSnapshot.capture(in: projectPath, normalMode: { [weak self] in
-            self?.lightModeEnabled == false
-        })
-    }
-    private func captureGitDiffs(conversationID: UUID, projectPath: String,
-                                 before: ChatTurnGitSnapshot?, after: ChatTurnGitSnapshot?) async -> [String: String] {
-        guard !lightModeEnabled, let before, let after else { return [:] }
-        let rootResult = await Git.run(["rev-parse", "--show-toplevel"], in: projectPath,
-                                       timeout: .seconds(10), outputLimit: 64 * 1024)
-        guard !lightModeEnabled, rootResult.succeeded else { return [:] }
-        let rootPath = rootResult.output.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !rootPath.isEmpty else { return [:] }
-        let paths = ChatTurnClosureEvaluator.evaluate(conversationID: conversationID, completedAt: Date(), ending: .completed,
-                                                       events: [], gitBefore: before, gitAfter: after).observedFileChanges.map(\.path)
-        var result: [String: String] = [:]
-        var remaining = 128 * 1024
-        for path in paths where remaining > 0 {
-            guard !lightModeEnabled else { return [:] }
-            var patches: [String] = []
-            if let end = after.head, before.head != end {
-                let arguments: [String]
-                if let start = before.head { arguments = ["diff", "--no-ext-diff", start, end, "--", path] }
-                else { arguments = ["diff-tree", "--root", "-p", "--no-commit-id", end, "--", path] }
-                let committed = await Git.run(arguments, in: rootPath,
-                                              timeout: .seconds(10), outputLimit: min(remaining, 32 * 1024))
-                guard !lightModeEnabled else { return [:] }
-                if !committed.output.isEmpty { patches.append(committed.output) }
-            }
-            if let head = after.head {
-                guard !lightModeEnabled else { return [:] }
-                let working = await Git.run(["diff", "--no-ext-diff", head, "--", path], in: rootPath,
-                                            timeout: .seconds(10), outputLimit: min(remaining, 32 * 1024))
-                guard !lightModeEnabled else { return [:] }
-                if !working.output.isEmpty { patches.append(working.output) }
-            }
-            if patches.isEmpty, after.files.first(where: { $0.path == path })?.status == "??" {
-                guard !lightModeEnabled else { return [:] }
-                let untracked = await Git.run(["diff", "--no-index", "--no-ext-diff", "--", "/dev/null", path], in: rootPath,
-                                              timeout: .seconds(10), outputLimit: min(remaining, 32 * 1024))
-                guard !lightModeEnabled else { return [:] }
-                if !untracked.output.isEmpty { patches.append(untracked.output) }
-            }
-            let patchText = patches.joined(separator: "\n")
-            let patch = String(decoding: patchText.utf8.prefix(min(remaining, 32 * 1024)), as: UTF8.self)
-            if !patch.isEmpty { result[path] = patch; remaining -= patch.utf8.count }
-        }
-        return result
-    }
     private func save(_ id: UUID) {
         let conversation = loaded.contains(id) ? conversations.first { $0.id == id } : nil
         archive.save(index: conversations, conversation: conversation) { [weak self] error in
@@ -2290,7 +2105,6 @@ private struct FinishedTurnCapture {
             save(id)
             if let index = conversations.firstIndex(where: { $0.id == id }) {
                 conversations[index].messages = []
-                conversations[index].turnClosures = nil
             }
             loaded.remove(id)
         }

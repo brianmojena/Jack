@@ -2,28 +2,6 @@ import XCTest
 @testable import JackCore
 
 final class CodexIntegrationTests: XCTestCase {
-    func testCodexCommandCompletionExposesOnlyStructuredExitCode() {
-        var session: String?
-        var approvals: [String: PendingApproval] = [:]
-        let events = CodexProtocol.event(["method": "item/completed", "params": ["item": [
-            "id": "command-1", "type": "commandExecution", "command": "swift test", "exitCode": 0
-        ]]], session: &session, approvals: &approvals)
-
-        XCTAssertEqual(events.count, 2)
-        guard case .commandResult(let id, let command, let exitStatus) = events.last else {
-            return XCTFail("Expected structured command result")
-        }
-        XCTAssertEqual(id, "command-1")
-        XCTAssertEqual(command, "swift test")
-        XCTAssertEqual(exitStatus, 0)
-
-        let withoutCapture = CodexProtocol.event(["method": "item/completed", "params": ["item": [
-            "id": "command-1", "type": "commandExecution", "command": "swift test"
-        ]]], session: &session, approvals: &approvals, captureCommandResults: false)
-        XCTAssertFalse(withoutCapture.contains { if case .commandResult = $0 { true } else { false } },
-                       "Light mode can suppress the additional structured capture")
-    }
-
     func testPermissionProfilesRequireNormalModeAndGrantOnlyRequestedAccess() throws {
         var session: String? = "thread"
         var pending: [String: PendingApproval] = [:]

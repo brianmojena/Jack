@@ -19,7 +19,7 @@ public final class ChatArchive {
         return try JSONDecoder().decode(ChatConversation.self, from: Data(contentsOf: url))
     }
     public func save(index: [ChatConversation], conversation: ChatConversation? = nil, removedID: UUID? = nil, completion: @escaping (Error?) -> Void = { _ in }) {
-        let summaries = index.map { value -> ChatConversation in var summary = value; summary.messages = []; summary.turnClosures = nil; return summary }
+        let summaries = index.map { value -> ChatConversation in var summary = value; summary.messages = []; return summary }
         writer.async { [self] in
             do {
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

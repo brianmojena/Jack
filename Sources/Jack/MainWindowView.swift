@@ -811,25 +811,8 @@ struct MainWindowView: View {
 
     private func messageHistory(_ conversation: ChatConversation) -> some View {
         ChatTranscript(conversation: conversation, active: isActive(conversation), monospaced: monospaced, ice: ice,
-                       onOpenGit: { showGitDiff($0, in: conversation) },
-                       onReviewClosure: { store.markTurnClosureReviewed($0, in: conversation.id) },
                        onPrompt: { send($0, in: conversation) })
             .equatable()
-    }
-
-    private func showGitDiff(_ path: String?, in conversation: ChatConversation) {
-        guard !store.lightModeEnabled, conversation.remote == nil else { return }
-        store.select(conversation.id)
-        workspace.reveal(.git, for: conversation.id)
-        workspaceVisible = true
-        guard let path else { return }
-        let session = workspace.git(for: conversation.projectPath)
-        Task {
-            await session.refresh()
-            guard let file = session.status?.files.first(where: { $0.path == path }) else { return }
-            session.closeDiff()
-            session.select(file, staged: file.staged != nil)
-        }
     }
 
     /// Widest line of the transcript and composer; wider lines are hard to read.

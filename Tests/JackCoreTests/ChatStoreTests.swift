@@ -39,7 +39,6 @@ final class ChatStoreTests: XCTestCase {
         let archive = ChatArchive(directory: folder)
         var drivers: [ControlledDriver] = []
         let store = ChatStore(archive: archive, preferences: preferences, driverFactory: { _ in let driver = ControlledDriver(); driver.sessionIDToEmit = sessionIDToEmit; drivers.append(driver); return driver }, lightMode: lightMode)
-        store.gitSnapshotCaptureOverride = { _ in nil }
         store.setConcurrency(2)
         return (store, archive, folder, { drivers })
     }
@@ -567,7 +566,6 @@ final class ChatStoreTests: XCTestCase {
         let archive = ChatArchive(directory: folder)
         let driver = ControlledDriver()
         let store = ChatStore(archive: archive, preferences: preferences, driverFactory: { _ in driver })
-        store.gitSnapshotCaptureOverride = { _ in nil }
         defer { store.shutdown(); preferences.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: folder) }
         store.create(projectPath: NSTemporaryDirectory(), provider: .codex)
         let id = try XCTUnwrap(store.selectedID)
@@ -997,105 +995,18 @@ final class ChatStoreTests: XCTestCase {
         XCTAssertEqual(store.conversations.first { $0.id == id }?.messages.filter { $0.role == "error" }.map(\.text), ["fallo repetido"])
         driver.finish(); await settle()
     }
-    @MainActor func testTurnClosureEnrichmentPersistsAfterUnselectedTranscriptIsEvicted() async throws {
-        let (store, archive, folder, drivers) = fixture()
-        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
-        store.gitSnapshotCaptureOverride = nil // This regression exercises the real before/after Git snapshots.
-        let repo = folder.appendingPathComponent("repo", isDirectory: true)
-        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
-        func git(_ arguments: [String]) async throws {
-            let result = await Git.run(arguments, in: repo.path, timeout: .seconds(10))
-            XCTAssertTrue(result.succeeded, "git \(arguments.joined(separator: " ")): \(result.message)")
-        }
-        try await git(["init"])
-        try await git(["config", "user.name", "Jack Tests"])
-        try await git(["config", "user.email", "jack-tests@example.invalid"])
-        let file = repo.appendingPathComponent("turn.txt")
-        try Data("before\n".utf8).write(to: file)
-        try await git(["add", "turn.txt"])
-        try await git(["commit", "-m", "before turn"])
-
-        let firstID = try XCTUnwrap(store.create(projectPath: repo.path, provider: .codex))
-        store.send("haz el cambio", to: firstID)
-        let firstDriver = try XCTUnwrap(drivers().first)
-        for _ in 0..<300 where firstDriver.callback == nil { try await Task.sleep(for: .milliseconds(10)) }
-        XCTAssertNotNil(firstDriver.callback, "The before snapshot should finish before the driver starts")
-        let secondID = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .claude))
-        XCTAssertEqual(store.selectedID, secondID)
-
-        try Data("after\n".utf8).write(to: file)
-        firstDriver.callback?(.text(id: "turn-reply", text: "Cambio terminado.", replace: true))
-        firstDriver.callback?(.completed)
-        XCTAssertEqual(store.activeCount, 0, "Provider completion releases its slot synchronously")
-
-        var persistedClosure: ChatTurnClosure?
-        for _ in 0..<300 {
-            persistedClosure = try archive.load(firstID)?.turnClosures?.first
-            if persistedClosure?.observedFileChanges.first(where: { $0.path == "turn.txt" })?.diff?.contains("after") == true { break }
-            try await Task.sleep(for: .milliseconds(20))
-        }
-        let closure = try XCTUnwrap(persistedClosure)
-        XCTAssertEqual(closure.observedFileChanges.map(\.path), ["turn.txt"])
-        XCTAssertTrue(try XCTUnwrap(closure.observedFileChanges.first?.diff).contains("after"))
-
-        store.select(firstID)
-        XCTAssertEqual(store.selectedConversation?.turnClosures?.first?.observedFileChanges.first?.path, "turn.txt",
-                       "Reopening an evicted conversation restores the enriched closure")
-    }
-    @MainActor func testTurnWithoutAssistantDoesNotReusePreviousSummaryOrTranscriptAnchor() async throws {
+    @MainActor func testStaleApprovalFromFinishedGenerationDoesNotReappear() async throws {
         let (store, _, folder, drivers) = fixture()
-        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
-        let id = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .codex))
-        store.send("primer turno", to: id)
-        for _ in 0..<300 where drivers().first?.callback == nil { try await Task.sleep(for: .milliseconds(10)) }
-        let first = try XCTUnwrap(drivers().first)
-        first.callback?(.text(id: "first-answer", text: "Resumen del primer turno.", replace: true))
-        first.callback?(.completed)
-        XCTAssertEqual(store.conversations.first { $0.id == id }?.turnClosures?.last?.agentStatements.first?.text,
-                       "Resumen del primer turno.")
-
-        store.send("segundo turno", to: id)
-        for _ in 0..<300 where drivers().last?.callback == nil { try await Task.sleep(for: .milliseconds(10)) }
-        let second = try XCTUnwrap(drivers().last)
-        second.callback?(.completed)
-        let secondClosure = try XCTUnwrap(store.conversations.first { $0.id == id }?.turnClosures?.last)
-        XCTAssertTrue(secondClosure.agentStatements.isEmpty)
-        XCTAssertNil(secondClosure.transcriptMessageID)
-        XCTAssertNotEqual(secondClosure.generationID, store.conversations.first { $0.id == id }?.turnClosures?.first?.generationID)
-    }
-    @MainActor func testStaleApprovalFromFinishedGenerationDoesNotReappearAndLightAddsNoClosure() async throws {
-        let (store, archive, folder, drivers) = fixture()
         defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
         let id = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .codex))
         store.send("listo", to: id); await settle()
         let driver = try XCTUnwrap(drivers().first)
         driver.callback?(.text(id: "assistant", text: "Las pruebas pasaron; falta revisar CI.", replace: true))
         driver.callback?(.tool(id: "tool-check", title: "swift test", detail: "comando", status: "completed"))
-        driver.callback?(.commandResult(id: "tool-check", command: "swift test", exitStatus: 0))
         driver.finish(); await settle()
         for _ in 0..<100 where store.activeCount > 0 { try await Task.sleep(for: .milliseconds(10)) }
         driver.callback?(.approval(ChatApproval(id: "obsolete", title: "Permiso tardío", detail: "tool")))
         XCTAssertTrue(store.approvals[id]?.isEmpty != false)
-        let closure = try XCTUnwrap(store.conversations.first { $0.id == id }?.turnClosures?.last)
-        XCTAssertEqual(closure.gitComparison.status, .unavailable)
-        XCTAssertTrue(closure.checks.isEmpty, "Command text and a generic tool status must not be promoted to a verified check")
-        XCTAssertEqual(closure.capturedEvents.first?.kind, .tool)
-        XCTAssertEqual(closure.capturedEvents.first?.command, "swift test")
-        XCTAssertEqual(closure.capturedEvents.first?.exitStatus, 0)
-        XCTAssertEqual(closure.agentStatements.first?.source, .agent)
-        archive.flush()
-        XCTAssertEqual(try archive.load(id)?.turnClosures?.last, closure)
-
-        let (light, lightArchive, lightFolder, lightDrivers) = fixture(lightMode: true)
-        defer { light.shutdown(); try? FileManager.default.removeItem(at: lightFolder) }
-        let lightID = try XCTUnwrap(light.create(projectPath: NSTemporaryDirectory(), provider: .codex))
-        light.send("hola", to: lightID); await settle()
-        let lightDriver = try XCTUnwrap(lightDrivers().first)
-        lightDriver.callback?(.approval(ChatApproval(id: "light-approval", title: "Permiso", detail: "tool")))
-        lightDriver.finish(); await settle(); lightArchive.flush()
-        XCTAssertNil(light.conversations.first { $0.id == lightID }?.turnClosures)
-        XCTAssertNil(try lightArchive.load(lightID)?.turnClosures)
-        archive.flush()
     }
     @MainActor func testResolvedApprovalIgnoresLateDuplicateInSameTurn() async throws {
         let (store, _, folder, drivers) = fixture()
@@ -1112,36 +1023,6 @@ final class ChatStoreTests: XCTestCase {
         XCTAssertTrue(store.approvals[id]?.isEmpty != false)
         XCTAssertEqual(store.statuses[id], .running, "A duplicate resolved permission must not put the turn back into waiting")
         driver.finish(); await settle()
-    }
-    @MainActor func testClosuresKeepGenerationAndReviewStateAcrossFollowingTurn() async throws {
-        let (store, archive, folder, drivers) = fixture()
-        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
-        let id = try XCTUnwrap(store.create(projectPath: folder.path, provider: .codex))
-        store.send("primer turno", to: id); await settle()
-        let firstDriver = try XCTUnwrap(drivers().first)
-        firstDriver.complete("Resumen del primero")
-        await settle()
-        for _ in 0..<100 where store.activeCount > 0 { try await Task.sleep(for: .milliseconds(10)) }
-        let first = try XCTUnwrap(store.conversations.first { $0.id == id }?.turnClosures?.last)
-        XCTAssertEqual(first.id, first.generationID)
-        store.markTurnClosureReviewed(first.id, in: id)
-
-        store.send("segundo turno", to: id); await settle()
-        let secondDriver = try XCTUnwrap(drivers().last)
-        secondDriver.complete("Resumen del segundo")
-        await settle()
-        for _ in 0..<100 where store.activeCount > 0 { try await Task.sleep(for: .milliseconds(10)) }
-        let closures = try XCTUnwrap(store.conversations.first { $0.id == id }?.turnClosures)
-        XCTAssertEqual(closures.count, 2)
-        XCTAssertEqual(closures.first?.id, first.id)
-        XCTAssertNotNil(closures.first?.reviewedAt)
-        XCTAssertNotEqual(closures.first?.generationID, closures.last?.generationID)
-        archive.flush()
-        XCTAssertEqual(try archive.load(id)?.turnClosures, closures)
-        XCTAssertNotNil(try archive.load(id)?.turnClosures?.first?.reviewedAt,
-                        "Review state is persisted in the transcript independently of inbox events")
-        XCTAssertNil(try archive.loadIndex().first { $0.id == id }?.turnClosures,
-                     "The small index must not duplicate unbounded agent summaries")
     }
     @MainActor func testLegacyInboxFieldsAreIgnoredWhenLoadingConversationAndIndex() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("jack-legacy-inbox-" + UUID().uuidString)

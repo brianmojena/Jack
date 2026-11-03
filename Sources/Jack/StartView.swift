@@ -199,6 +199,7 @@ struct StartView: View {
     private var folderMenu: some View {
         Menu {
             Button("Elegir carpeta…", systemImage: "folder") { chooseFolder() }
+            Button("Sin carpeta (usar ~)", systemImage: "house") { folder = ProjectLocator.homeFolder }
             if folder != nil {
                 Button("Detectar por el mensaje", systemImage: "sparkle.magnifyingglass") { folder = nil }
             }
@@ -207,13 +208,13 @@ struct StartView: View {
                 Divider()
                 ForEach(recents, id: \.self) { path in
                     Button { folder = path } label: {
-                        let name = (path as NSString).lastPathComponent
+                        let name = ProjectLocator.displayName(path)
                         if path == folder { Label(name, systemImage: "checkmark") } else { Text(name) }
                     }
                 }
             }
         } label: {
-            Label(folder.map { ($0 as NSString).lastPathComponent } ?? "Carpeta", systemImage: folder == nil ? "folder" : "folder.fill")
+            Label(folder.map(ProjectLocator.displayName) ?? "Carpeta", systemImage: folder == nil ? "folder" : "folder.fill")
                 .lineLimit(1).truncationMode(.middle).frame(maxWidth: 150, alignment: .leading)
         }
         .menuStyle(.borderlessButton).fixedSize()
