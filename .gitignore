@@ -19,3 +19,5 @@ BuildCloud/web/dist/
 website/node_modules/
 website/dist/
 website/.astro/
+# CodeOS: sonidos del sistema de PS5 (de Sony). Van dentro del binario de quien los tenga, pero no en el repositorio público.
+Resources/CodeOS/Sounds/*.flac
