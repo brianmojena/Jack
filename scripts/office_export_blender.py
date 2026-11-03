@@ -38,7 +38,8 @@ COFFEE = "COFFEE"
 # aquí se recortan solo en la exportación y el .blend queda intacto. Las mallas pequeñas (pantallas, cristales, caras) no se tocan.
 LIGHT_RATIOS = {
     "WORKSTATION_01": 0.35, "WORKSTATION_02": 0.35, "WORKSTATION_03": 0.35,
-    "COFFEE": 0.4, "PROP_lang_logos": 0.5, "PROP_sofa": 0.5,
+    "COFFEE": 0.2, "PROP_lang_logos": 0.5, "PROP_sofa": 0.5,
+    "PROP_plant_big": 0.5, "PROP_plant_big_2": 0.5, "PROP_table_plant": 0.3,
     "CHAR_LAMINE_rig": 0.4,
 }
 # Los tramos de nombre de las mallas que no se aligeran nunca (el vapor es una malla animada y las caras se ven de cerca).
@@ -46,6 +47,11 @@ LIGHT_KEEP = ("steam", "face", "glass", "screen")
 LIGHT_MIN_TRIS = 1500
 # Las botas de Lamine pesan 36.000 triángulos y apenas se ven.
 LIGHT_MESH_RATIOS = {"CHAR_LAMINE_boot": 0.2}
+
+# La luz horneada (scripts/office_bake_lighting.py): el atlas de cada objeto, su mapa de UV y la carpeta de los atlas.
+BAKED_PROP = "office_bake"
+BAKED_UV = "Lightmap"
+BAKED_PREFIX = "OfficeBake_"
 
 COMMON = dict(
     generate_preview_surface=True, export_textures_mode="NEW", overwrite_textures=True, convert_orientation=True,
@@ -91,6 +97,74 @@ def runtime_materials():
             shader.inputs["Emission Strength"].default_value = entry[3]
 
 
+def _baked_material(atlas, path):
+    """El material con que se exporta lo horneado: negro, mate y con el atlas como emisión. La app lo reconoce por eso y
+    lo dibuja sin luces ni tonos encima (ver OfficeStage.applyBakedLighting)."""
+    material = bpy.data.materials.new(f"{BAKED_PREFIX}{atlas}")
+    material.use_nodes = True
+    shader = _principled(material)
+    shader.inputs["Base Color"].default_value = (0, 0, 0, 1)
+    shader.inputs["Metallic"].default_value = 0.0
+    shader.inputs["Roughness"].default_value = 1.0
+    shader.inputs["Emission Strength"].default_value = 1.0
+    node = material.node_tree.nodes.new("ShaderNodeTexImage")
+    node.image = bpy.data.images.load(path, check_existing=True)
+    node.image.name = f"{BAKED_PREFIX}{atlas}"
+    material.node_tree.links.new(node.outputs["Color"], shader.inputs["Emission Color"])
+    return material
+
+
+def _baked(obj):
+    return obj.type == "MESH" and obj.get(BAKED_PROP) and BAKED_UV in obj.data.uv_layers
+
+
+@contextlib.contextmanager
+def baked_lighting():
+    """Pone, solo durante la exportación, la luz horneada en lo que la tiene: su atlas como único material y su mapa de UV
+    «Lightmap» como el de render (el exportador lo llama `st`). Sin atlas en disco, la sala se exporta como siempre."""
+    folder = os.path.join(os.path.dirname(os.path.abspath(bpy.data.filepath)), "Textures", "Baked")
+    materials, saved, stripped = {}, [], {}
+    for obj in bpy.data.objects:
+        if not _baked(obj):
+            continue
+        atlas = obj[BAKED_PROP]
+        path = os.path.join(folder, f"{BAKED_PREFIX}{atlas}.jpg")
+        if not os.path.isfile(path):
+            continue
+        if atlas not in materials:
+            materials[atlas] = _baked_material(atlas, path)
+        layers = obj.data.uv_layers
+        render = next((layer.name for layer in layers if layer.active_render), None)
+        saved.append((obj, [slot.material for slot in obj.material_slots], render, obj.data))
+        layers[BAKED_UV].active_render = True
+        for slot in obj.material_slots:
+            slot.material = materials[atlas]
+        # Solo el mapa del atlas: con otro más, RealityKit puede dar a los shaders propios (el detalle del suelo y el ladrillo)
+        # el mapa equivocado como `uv0`. Se exporta una copia de la malla sin los demás.
+        if len(layers) > 1:
+            if obj.data.name not in stripped:
+                copy = obj.data.copy()
+                for layer in [layer for layer in copy.uv_layers if layer.name != BAKED_UV]:
+                    copy.uv_layers.remove(layer)
+                stripped[obj.data.name] = copy
+            obj.data = stripped[obj.data.name]
+    try:
+        yield
+    finally:
+        for obj, previous, render, data in saved:
+            obj.data = data
+            for slot, material in zip(obj.material_slots, previous):
+                slot.material = material
+            if render:
+                obj.data.uv_layers[render].active_render = True
+        for copy in stripped.values():
+            bpy.data.meshes.remove(copy)
+        for material in materials.values():
+            image = material.node_tree.nodes["Image Texture"].image
+            bpy.data.materials.remove(material)
+            bpy.data.images.remove(image)
+
+
 def _triangles(obj):
     return sum(len(p.vertices) - 2 for p in obj.data.polygons)
 
@@ -105,7 +179,8 @@ def lightweight_meshes():
     """
     added, swapped = [], []
     for obj in bpy.data.objects:
-        if obj.type != "MESH" or _triangles(obj) < LIGHT_MIN_TRIS or any(word in obj.name.lower() for word in LIGHT_KEEP):
+        # Lo horneado no se aligera: el «Decimate» juntaría caras de islas distintas del atlas.
+        if obj.type != "MESH" or _triangles(obj) < LIGHT_MIN_TRIS or any(word in obj.name.lower() for word in LIGHT_KEEP) or _baked(obj):
             continue
         ratio = LIGHT_MESH_RATIOS.get(obj.name, LIGHT_RATIOS.get(_top(obj).name))
         if ratio is None:
@@ -178,7 +253,7 @@ def prepare_images():
             image = node.image if node.type == "TEX_IMAGE" else None
             if image is None or image.size[0] == 0:
                 continue
-            jpeg = image.name.startswith("screen_")
+            jpeg = image.name.startswith(("screen_", BAKED_PREFIX))
             image.filepath_raw = os.path.join(textures, re.sub(r"[^A-Za-z0-9_]", "_", image.name) + (".jpg" if jpeg else ".png"))
             image.file_format = "JPEG" if jpeg else "PNG"
             image.save()
@@ -197,8 +272,10 @@ def export_room(folder):
     bpy.context.view_layer.update()
     bpy.ops.object.select_all(action="DESELECT")
     for obj in bpy.data.objects:
+        # `BAKE_*` es solo para el horneado: las luces y las paredes de rebote de los lados abiertos. Lo oculto en el render
+        # tampoco va: no está en la luz horneada y quedaría a oscuras sobre ella (los recortes viejos de la pared del espejo).
         if obj.type in ("LIGHT", "CAMERA") or _top(obj).name.startswith("CHAR_") or _top(obj).name == COFFEE or obj.hide_get() or obj.hide_viewport \
-                or _glass(obj) or obj.name == MIRROR_GLASS:
+                or _glass(obj) or obj.name == MIRROR_GLASS or obj.name.startswith("BAKE_") or obj.hide_render:
             continue
         try:
             obj.select_set(True)
@@ -283,10 +360,11 @@ def export_all(total_frames=None):
     if os.path.isdir(STAGING):
         shutil.rmtree(STAGING)
     os.makedirs(STAGING)
-    prepare_images()
-    with runtime_materials(), lightweight_meshes():
-        export_room(os.path.join(STAGING, "OfficeRoom"))
-        export_coffee(os.path.join(STAGING, "OfficeCoffee"))
-        for key in CHARACTERS:
-            export_character(key, os.path.join(STAGING, key), total_frames)
+    with baked_lighting():
+        prepare_images()
+        with runtime_materials(), lightweight_meshes():
+            export_room(os.path.join(STAGING, "OfficeRoom"))
+            export_coffee(os.path.join(STAGING, "OfficeCoffee"))
+            for key in CHARACTERS:
+                export_character(key, os.path.join(STAGING, key), total_frames)
     print("Exportado en", STAGING)

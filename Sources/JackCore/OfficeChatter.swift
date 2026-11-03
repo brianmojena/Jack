@@ -39,7 +39,7 @@ import Foundation
     public static func randomSeed() -> String { seeds.randomElement() ?? seeds[0] }
 
     /// La siguiente línea de `name`, que charla con `other`. Si `transcript` está vacío, abre la charla con un tema curioso.
-    public func line(as name: String, persona: String? = nil, with other: String, otherAbout: String? = nil, seed: String, transcript: [Line], lightMode: Bool) async throws -> String {
+    public func line(as name: String, persona: String? = nil, with other: String, otherAbout: String? = nil, seed: String, transcript: [Line], brain: OfficeBrainChoice? = nil, lightMode: Bool) async throws -> String {
         guard !lightMode else { throw CancellationError() }
         let system = """
         Eres \(name) y trabajas en la oficina de Jack. Ahora estás en el sofá, de descanso, charlando con \(other), una compañera o \
@@ -64,19 +64,26 @@ import Foundation
             if messages.count > 1, messages[1].role == "assistant" { messages.insert(StellarMessage(role: "user", content: "(La charla acaba de empezar.)"), at: 1) }
             if messages.last?.role == "assistant" { messages.append(StellarMessage(role: "user", content: "(\(other) espera a que sigas hablando.)")) }
         }
-        let model = try await verifiedModel()
-        try Task.checkCancellation()
-        let context = min(model.contextLength ?? StellarServer.defaultContextLength, 8_192)
         var output = ""
-        for try await chunk in try streamRequest(model, messages, context) {
+        for try await chunk in try await chunks(messages, brain: brain, contextCap: 8_192) {
             try Task.checkCancellation()
             if case .text(let text) = chunk {
                 output += text
                 if output.count > 700 { break }
             }
         }
-        guard let cleaned = OfficeNarrator.clean(output, limit: 220), !cleaned.isEmpty else { throw StellarError.message("Gemma no dijo nada.") }
+        guard let cleaned = OfficeNarrator.clean(output, limit: 220), !cleaned.isEmpty else { throw StellarError.message("No dijo nada.") }
         return cleaned
+    }
+
+
+    /// El texto que va diciendo el modelo: el elegido para el personaje (`brain`) o, sin elegir, Gemma.
+    private func chunks(_ messages: [StellarMessage], brain: OfficeBrainChoice?, contextCap: Int) async throws -> AsyncThrowingStream<StellarChunk, Error> {
+        if let brain { return try OfficeBrain.stream(messages, choice: brain) }
+        let model = try await verifiedModel()
+        try Task.checkCancellation()
+        let context = min(model.contextLength ?? StellarServer.defaultContextLength, contextCap)
+        return try streamRequest(model, messages, context)
     }
 
     private func verifiedModel() async throws -> StellarModel {

@@ -131,7 +131,8 @@ enum ChatAsideService {
         guard let executable = ExecutableResolver.resolve(provider.rawValue, override: UserDefaults.standard.string(forKey: "providerExecutablePath.\(provider.rawValue)")) else {
             throw AsideError.failure("No se encontró \(provider.rawValue). Instálalo o indica su ruta en Ajustes.")
         }
-        let child = try StructuredChild(executable: executable, arguments: arguments(conversation, prompt: prompt, economicalClaude: economicalClaude), directory: conversation.projectPath, environment: economicalClaude ? ["CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "false"] : [:])
+        let child = try StructuredChild(executable: executable, arguments: arguments(conversation, prompt: prompt, economicalClaude: economicalClaude,
+                                                                                     pure: provider != .opencode || OpenCodeCLI.supportsPure(executable: executable)), directory: conversation.projectPath, environment: economicalClaude ? ["CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "false"] : [:])
         child.closeInput()
         let timer = Task { try? await Task.sleep(for: timeout); if !Task.isCancelled { child.terminate() } }
         defer { timer.cancel() }
@@ -158,6 +159,99 @@ enum ChatAsideService {
         return answer
     }
 
+    /// A one-off question with no conversation behind it: asks `provider`'s CLI with `system` as its instructions and returns the whole
+    /// answer. Nothing is saved (Claude and Codex run ephemeral; OpenCode's session is deleted) and no tool may run. Used by the 3D
+    /// office to let each character think with the model the user chose. `directory` is where the CLI starts (a neutral folder).
+    @MainActor
+    static func oneShot(provider: ChatProvider, model: String, system: String, prompt: String, directory: String = NSTemporaryDirectory()) async throws -> String {
+        guard provider != .stellar else { throw AsideError.failure("Stellar Code no se consulta como un CLI.") }
+        guard let executable = ExecutableResolver.resolve(provider.rawValue, override: UserDefaults.standard.string(forKey: "providerExecutablePath.\(provider.rawValue)")) else {
+            throw AsideError.failure("No se encontró \(provider.rawValue). Instálalo o indica su ruta en Ajustes.")
+        }
+        let model = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        let args: [String]
+        switch provider {
+        case .claude:
+            // `claude -p`: one question, one plain-text answer. The prompt goes first: `--tools` takes a list and would swallow it. No
+            // tools, no MCP servers, no project settings and nothing saved.
+            var list = ["-p", prompt, "--output-format", "text", "--no-session-persistence", "--strict-mcp-config",
+                        "--setting-sources", "", "--system-prompt", system, "--tools", ""]
+            if !model.isEmpty { list += ["--model", model] }
+            args = list
+        case .codex:
+            var list = ["exec", "--json", "--sandbox", "read-only", "--skip-git-repo-check", "--ephemeral"]
+            if !model.isEmpty { list += ["--model", model] }
+            args = list + ["\(system)\n\n\(prompt)"]
+        case .opencode:
+            var list = ["run"] + OpenCodeCLI.pureArguments(executable: executable) + ["--format", "json"]
+            if model.contains("/") { list += ["--model", model] }
+            args = list + ["\(system)\n\n\(prompt)"]
+        case .stellar:
+            args = []
+        }
+        let child = try StructuredChild(executable: executable, arguments: args, directory: directory, environment: [:])
+        child.closeInput()
+        let timer = Task { try? await Task.sleep(for: timeout); if !Task.isCancelled { child.terminate() } }
+        defer { timer.cancel() }
+        var parser = Parser(provider: provider)
+        var plain: [String] = []
+        do {
+            try await withTaskCancellationHandler {
+                for try await line in child.lines {
+                    // `claude -p` prints the answer as plain text; the others print JSON events.
+                    if provider == .claude { plain.append(String(decoding: line, as: UTF8.self)); continue }
+                    guard let object = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any] else { continue }
+                    _ = parser.consume(object)
+                    if parser.done { break }
+                }
+            } onCancel: { child.terminate() }
+        } catch {}
+        child.terminate()
+        await child.waitForExit()
+        if provider == .opencode { await deleteForks(parser.sessions, executable: executable, directory: directory) }
+        if provider == .claude {
+            try Task.checkCancellation()
+            let text = plain.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { throw AsideError.failure(await child.failureDescription(default: "Claude Code no respondió.")) }
+            return text
+        }
+        try Task.checkCancellation()
+        if let failure = parser.failure { throw AsideError.failure(failure) }
+        let answer = parser.answer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !answer.isEmpty else { throw AsideError.failure(await child.failureDescription(default: "\(provider.title) no respondió.")) }
+        return answer
+    }
+
+    /// Like `oneShot` for Claude Code, but the model may look through `directory` with read-only tools (Read, Glob, Grep) before it
+    /// answers. Nothing is saved, no MCP server or project settings load, and nothing can be written or run. CodeOS uses it so the
+    /// model reads the project before writing its cover prompt.
+    @MainActor
+    static func exploreOneShot(model: String, system: String, prompt: String, directory: String, environment: [String: String] = [:], timeout: Duration = .seconds(240)) async throws -> String {
+        guard let executable = ExecutableResolver.resolve("claude", override: UserDefaults.standard.string(forKey: "providerExecutablePath.claude")) else {
+            throw AsideError.failure("No se encontró claude. Instálalo o indica su ruta en Ajustes.")
+        }
+        // The prompt goes first: `--tools` and `--allowedTools` take lists and would swallow it.
+        var args = ["-p", prompt, "--output-format", "text", "--no-session-persistence", "--strict-mcp-config", "--setting-sources", "",
+                    "--system-prompt", system, "--tools", "Read,Glob,Grep", "--allowedTools", "Read", "Glob", "Grep"]
+        if !model.isEmpty { args += ["--model", model] }
+        let child = try StructuredChild(executable: executable, arguments: args, directory: directory, environment: environment)
+        child.closeInput()
+        let timer = Task { try? await Task.sleep(for: timeout); if !Task.isCancelled { child.terminate() } }
+        defer { timer.cancel() }
+        var plain: [String] = []
+        do {
+            try await withTaskCancellationHandler {
+                for try await line in child.lines { plain.append(String(decoding: line, as: UTF8.self)) }
+            } onCancel: { child.terminate() }
+        } catch {}
+        child.terminate()
+        await child.waitForExit()
+        try Task.checkCancellation()
+        let text = plain.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { throw AsideError.failure(await child.failureDescription(default: "Claude Code no respondió.")) }
+        return text
+    }
+
     /// Bounded visible context, excluding tool output, thinking and attachments' contents.
     static func economicalPrompt(_ question: String, about conversation: ChatConversation) -> String {
         var remaining = 12_000
@@ -173,7 +267,7 @@ enum ChatAsideService {
             + "\n\nPregunta actual:\n" + question
     }
 
-    static func arguments(_ conversation: ChatConversation, prompt: String, economicalClaude: Bool = false) -> [String] {
+    static func arguments(_ conversation: ChatConversation, prompt: String, economicalClaude: Bool = false, pure: Bool = true) -> [String] {
         let session = conversation.sessionID.flatMap { $0.isEmpty ? nil : $0 }
         let model = conversation.model.trimmingCharacters(in: .whitespacesAndNewlines)
         switch conversation.provider {
@@ -197,7 +291,7 @@ enum ChatAsideService {
             if let session { return args + ["fork", session, "--ephemeral", prompt] }
             return args + ["--ephemeral", prompt]
         case .opencode:
-            var args = ["run", "--pure", "--format", "json"]
+            var args = pure ? ["run", "--pure", "--format", "json"] : ["run", "--format", "json"]
             if model.contains("/") { args += ["--model", model] }
             if let variant = conversation.variant, !variant.isEmpty { args += ["--variant", variant] }
             if let session { args += ["--session", session, "--fork"] }

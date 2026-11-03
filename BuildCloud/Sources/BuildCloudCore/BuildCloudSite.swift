@@ -41,6 +41,8 @@ public struct BuildCloudSite: Sendable {
         case "/certificado": return certificatePage(for: request)
         case "/buildcloud.mobileconfig": return mobileConfig()
         case "/buildcloud-ca.crt": return caCertificate()
+        case "/apple-touch-icon.png", "/apple-touch-icon-precomposed.png", "/logo.png":
+            return HTTPResponse(status: 200, headers: [("Content-Type", "image/png"), ("Cache-Control", "max-age=86400")], body: .data(AppLogo.png))
         case "/api/builds": return buildsJSON()
         case "/api/apps": return appsJSON(for: request)
         default: break

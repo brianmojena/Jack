@@ -74,6 +74,13 @@ public enum JackRemote {
             case configure
             /// Renames an agent (`text`).
             case rename
+            /// Una petición a Ollama de la Mac (`path`, `body`): la oficina del iPhone usa los modelos de la Mac (Gemma, el
+            /// modelo personalizado de cada personaje). La respuesta llega en eventos `ollama` y termina con `ok` o `error`.
+            case ollama
+            /// Una consulta suelta a un CLI de la Mac (`provider`, `model`, instrucciones en `body` y pregunta en `text`), sin
+            /// herramientas ni historial: lo que piensa un personaje de la oficina del iPhone con Claude Code, Codex u OpenCode.
+            /// La respuesta llega entera en el `text` del `ok`.
+            case think
         }
         public var id: String
         public var type: Kind
@@ -97,11 +104,17 @@ public enum JackRemote {
         public var effort: String?
         /// Permission mode id for `configure` or `create`.
         public var mode: String?
+        /// Para `ollama`: la ruta (`/api/chat`, `/api/show`…), el cuerpo JSON y el tiempo máximo en segundos.
+        public var path: String?
+        public var body: String?
+        public var timeout: Double?
 
         public init(id: String = UUID().uuidString, type: Kind, agent: String? = nil, text: String? = nil,
                     approval: String? = nil, choice: String? = nil, reason: String? = nil,
                     answers: [String: String]? = nil, project: String? = nil, provider: String? = nil,
-                    interrupting: Bool? = nil, model: String? = nil, effort: String? = nil, mode: String? = nil) {
+                    interrupting: Bool? = nil, model: String? = nil, effort: String? = nil, mode: String? = nil,
+                    path: String? = nil, body: String? = nil, timeout: Double? = nil) {
+            self.path = path; self.body = body; self.timeout = timeout
             self.id = id; self.type = type; self.agent = agent; self.text = text; self.approval = approval
             self.choice = choice; self.reason = reason; self.answers = answers; self.project = project
             self.provider = provider; self.interrupting = interrupting
@@ -124,6 +137,8 @@ public enum JackRemote {
             /// Request done. `agent` carries the id of an agent `create` made.
             case ok
             case error
+            /// Parte de la respuesta de una petición `ollama`: primero su `status` HTTP y después cada línea en `text`.
+            case ollama
         }
         public var type: Kind
         /// The request this answers; nil for pushes.
@@ -144,11 +159,14 @@ public enum JackRemote {
         public var config: Config?
         /// What each provider offers for a new agent, sent with `agents`.
         public var providers: [ProviderOptions]?
+        /// Estado HTTP de una respuesta `ollama`.
+        public var status: Int?
 
         public init(type: Kind, id: String? = nil, agent: String? = nil, text: String? = nil, name: String? = nil,
                     host: String? = nil, version: Int? = nil, agents: [AgentSummary]? = nil, projects: [String]? = nil,
                     messages: [Message]? = nil, summary: AgentSummary? = nil, approvals: [Approval]? = nil,
-                    waiting: [String]? = nil, config: Config? = nil, providers: [ProviderOptions]? = nil) {
+                    waiting: [String]? = nil, config: Config? = nil, providers: [ProviderOptions]? = nil, status: Int? = nil) {
+            self.status = status
             self.type = type; self.id = id; self.agent = agent; self.text = text; self.name = name; self.host = host
             self.version = version; self.agents = agents; self.projects = projects; self.messages = messages
             self.summary = summary; self.approvals = approvals; self.waiting = waiting

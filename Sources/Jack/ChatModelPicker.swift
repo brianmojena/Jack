@@ -85,6 +85,11 @@ struct ChatModelPicker: View {
                     if allowsCloud { Button("Vincular modelo de nube…") { linkingCloud = true; customModel = ""; custom = true } }
                     Button(allowsCloud ? "Actualizar modelos" : "Actualizar modelos locales") { Task { await store.refreshLocalModels() } }
                         .disabled(store.loadingLocalModels)
+                } else if conversation.provider == .claude, allowsCloud {
+                    // Normal: the exact model, not only the family.
+                    ClaudeModelMenuItems(choices: choices, selected: conversation.model) { id in
+                        store.updateSettings(id: conversation.id, model: id, effort: conversation.effort)
+                    }
                 } else {
                     ForEach(choices) { choice in modelButton(choice) }
                 }

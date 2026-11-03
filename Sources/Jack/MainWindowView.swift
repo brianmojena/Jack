@@ -9,6 +9,15 @@ struct MainWindowView: View {
     let memory: WindowMemory
     let batterySaver: BatterySaver
     let updateChecker: UpdateChecker
+    /// CodeOS shows a part of the window on its own, in Ice: the history sidebar, or the chat of the selected agent.
+    enum Embedded { case sidebar, chat }
+    var embedded: Embedded? = nil
+    /// Embedded sidebar only: the one project whose chats it lists, and what its "new chat" button does.
+    var embeddedProjectPath: String? = nil
+    var onNewChat: (() -> Void)? = nil
+    /// Embedded chat only: CodeOS's header, shown above the chat with the workspace tools (terminal, browser, Git, files…) as a bar at its
+    /// right end. The tools and the panes they open live in this same view, which is why the header is passed in.
+    var embeddedHeader: AnyView? = nil
     @Environment(\.dismissWindow) private var dismissWindow
     @State private var drafts: [UUID: String] = [:]
     @State private var historyIndices: [UUID: Int] = [:]
@@ -69,7 +78,7 @@ struct MainWindowView: View {
         workspace.reveal(.git, for: id)
         workspaceVisible = true
     }
-    private var ice: Bool { interfaceStyle == .ice }
+    private var ice: Bool { embedded != nil || interfaceStyle == .ice }
     private var sidebarProjectSort: SidebarProjectSort {
         SidebarProjectSort.resolve(projectSortValue, legacyAlphabetical: legacyAlphabeticalProjects)
     }
@@ -81,19 +90,52 @@ struct MainWindowView: View {
 
     var body: some View {
         Group {
-            if interfaceStyle == .terminal, !store.lightModeEnabled {
+            if let embedded {
+                switch embedded {
+                case .sidebar: sidebar
+                case .chat:
+                    if let embeddedHeader {
+                        let pane = RoundedRectangle(cornerRadius: 30, style: .continuous)
+                        VStack(spacing: 14) {
+                            HStack(spacing: 14) {
+                                embeddedHeader
+                                WorkspaceSideRail(sessions: workspace, conversationID: store.selectedID, paneVisible: workspaceVisible,
+                                                  explorerVisible: explorerVisible, onToggle: toggleWorkspace, onToggleExplorer: toggleExplorer,
+                                                  gitSession: selectedGitSession, gitActionsAllowed: { !store.lightModeEnabled }, onShowGit: showGitPanel,
+                                                  axis: .horizontal)
+                                    .jackGlass(in: Capsule(), basic: .clear)
+                                    .overlay(Capsule().strokeBorder(.white.opacity(0.16), lineWidth: 1))
+                                    .zIndex(1)
+                            }
+                            chatPanes
+                                .clipShape(pane)
+                                .overlay(pane.strokeBorder(.white.opacity(0.14), lineWidth: 1))
+                                .shadow(color: .black.opacity(0.4), radius: 36, y: 14)
+                        }
+                    } else {
+                        conversationPanel
+                    }
+                }
+            } else if interfaceStyle == .terminal, !store.lightModeEnabled {
                 TerminalInterfaceView(workspace: workspace.terminalInterface(), store: store,
                                       enterBatterySaver: enterBatterySaver)
             } else if interfaceStyle == .office, !store.lightModeEnabled {
                 officeLayout
                     .focusedSceneValue(\.jackActions, actions)
+            } else if interfaceStyle == .codeos, !store.lightModeEnabled {
+                // CodeOS: the whole window is the console, in full screen from the start.
+                CodeOSRootView(store: store, workspace: workspace, memory: memory, batterySaver: batterySaver, updateChecker: updateChecker)
             } else {
                 Group { if interfaceStyle == .ice { iceLayout } else { basicLayout } }
                     .focusedSceneValue(\.jackActions, actions)
             }
         }
-        .environment(\.interfaceStyle, interfaceStyle)
-        .frame(minWidth: 900, minHeight: 600)
+        .environment(\.interfaceStyle, embedded != nil ? .ice : interfaceStyle)
+        // The style CodeOS goes back to when it is left.
+        .onChange(of: interfaceStyle, initial: true) { _, style in
+            if style != .codeos { UserDefaults.standard.set(style.rawValue, forKey: "interfaceStyleBeforeCodeOS") }
+        }
+        .frame(minWidth: embedded == nil && interfaceStyle != .codeos ? 900 : 0, minHeight: embedded == nil && interfaceStyle != .codeos ? 600 : 0)
         .onChange(of: store.conversations.map(\.id)) { previous, ids in
             workspace.prune(keeping: Set(ids))
             let open = openTabIDs.filter(Set(ids).contains)
@@ -159,7 +201,7 @@ struct MainWindowView: View {
         // Stellar Code's local models, so its cards and pickers know what is available.
         .task { if interfaceStyle != .terminal { await store.refreshLocalModels() } }
         .task {
-            guard interfaceStyle != .terminal, !claudeImportOffered else { return }
+            guard interfaceStyle != .terminal, embedded == nil, !claudeImportOffered else { return }
             let found = await ClaudeImportSheet.find(.quarter, excluding: importedClaudeSessions)
             if found.isEmpty { claudeImportOffered = true } else { firstImport = found }
         }
@@ -272,11 +314,16 @@ struct MainWindowView: View {
     }
 
     private var sidebar: some View {
-        JackSidebar(
-            rows: sidebarRows,
-            projectPaths: Dictionary(uniqueKeysWithValues: store.conversations.map { ($0.id, $0.projectPath) }),
+        let paths = Dictionary(uniqueKeysWithValues: store.conversations.map { ($0.id, $0.projectPath) })
+        let own = embeddedProjectPath
+        return JackSidebar(
+            rows: own.map { path in sidebarRows.filter { paths[$0.id] == path } } ?? sidebarRows,
+            projectPaths: own.map { path in paths.filter { $0.value == path } } ?? paths,
             selectedID: store.selectedID,
-            onNewConversation: { _ in showingAutomations = false; showingArtifacts = false; openNewConversation() },
+            onNewConversation: { _ in
+                if let onNewChat { onNewChat(); return }
+                showingAutomations = false; showingArtifacts = false; openNewConversation()
+            },
             onSelect: { showingAutomations = false; showingArtifacts = false; store.select($0) },
             onRename: { id in store.conversations.first { $0.id == id }.map(beginRename) },
             onImproveNameWithAI: store.improveChatName(withAI:),

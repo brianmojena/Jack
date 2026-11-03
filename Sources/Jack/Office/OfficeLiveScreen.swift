@@ -1,5 +1,6 @@
-import AppKit
 import SwiftUI
+#if os(macOS)
+import AppKit
 
 /// Lo que se ve en el monitor de un puesto en modo «En vivo»: la vista real del chat (la misma de «Ver pantalla»), montada
 /// en una ventana invisible fuera de la pantalla y fotografiada cada poco para usarla de textura.
@@ -11,6 +12,7 @@ import SwiftUI
     private let host: NSHostingView<AnyView>
     /// El chat que muestra ahora, para no volver a montarlo si no cambia.
     private(set) var conversation: UUID?
+    static let isAvailable = true
 
     init(size: CGSize) {
         host = NSHostingView(rootView: AnyView(EmptyView()))
@@ -49,3 +51,14 @@ import SwiftUI
         return rep.cgImage
     }
 }
+#else
+
+/// En el iPhone no hay ventanas fuera de la pantalla que fotografiar: los monitores enseñan siempre el resumen ligero.
+@MainActor final class OfficeLiveScreen {
+    static let isAvailable = false
+    init(size: CGSize) {}
+    func show(_ id: UUID, _ content: @autoclosure () -> AnyView) {}
+    func resize(to size: CGSize) {}
+    func snapshot() -> CGImage? { nil }
+}
+#endif

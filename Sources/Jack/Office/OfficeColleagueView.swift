@@ -1,4 +1,6 @@
+#if canImport(JackCore)
 import JackCore
+#endif
 import SwiftUI
 
 /// Un trabajo previo que la persona puede retomar.

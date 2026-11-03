@@ -22,12 +22,15 @@ import Foundation
         public var game: String
         /// Con quién juega.
         public var others: [String]
+        /// El modelo con que piensa; sin elegir, Gemma.
+        public var brain: OfficeBrainChoice?
 
-        public init(name: String, profile: String?, game: String, others: [String]) {
+        public init(name: String, profile: String?, game: String, others: [String], brain: OfficeBrainChoice? = nil) {
             self.name = name
             self.profile = profile
             self.game = game
             self.others = others
+            self.brain = brain
         }
     }
 
@@ -57,7 +60,7 @@ import Foundation
         if !chat.isEmpty { user += "Lo último que se ha dicho en la mesa:\n\(chat.joined(separator: "\n"))\n\n" }
         if let secret { user += "Solo tú sabes esto (no lo digas): \(secret)\n\n" }
         user += situation
-        let output = try await complete([StellarMessage(role: "system", content: system), StellarMessage(role: "user", content: user)])
+        let output = try await complete([StellarMessage(role: "system", content: system), StellarMessage(role: "user", content: user)], brain: speaker.brain)
         var text = output.trimmingCharacters(in: .whitespacesAndNewlines)
         if text.hasPrefix("\(speaker.name):") { text = String(text.dropFirst(speaker.name.count + 1)) }
         guard let cleaned = OfficeNarrator.clean(text, limit: 180) else { throw StellarError.message("Sin respuesta.") }
@@ -66,12 +69,9 @@ import Foundation
 
     // MARK: - Modelo
 
-    private func complete(_ messages: [StellarMessage]) async throws -> String {
-        let model = try await verifiedModel()
-        try Task.checkCancellation()
-        let context = min(model.contextLength ?? StellarServer.defaultContextLength, 8_192)
+    private func complete(_ messages: [StellarMessage], brain: OfficeBrainChoice?) async throws -> String {
         var output = ""
-        for try await chunk in try streamRequest(model, messages, context) {
+        for try await chunk in try await chunks(messages, brain: brain, contextCap: 8_192) {
             try Task.checkCancellation()
             if case .text(let text) = chunk {
                 output += text
@@ -79,6 +79,16 @@ import Foundation
             }
         }
         return output
+    }
+
+
+    /// El texto que va diciendo el modelo: el elegido para el personaje (`brain`) o, sin elegir, Gemma.
+    private func chunks(_ messages: [StellarMessage], brain: OfficeBrainChoice?, contextCap: Int) async throws -> AsyncThrowingStream<StellarChunk, Error> {
+        if let brain { return try OfficeBrain.stream(messages, choice: brain) }
+        let model = try await verifiedModel()
+        try Task.checkCancellation()
+        let context = min(model.contextLength ?? StellarServer.defaultContextLength, contextCap)
+        return try streamRequest(model, messages, context)
     }
 
     private func verifiedModel() async throws -> StellarModel {

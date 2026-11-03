@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 /// Un personaje que se puede poner a un puesto de la oficina: su modelo (`<id>.usdz`) y su miniatura (`Avatar_<id>.png`),
@@ -16,8 +15,8 @@ struct OfficeCharacter: Identifiable, Equatable {
         OfficeCharacter(id: "FRANKLIN", name: "Franklin"),
     ]
 
-    var thumbnail: NSImage? {
-        Bundle.main.url(forResource: "Avatar_\(id)", withExtension: "png").flatMap { NSImage(contentsOf: $0) }
+    var thumbnail: PlatformImage? {
+        Bundle.main.url(forResource: "Avatar_\(id)", withExtension: "png").flatMap { PlatformImage(contentsOfFile: $0.path) }
     }
 }
 
@@ -107,7 +106,7 @@ struct OfficeAvatarPicker: View {
                 ZStack(alignment: .topTrailing) {
                     Group {
                         if let image = avatar.thumbnail {
-                            Image(nsImage: image).resizable().scaledToFit()
+                            Image(platformImage: image).resizable().scaledToFit()
                         } else {
                             Image(systemName: "person.fill").font(.system(size: 34)).foregroundStyle(Color(red: 0.6, green: 0.68, blue: 0.8))
                         }

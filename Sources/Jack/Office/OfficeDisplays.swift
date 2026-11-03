@@ -1,4 +1,6 @@
+#if canImport(JackCore)
 import JackCore
+#endif
 import SwiftUI
 
 /// El letrero de la pared sobre un escritorio: el nombre del chat en neón rojo sobre una placa oscura.

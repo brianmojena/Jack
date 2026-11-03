@@ -237,10 +237,15 @@ struct StartView: View {
 
     private var modelPicker: some View {
         Menu {
-            ForEach(choices) { choice in
-                Button { model = choice.id } label: {
-                    if choice.id == selectedModel { Label(choice.title, systemImage: "checkmark") }
-                    else { Text(choice.title) }
+            if provider == .claude, !store.lightModeEnabled {
+                // The exact model, not only the family.
+                ClaudeModelMenuItems(choices: choices, selected: selectedModel) { model = $0 }
+            } else {
+                ForEach(choices) { choice in
+                    Button { model = choice.id } label: {
+                        if choice.id == selectedModel { Label(choice.title, systemImage: "checkmark") }
+                        else { Text(choice.title) }
+                    }
                 }
             }
             if provider == .stellar {

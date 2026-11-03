@@ -313,6 +313,94 @@ struct WorkspaceToolbarButtons: View {
     }
 }
 
+/// The workspace tools as a vertical rail (CodeOS's optional bar at the right): the same tools as the toolbar of the Ice window, in groups,
+/// with the open one lit in the project's colour and its name shown beside the icon on hover.
+struct WorkspaceSideRail: View {
+    @ObservedObject var sessions: WorkspaceSessions
+    let conversationID: UUID?
+    let paneVisible: Bool
+    let explorerVisible: Bool
+    let onToggle: (WorkspaceTool) -> Void
+    let onToggleExplorer: () -> Void
+    let gitSession: GitSession?
+    let gitActionsAllowed: @MainActor () -> Bool
+    let onShowGit: () -> Void
+    /// Vertical at the side, or horizontal as a bar at the top.
+    var axis: Axis = .vertical
+    @Environment(\.jackTint) private var tint
+    @State private var hovered: String?
+
+    private var horizontal: Bool { axis == .horizontal }
+
+    var body: some View {
+        let current = paneVisible ? conversationID.flatMap { sessions.selectedTab(for: $0)?.kind } : nil
+        let layout = horizontal ? AnyLayout(HStackLayout(spacing: 2)) : AnyLayout(VStackLayout(spacing: 4))
+        layout {
+            item("Terminal", "apple.terminal", on: current == .terminal, help: "Terminal (⌃`)") { onToggle(.terminal) }
+            item("Navegador", "globe", on: current == .browser, help: "Navegador (⇧⌘B)") { onToggle(.browser) }
+            item("Simulador", "iphone", on: current == .simulator, help: "Simulador de iOS (⇧⌘I)") { onToggle(.simulator) }
+            divider
+            item("Git", "arrow.triangle.branch", on: current == .git, help: "Git (⇧⌘G) · clic derecho para acciones rápidas") { onToggle(.git) }
+                .contextMenu {
+                    if let gitSession { GitQuickActionsMenu(session: gitSession, allowed: gitActionsAllowed, onShowGit: onShowGit) }
+                }
+            item("Flujo", "flowchart", on: current == .flow, help: "Diagrama de flujo") { onToggle(.flow) }
+            item("Artefactos", "square.stack.3d.up", on: current == .artifacts, help: "Artefactos del proyecto") { onToggle(.artifacts) }
+            divider
+            item("Archivos", "folder", on: explorerVisible, help: "Archivos del proyecto (⇧⌘E)", action: onToggleExplorer)
+        }
+        .padding(.vertical, horizontal ? 3 : 10).padding(.horizontal, horizontal ? 6 : 8)
+        .disabled(conversationID == nil)
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: current)
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: explorerVisible)
+    }
+
+    private var divider: some View {
+        Capsule().fill(.white.opacity(0.18)).frame(width: horizontal ? 1.5 : 22, height: horizontal ? 16 : 1.5).padding(horizontal ? .horizontal : .vertical, 3)
+    }
+
+    /// The tool's name, beside its icon (to the left in the vertical rail, below it in the horizontal bar).
+    @ViewBuilder private func hoverLabel(_ title: String) -> some View {
+        if hovered == title {
+            let label = Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(.black.opacity(0.7), in: Capsule())
+                .fixedSize()
+                .allowsHitTesting(false)
+                .transition(.opacity)
+            if horizontal {
+                label.offset(y: 30).zIndex(1)
+            } else {
+                label.offset(x: -(CGFloat(title.count) * 3.4 + 52)).zIndex(1)
+            }
+        }
+    }
+
+    private func item(_ title: String, _ symbol: String, on: Bool, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: horizontal ? 13 : 16, weight: .medium))
+                .frame(width: horizontal ? 28 : 40, height: horizontal ? 28 : 40)
+                .background {
+                    if on {
+                        Circle().fill((tint ?? .white).opacity(0.6)).shadow(color: (tint ?? .white).opacity(0.55), radius: 8)
+                    } else if hovered == title {
+                        Circle().fill(.white.opacity(0.14))
+                    }
+                }
+                .overlay { if on { Circle().strokeBorder(.white.opacity(0.55), lineWidth: 1) } }
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.white.opacity(on || hovered == title ? 1 : 0.72))
+        .onHover { inside in hovered = inside ? title : (hovered == title ? nil : hovered) }
+        // The name appears to the left of the icon, so a tool is never a guess.
+        .overlay(alignment: .center) { hoverLabel(title) }
+        .animation(.easeOut(duration: 0.12), value: hovered)
+        .help(help)
+        .accessibilityLabel(title)
+    }
+}
+
 /// Open agents as a Liquid Glass tab bar floating over the top of the chat.
 struct IceAgentTabs: View, Equatable {
     let tabs: [AgentTabModel]

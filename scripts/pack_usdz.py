@@ -23,6 +23,11 @@ from pathlib import Path
 from PIL import Image
 
 MAX_TEXTURE = 1024
+# Lo que se ve poco a la distancia de la cámara de la oficina, a 512: los mapas secundarios (normales, rugosidad, metal,
+# relieve, opacidad…) y las texturas de piezas pequeñas o de fondo (mampara, sillas del ajedrez, maceta, cafetera).
+SECONDARY = re.compile(r"(nor_gl|normal|rough|metal|spec|_ao[._]|occlusion|disp|bump|_bsm|_alp|opacity)", re.IGNORECASE)
+SMALL = re.compile(r"^(shower_|Image_\d+_001|potted_plant|coffee_)")
+SMALL_TEXTURE = 512
 
 
 def referenced_assets(folder: Path, layer: str, fallback: Path | None) -> list[str]:
@@ -41,9 +46,12 @@ def referenced_assets(folder: Path, layer: str, fallback: Path | None) -> list[s
 
 def asset_bytes(path: Path, limit: int) -> bytes:
     """El contenido del archivo; si es una imagen mayor que `limit` px por su lado largo, reducida a ese tamaño."""
+    if limit > 0 and (SECONDARY.search(path.name) or SMALL.search(path.name)):
+        limit = min(limit, SMALL_TEXTURE)
     data = path.read_bytes()
-    # Las imágenes `screen_*` son las de los monitores y se ven de cerca: se dejan como están.
-    if limit <= 0 or path.name.startswith("screen_") or path.suffix.lower() not in (".png", ".jpg", ".jpeg"):
+    # Las imágenes `screen_*` son las de los monitores y se ven de cerca; las `OfficeBake_*` son los atlas de luz horneada,
+    # que reparten toda la sala en una sola imagen: se dejan como están.
+    if limit <= 0 or path.name.startswith(("screen_", "OfficeBake_")) or path.suffix.lower() not in (".png", ".jpg", ".jpeg"):
         return data
     with Image.open(io.BytesIO(data)) as image:
         if max(image.size) <= limit:

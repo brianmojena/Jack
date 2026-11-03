@@ -58,7 +58,11 @@ public struct OfficeWorker {
 /// qué encargarle a su agente de programación (Claude Code, Codex…), si pide ayuda a otros compañeros, resume en su bocadillo
 /// lo que le va diciendo el agente («Claude dice que ya encontró el fallo») y avisa al terminar.
 @MainActor public final class OfficeNarrator {
+    #if os(macOS)
     public static let modelName = GitCommitAutomation.modelName
+    #else
+    public static let modelName = "gemma4:31b-cloud"
+    #endif
     var inspectModel: @MainActor () async throws -> StellarModel = {
         try await StellarModels.inspectOllamaModel(named: modelName, includeCloud: true)
     }
@@ -74,7 +78,7 @@ public struct OfficeWorker {
     /// La respuesta de la persona al último mensaje del usuario, con el encargo para su agente y, si la tarea es larga o se
     /// puede repartir, los compañeros a los que pide ayuda. `team` describe a los compañeros y `catalog` los modelos que hay.
     public func reply(as name: String, persona: String? = nil, history: [OfficeLine], worker: OfficeWorker, team: String, catalog: String,
-                      lightMode: Bool) async throws -> OfficeDecision {
+                      brain: OfficeBrainChoice? = nil, lightMode: Bool) async throws -> OfficeDecision {
         guard !lightMode else { throw CancellationError() }
         let system = """
         Eres \(name) y trabajas en la oficina de Jack. El usuario es tu jefe y te habla por chat como a cualquier compañero \
@@ -106,12 +110,12 @@ public struct OfficeWorker {
                         StellarMessage(role: "system", content: Self.workerContext(worker)),
                         StellarMessage(role: "system", content: "Equipo:\n\(team)\n\nCatálogo de modelos (proveedor: modelo — nombre):\n\(catalog)")]
         messages += Self.chatMessages(history)
-        let output = try await complete(messages, limit: 6_000)
+        let output = try await complete(messages, limit: 6_000, brain: brain)
         return Self.decision(from: output)
     }
 
     /// Lo que la persona le cuenta al usuario cuando su agente termina, falla o necesita algo.
-    public func report(as name: String, persona: String? = nil, history: [OfficeLine], worker: OfficeWorker, lightMode: Bool) async throws -> String {
+    public func report(as name: String, persona: String? = nil, history: [OfficeLine], worker: OfficeWorker, brain: OfficeBrainChoice? = nil, lightMode: Bool) async throws -> String {
         guard !lightMode else { throw CancellationError() }
         let outcome = switch worker.status {
         case .failed: "falló"
@@ -129,7 +133,7 @@ public struct OfficeWorker {
         let messages = [StellarMessage(role: "system", content: system),
                         StellarMessage(role: "system", content: Self.workerContext(worker))] + Self.chatMessages(Array(history.suffix(6)))
             + [StellarMessage(role: "user", content: "(El agente \(outcome). Cuéntamelo.)")]
-        guard let text = Self.clean(try await complete(messages, limit: 1_200), limit: 400) else { throw CancellationError() }
+        guard let text = Self.clean(try await complete(messages, limit: 1_200, brain: brain), limit: 400) else { throw CancellationError() }
         return text
     }
 
@@ -137,7 +141,7 @@ public struct OfficeWorker {
 
     /// Lo que la persona cuenta en su bocadillo mientras su agente trabaja: un resumen de lo último que le ha dicho el agente.
     /// `previous` es lo que ya contó, para no repetirlo.
-    public func summary(as name: String, persona: String? = nil, tool: String, of messages: [ChatMessage], previous: String?, lightMode: Bool) async throws -> String {
+    public func summary(as name: String, persona: String? = nil, tool: String, of messages: [ChatMessage], previous: String?, brain: OfficeBrainChoice? = nil, lightMode: Bool) async throws -> String {
         guard !lightMode else { throw CancellationError() }
         let activity = Self.activity(messages, maxBytes: 5_000)
         guard !activity.isEmpty else { throw CancellationError() }
@@ -153,7 +157,7 @@ public struct OfficeWorker {
         """
         var user = "Lo último del agente:\n\(activity)"
         if let previous, !previous.isEmpty { user += "\n\nLo último que ya contaste: \(previous)" }
-        let output = try await complete([StellarMessage(role: "system", content: system), StellarMessage(role: "user", content: user)], limit: 600)
+        let output = try await complete([StellarMessage(role: "system", content: system), StellarMessage(role: "user", content: user)], limit: 600, brain: brain)
         guard let cleaned = Self.clean(output, limit: 180) else { throw CancellationError() }
         return cleaned
     }
@@ -166,11 +170,16 @@ public struct OfficeWorker {
 
     // MARK: - Modelo
 
-    private func complete(_ messages: [StellarMessage], limit: Int) async throws -> String {
-        let model = try await verifiedModel()
-        try Task.checkCancellation()
-        let context = min(model.contextLength ?? StellarServer.defaultContextLength, 16_384)
-        let stream = try streamRequest(model, messages, context)
+    private func complete(_ messages: [StellarMessage], limit: Int, brain: OfficeBrainChoice?) async throws -> String {
+        let stream: AsyncThrowingStream<StellarChunk, Error>
+        if let brain {
+            stream = try OfficeBrain.stream(messages, choice: brain)
+        } else {
+            let model = try await verifiedModel()
+            try Task.checkCancellation()
+            let context = min(model.contextLength ?? StellarServer.defaultContextLength, 16_384)
+            stream = try streamRequest(model, messages, context)
+        }
         var output = ""
         for try await chunk in stream {
             try Task.checkCancellation()

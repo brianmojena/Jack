@@ -47,18 +47,20 @@ enum JackPalette {
 /// macOS's own Liquid Glass structure. Terminal presents native PTYs instead of chats. Office draws the
 /// agents as characters in a 3D office, with the chat of the one picked beside it.
 enum InterfaceStyle: String, CaseIterable, Identifiable {
-    case basic, ice, terminal, office
+    case basic, ice, terminal, office, codeos
 
     static let key = "interfaceStyle"
 
     var id: String { rawValue }
     var title: String {
-        switch self { case .basic: "Basic"; case .ice: "Ice"; case .terminal: "Terminal"; case .office: "Oficina 3D" }
+        switch self { case .basic: "Basic"; case .ice: "Ice"; case .terminal: "Terminal"; case .office: "Oficina 3D"; case .codeos: "CodeOS" }
     }
 }
 
 extension EnvironmentValues {
     @Entry var interfaceStyle: InterfaceStyle = .basic
+    /// Colour the Ice glass is tinted with, when a host (CodeOS) wants the chat to take on its project's colour.
+    @Entry var jackTint: Color? = nil
 }
 
 /// The window's layers. Basic paints each one; Ice leaves them to the system, so the glass
@@ -73,7 +75,7 @@ private struct JackSurfaceBackground: ViewModifier {
 
     func body(content: Content) -> some View {
         switch style {
-        case .basic, .terminal, .office: content.background(surface == .chrome ? JackPalette.chrome : JackPalette.canvas)
+        case .basic, .terminal, .office, .codeos: content.background(surface == .chrome ? JackPalette.chrome : JackPalette.canvas)
         case .ice: content
         }
     }
@@ -85,12 +87,14 @@ private struct JackGlassBackground<S: InsettableShape>: ViewModifier {
     let basic: Color
     var interactive = false
     @Environment(\.interfaceStyle) private var style
+    @Environment(\.jackTint) private var tint
 
     func body(content: Content) -> some View {
-        if style == .basic || style == .office {
+        if style == .basic || style == .office || style == .codeos {
             content.background(basic, in: shape)
         } else if #available(macOS 26, *) {
-            content.glassEffect(interactive ? .regular.interactive() : .regular, in: shape)
+            let glass: Glass = interactive ? .regular.interactive() : .regular
+            content.glassEffect(tint.map { glass.tint($0.opacity(0.26)) } ?? glass, in: shape)
         } else {
             content.background(.regularMaterial, in: shape)
         }

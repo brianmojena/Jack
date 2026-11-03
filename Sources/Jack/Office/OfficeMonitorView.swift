@@ -1,5 +1,6 @@
-import AppKit
+#if canImport(JackCore)
 import JackCore
+#endif
 import SwiftUI
 
 /// Lo que se ve en el monitor de un puesto mientras su agente trabaja: la pestaña de Claude con lo último que ha pasado.
@@ -77,10 +78,15 @@ struct OfficeMonitorView: View {
             case "user": line = message.text.isEmpty ? nil : Line(id: message.id, kind: .user, text: message.text)
             case "assistant": line = message.text.isEmpty ? nil : Line(id: message.id, kind: .assistant, text: message.text)
             case "tool":
+                #if os(macOS)
                 let tool = ToolPresentation(message: message, projectPath: conversation.projectPath)
                 let subject = tool.kind == .command ? tool.subject : (tool.subject as NSString).lastPathComponent
                 line = Line(id: message.id, kind: .tool, text: [tool.verb(running: ["running", "inProgress", "pending"].contains(message.status)), subject]
                     .filter { !$0.isEmpty }.joined(separator: " "))
+                #else
+                // En el iPhone, el resumen de la herramienta tal como lo manda la Mac.
+                line = message.text.isEmpty ? nil : Line(id: message.id, kind: .tool, text: message.text)
+                #endif
             case "error": line = Line(id: message.id, kind: .error, text: message.text)
             default: line = nil
             }

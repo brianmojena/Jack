@@ -29,7 +29,7 @@ public struct ChessChoice: Equatable, Sendable {
     /// `rivalName` es quien juega las otras piezas cuando no es otro maestro (una persona real) y `chat` lo último que se han
     /// dicho en la mesa, para que el comentario de la jugada responda a ello.
     public func choose(game: ChessGame, as master: ChessMaster, against opponent: ChessMaster?, color: ChessColor,
-                       playedBy name: String, rivalName: String? = nil, chat: [String] = [], lightMode: Bool) async throws -> ChessChoice {
+                       playedBy name: String, rivalName: String? = nil, chat: [String] = [], brain: OfficeBrainChoice? = nil, lightMode: Bool) async throws -> ChessChoice {
         guard !lightMode else { throw CancellationError() }
         let position = game.position
         let legal = position.legalMoves()
@@ -62,7 +62,7 @@ public struct ChessChoice: Equatable, Sendable {
         var lastText = ""
         for attempt in 0..<Self.attempts {
             try Task.checkCancellation()
-            let output = try await complete(messages)
+            let output = try await complete(messages, brain: brain)
             lastText = output
             if let (move, comment) = Self.parse(output, in: position, legal: legal, sans: sans) {
                 return ChessChoice(move: move, san: position.san(move), comment: comment, improvised: false)
@@ -80,7 +80,7 @@ public struct ChessChoice: Equatable, Sendable {
     /// Lo que contesta el maestro a un mensaje de quien juega contra él, con la partida delante: una o dos frases en su voz.
     /// `chat` son las últimas líneas de la charla («Nombre: texto»), sin incluir `message`.
     public func reply(to message: String, game: ChessGame, as master: ChessMaster, color: ChessColor, playedBy name: String,
-                      rivalName: String, chat: [String], lightMode: Bool) async throws -> String {
+                      rivalName: String, chat: [String], brain: OfficeBrainChoice? = nil, lightMode: Bool) async throws -> String {
         guard !lightMode else { throw CancellationError() }
         let position = game.position
         let system = """
@@ -100,7 +100,7 @@ public struct ChessChoice: Equatable, Sendable {
         if position.isCheck { user += "Hay un rey en jaque.\n" }
         if !chat.isEmpty { user += "Charla anterior:\n\(chat.joined(separator: "\n"))\n" }
         user += "\(rivalName) te escribe: \(StellarTools.prefixUTF8(message, bytes: 600))"
-        let output = try await complete([StellarMessage(role: "system", content: system), StellarMessage(role: "user", content: user)])
+        let output = try await complete([StellarMessage(role: "system", content: system), StellarMessage(role: "user", content: user)], brain: brain)
         // Por si el modelo antepone su nombre, como en un guion.
         var text = output.trimmingCharacters(in: .whitespacesAndNewlines)
         for prefix in ["\(master.name):", "\(name):"] where text.hasPrefix(prefix) { text = String(text.dropFirst(prefix.count)) }
@@ -144,12 +144,9 @@ public struct ChessChoice: Equatable, Sendable {
 
     // MARK: - Modelo
 
-    private func complete(_ messages: [StellarMessage]) async throws -> String {
-        let model = try await verifiedModel()
-        try Task.checkCancellation()
-        let context = min(model.contextLength ?? StellarServer.defaultContextLength, 16_384)
+    private func complete(_ messages: [StellarMessage], brain: OfficeBrainChoice?) async throws -> String {
         var output = ""
-        for try await chunk in try streamRequest(model, messages, context) {
+        for try await chunk in try await chunks(messages, brain: brain, contextCap: 16_384) {
             try Task.checkCancellation()
             if case .text(let text) = chunk {
                 output += text
@@ -157,6 +154,16 @@ public struct ChessChoice: Equatable, Sendable {
             }
         }
         return output
+    }
+
+
+    /// El texto que va diciendo el modelo: el elegido para el personaje (`brain`) o, sin elegir, Gemma.
+    private func chunks(_ messages: [StellarMessage], brain: OfficeBrainChoice?, contextCap: Int) async throws -> AsyncThrowingStream<StellarChunk, Error> {
+        if let brain { return try OfficeBrain.stream(messages, choice: brain) }
+        let model = try await verifiedModel()
+        try Task.checkCancellation()
+        let context = min(model.contextLength ?? StellarServer.defaultContextLength, contextCap)
+        return try streamRequest(model, messages, context)
     }
 
     private func verifiedModel() async throws -> StellarModel {

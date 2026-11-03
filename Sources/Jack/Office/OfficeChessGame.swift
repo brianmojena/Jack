@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(JackCore)
 import JackCore
+#endif
 
 /// Una partida de ajedrez entre dos personajes de la oficina. Cada uno interpreta a un maestro: Gemma (en su papel) mira la foto
 /// del tablero y elige la jugada; el personaje piensa, mueve la pieza con la mano y comenta la jugada en su bocadillo.
@@ -54,6 +56,8 @@ import JackCore
     private let advisor = OfficeChessPlayer()
     /// Cómo se llama cada puesto (el nombre de su avatar).
     private var names: [Int: String] = [:]
+    /// Con qué modelo piensa cada puesto; los que no están usan Gemma. Se pone antes de empezar la partida.
+    var brains: [Int: OfficeBrainChoice] = [:]
 
     var isActive: Bool { phase != .idle }
 
@@ -191,7 +195,7 @@ import JackCore
             defer { self.replying = false }
             do {
                 let answer = try await self.advisor.reply(to: message, game: self.game, as: opponent.master, color: opponent.color, playedBy: opponentName,
-                                                          rivalName: self.humanName, chat: before, lightMode: lightMode())
+                                                          rivalName: self.humanName, chat: before, brain: self.brains[opponent.slot], lightMode: lightMode())
                 guard !Task.isCancelled else { return }
                 // Un momento escribiendo, como una persona.
                 try? await Task.sleep(for: .milliseconds(500))
@@ -257,7 +261,7 @@ import JackCore
             do {
                 let name = names[me.slot] ?? layout.slots[me.slot].name
                 choice = try await advisor.choose(game: game, as: me.master, against: rival?.master, color: color, playedBy: name,
-                                                  rivalName: human == nil ? nil : humanName, chat: recentChat(opponentName: name), lightMode: lightMode())
+                                                  rivalName: human == nil ? nil : humanName, chat: recentChat(opponentName: name), brain: brains[me.slot], lightMode: lightMode())
                 failures = 0
             } catch is CancellationError {
                 return
@@ -324,6 +328,3 @@ import JackCore
     }
 }
 
-extension Array {
-    subscript(safe index: Int) -> Element? { indices.contains(index) ? self[index] : nil }
-}

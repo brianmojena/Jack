@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(JackCore)
 import JackCore
+#endif
 
 /// Dos personajes del sofá charlan de un tema curioso al azar: cada uno dice su línea (la escribe Gemma como esa persona) en su
 /// bocadillo, por turnos, hasta que el usuario los para o se alcanza el límite de la charla.
@@ -17,6 +19,8 @@ import JackCore
         var name: String
         var profile: String?
         var about: String?
+        /// El modelo con que piensa; sin elegir, Gemma.
+        var brain: OfficeBrainChoice?
     }
 
     var isActive: Bool { !pair.isEmpty }
@@ -46,7 +50,7 @@ import JackCore
             let text: String
             do {
                 text = try await chatter.line(as: speaker.1.name, persona: speaker.1.profile, with: listener.1.name, otherAbout: listener.1.about,
-                                              seed: seed, transcript: transcript, lightMode: lightMode())
+                                              seed: seed, transcript: transcript, brain: speaker.1.brain, lightMode: lightMode())
                 failures = 0
             } catch is CancellationError {
                 return

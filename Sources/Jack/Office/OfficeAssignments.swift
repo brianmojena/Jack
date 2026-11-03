@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(JackCore)
 import JackCore
+#endif
 
 /// Qué agente de Jack ocupa cada puesto de la oficina, y quién está «trabajando» (sentado en su escritorio).
 ///

@@ -1,6 +1,6 @@
 import Foundation
 
-public enum ChatProvider: String, Codable, CaseIterable, Identifiable {
+public enum ChatProvider: String, Codable, CaseIterable, Identifiable, Sendable {
     case codex, claude, opencode, stellar
     public var id: String { rawValue }
     public var title: String { switch self { case .codex: return "Codex"; case .claude: return "Claude Code"; case .opencode: return "OpenCode"; case .stellar: return "Stellar Code" } }
@@ -227,6 +227,8 @@ public struct ChatCommand: Identifiable, Codable, Equatable {
         return (String(name), body.dropFirst(name.count).trimmingCharacters(in: .whitespacesAndNewlines))
     }
 }
+// Los agentes solo corren en la Mac.
+#if os(macOS)
 @MainActor public protocol ChatDriver: AnyObject {
     func run(conversation: ChatConversation, prompt: String, onEvent: @escaping @MainActor (ChatEvent) -> Void) async throws
     /// Runs a turn with Jack's delegation tools attached, for providers that support them.
@@ -285,6 +287,7 @@ public extension ChatDriver {
     func close() { stop() }
     func setEnergySaving(_ enabled: Bool) {}
 }
+#endif
 
 /// Jack commands are local to the app; provider slash commands retain their own routing.
 public struct JackContextSettings: Codable, Equatable {

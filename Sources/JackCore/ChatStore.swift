@@ -801,8 +801,15 @@ import Foundation
     public func isBusy(_ id: UUID) -> Bool { runs[id] != nil || queue.contains { $0.0 == id } }
     /// Whether the agent reads waiting messages while it works, rather than after its turn.
     public func readsWhileWorking(_ id: UUID) -> Bool { drivers[id]?.keepsAlive == true || liveDrivers[id] != nil }
+    /// CodeOS's shared-account quota: asked before a message goes to a Claude agent, it returns the reason to refuse it, or nil. Unset
+    /// (and so without effect) unless a CodeOS profile is playing, and never in Light mode.
+    public var sendGate: (@MainActor (ChatConversation) -> String?)?
     /// `interrupting` stops the turn so the agent reads the message right away, like Ctrl+Enter.
     public func send(_ prompt: String, attachments: [String] = [], to id: UUID, interrupting: Bool = false, preservingApproval: Bool = false) {
+        if !lightModeEnabled, let gate = sendGate, let c = conversations.first(where: { $0.id == id }), c.provider == .claude, let refusal = gate(c) {
+            errorMessage = refusal
+            return
+        }
         if !lightModeEnabled, let c = conversations.first(where: { $0.id == id }), c.provider == .claude,
            let session = c.sessionID.flatMap(UUID.init(uuidString:)), terminalClaudeSessions.contains(session) {
             errorMessage = "Esta sesión está abierta en la interfaz Terminal. Cierra su proceso antes de usar el chat."
@@ -1378,7 +1385,7 @@ import Foundation
         let catalog: [ChatModelChoice]
         switch provider {
         case .codex: catalog = codexModels
-        case .claude: catalog = ChatModelChoice.claudeCatalog
+        case .claude: catalog = ChatModelChoice.claudeCatalog + (lightModeEnabled ? [] : ChatModelChoice.claudeExact)
         case .opencode: catalog = [ChatModelChoice(id: "", efforts: [])]
         case .stellar: catalog = Self.visibleStellarModels(localModels, lightMode: lightModeEnabled).map { ChatModelChoice(id: $0.id, title: $0.title, efforts: []) }
         }
@@ -1394,7 +1401,7 @@ import Foundation
         }
     }
     public func supportedEfforts(provider: ChatProvider, model: String) -> [String] {
-        let catalog = provider == .codex ? codexModels : provider == .claude ? ChatModelChoice.claudeCatalog : []
+        let catalog = provider == .codex ? codexModels : provider == .claude ? ChatModelChoice.claudeCatalog + ChatModelChoice.claudeExact : []
         return catalog.first { $0.id == model }?.efforts ?? ChatModelChoice.fallbackEfforts(provider: provider, model: model)
     }
     /// Keeps the stored effort when the model has no levels, so switching back restores it.

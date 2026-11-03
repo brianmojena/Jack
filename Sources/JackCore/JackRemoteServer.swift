@@ -291,6 +291,8 @@ public extension ChatStore {
     private var lastProjects: [String] = []
     private var lastProviders: [JackRemote.ProviderOptions] = []
     private var opened: [UUID: Sent] = [:]
+    /// Peticiones a Ollama en curso, que se cancelan si el dispositivo se va.
+    private var relays: [String: Task<Void, Never>] = [:]
 
     init(connection: NWConnection, server: JackRemoteServer) {
         self.connection = connection
@@ -321,6 +323,8 @@ public extension ChatStore {
         guard !isClosed else { return }
         isClosed = true
         isReady = false
+        for task in relays.values { task.cancel() }
+        relays = [:]
         lines?.finish()
         connection.cancel()
         server.sessionChanged(self)
@@ -419,6 +423,10 @@ public extension ChatStore {
             create(request, store)
         case .configure:
             configure(request, store)
+        case .ollama:
+            relayOllama(request)
+        case .think:
+            think(request)
         case .rename:
             guard let id = agentID(request, store, reply: true) else { return }
             let title = (request.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -426,6 +434,61 @@ public extension ChatStore {
             store.rename(id, title: title)
             send(.init(type: .ok, id: request.id))
         }
+    }
+
+    /// Las rutas de Ollama que un dispositivo puede pedir: hablar con un modelo y consultar cuáles hay (nunca descargar,
+    /// borrar ni crear modelos).
+    private static let ollamaPaths: Set<String> = ["/api/chat", "/api/show", "/api/tags", "/api/version"]
+
+    /// Hace la petición contra el Ollama de esta Mac y devuelve la respuesta línea a línea.
+    private func relayOllama(_ request: JackRemote.Request) {
+        guard let path = request.path, Self.ollamaPaths.contains(path),
+              let server = StellarServer.builtIn.first(where: { $0.api == .ollama }), let url = URL(string: server.baseURL + path) else {
+            return fail(request, "Petición a Ollama no permitida.")
+        }
+        var http = URLRequest(url: url, timeoutInterval: min(max(request.timeout ?? 120, 1), 900))
+        if let body = request.body {
+            http.httpMethod = "POST"
+            http.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            http.httpBody = Data(body.utf8)
+        }
+        let task = Task { [weak self] in
+            #if os(macOS)
+            await StellarRuntime.ensureOllama(wait: true)
+            #endif
+            do {
+                let (bytes, response) = try await URLSession.shared.bytes(for: http)
+                self?.send(.init(type: .ollama, id: request.id, status: (response as? HTTPURLResponse)?.statusCode ?? 0))
+                for try await line in bytes.lines {
+                    try Task.checkCancellation()
+                    self?.send(.init(type: .ollama, id: request.id, text: line))
+                }
+                self?.send(.init(type: .ok, id: request.id))
+            } catch {
+                self?.fail(request, "Ollama no respondió: \(error.localizedDescription)")
+            }
+            self?.relays.removeValue(forKey: request.id)
+        }
+        relays[request.id] = task
+    }
+
+    /// Lo que piensa un personaje con un CLI de esta Mac: una consulta suelta, sin herramientas, en una carpeta neutra.
+    private func think(_ request: JackRemote.Request) {
+        guard let provider = request.provider.flatMap(ChatProvider.init(rawValue:)), provider != .stellar else {
+            return fail(request, "Proveedor desconocido.")
+        }
+        let prompt = request.text ?? "", system = request.body ?? ""
+        guard !prompt.isEmpty, prompt.count + system.count <= 60_000 else { return fail(request, "Consulta vacía o demasiado larga.") }
+        let task = Task { [weak self] in
+            do {
+                let answer = try await ChatAsideService.oneShot(provider: provider, model: request.model ?? "", system: system, prompt: prompt)
+                self?.send(.init(type: .ok, id: request.id, text: answer))
+            } catch {
+                self?.fail(request, error.localizedDescription)
+            }
+            self?.relays.removeValue(forKey: request.id)
+        }
+        relays[request.id] = task
     }
 
     private func configure(_ request: JackRemote.Request, _ store: ChatStore) {
@@ -455,14 +518,21 @@ public extension ChatStore {
         let text = (request.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, text.count <= 20_000 else { return fail(request, "Escribe la tarea del agente.") }
         guard let provider = request.provider.flatMap(ChatProvider.init(rawValue:)) else { return fail(request, "Proveedor desconocido.") }
-        // Only folders Jack already works in: a remote device never reaches the rest of the disk.
-        guard let project = request.project, server.knownProjects().contains(project) else { return fail(request, "Esa carpeta no es de ningún agente de Jack.") }
         if let model = request.model, !store.modelChoices(for: provider).contains(where: { $0.id == model }) {
             return fail(request, "Modelo desconocido.")
         }
         if let mode = request.mode, !ChatRunMode.choices(for: provider).contains(where: { $0.id == mode }) {
             return fail(request, "Ese modo no existe en este proveedor.")
         }
+        // Sin carpeta (la oficina del iPhone), Jack elige una de las suyas según el encargo, como en la oficina de la Mac.
+        guard let project = request.project, !project.isEmpty else {
+            guard let id = store.createLocating(text, provider: provider, model: request.model, effort: request.effort, projects: server.knownProjects()) else {
+                return fail(request, "No se pudo crear el agente.")
+            }
+            return send(.init(type: .ok, id: request.id, agent: id.uuidString))
+        }
+        // Only folders Jack already works in: a remote device never reaches the rest of the disk.
+        guard server.knownProjects().contains(project) else { return fail(request, "Esa carpeta no es de ningún agente de Jack.") }
         guard let id = store.create(projectPath: project, provider: provider, model: request.model,
                                     effort: request.effort ?? "high", select: false) else { return fail(request, "No se pudo crear el agente.") }
         if let mode = request.mode { store.updateMode(id: id, mode: mode, supported: ChatRunMode.choices(for: provider)) }

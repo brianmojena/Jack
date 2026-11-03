@@ -15,3 +15,7 @@ Resources/Office/Export/
 # BuildCloud web: dependencias y compilado
 BuildCloud/web/node_modules/
 BuildCloud/web/dist/
+# Web de Jack (Astro): dependencias y compilado
+website/node_modules/
+website/dist/
+website/.astro/
