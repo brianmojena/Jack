@@ -8,12 +8,14 @@ final class ClaudeModelDetectorTests: XCTestCase {
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
-        // Create a project folder
-        let projectFolder = tempDir.appendingPathComponent("test-project", isDirectory: true)
+        // Match Claude's project-folder name and include the metadata needed to list the session.
+        let projectPath = tempDir.appendingPathComponent("test-project").path
+        let projectFolder = tempDir.appendingPathComponent(ClaudeSessions.folderName(for: projectPath), isDirectory: true)
         try FileManager.default.createDirectory(at: projectFolder, withIntermediateDirectories: true)
 
         // Create a session file with Opus 5.5
         let sessionData = """
+        {"cwd":"\(projectPath)","type":"user","message":{"content":"Prueba"}}
         {"type":"assistant","message":{"model":"claude-opus-5-5"}}
         {"type":"assistant","message":{"model":"claude-sonnet-5-5"}}
         {"type":"assistant","message":{"model":"claude-haiku-5-5"}}
@@ -29,12 +31,16 @@ final class ClaudeModelDetectorTests: XCTestCase {
         XCTAssertFalse(detected.isEmpty)
         XCTAssertTrue(detected.contains { $0.id == "opus" })
         XCTAssertTrue(detected.contains { $0.id == "sonnet" })
-        XCTAssertTrue(unknownFamilies.contains("haiku"))
+        XCTAssertTrue(detected.contains { $0.id == "haiku" })
+        XCTAssertTrue(unknownFamilies.isEmpty)
 
         // Verify titles
         let opusModel = detected.first { $0.id == "opus" }
+        let haikuModel = detected.first { $0.id == "haiku" }
         XCTAssertEqual(opusModel?.title, "Opus 5.5")
         XCTAssertEqual(opusModel?.subtitle, "Muy capaz")
+        XCTAssertEqual(haikuModel?.title, "Haiku 5.5")
+        XCTAssertEqual(haikuModel?.subtitle, "Rápido y económico")
     }
 
     func testDetectsHighestVersionPerFamily() throws {
@@ -42,11 +48,13 @@ final class ClaudeModelDetectorTests: XCTestCase {
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
-        let projectFolder = tempDir.appendingPathComponent("test-project", isDirectory: true)
+        let projectPath = tempDir.appendingPathComponent("test-project").path
+        let projectFolder = tempDir.appendingPathComponent(ClaudeSessions.folderName(for: projectPath), isDirectory: true)
         try FileManager.default.createDirectory(at: projectFolder, withIntermediateDirectories: true)
 
         // Create session files with different versions - newer one should win
         let sessionData = """
+        {"cwd":"\(projectPath)","type":"user","message":{"content":"Prueba"}}
         {"type":"assistant","message":{"model":"claude-opus-4-5"}}
         {"type":"assistant","message":{"model":"claude-opus-5-5"}}
         """.data(using: .utf8)!

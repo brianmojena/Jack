@@ -70,6 +70,7 @@ private struct GeneralSettings: View {
                      : "Image Playground no está disponible en este Mac: activa Apple Intelligence en Ajustes del Sistema.")
                     .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
             }
+            if !store.lightModeEnabled { VoiceCredentialSettings() }
             if !store.lightModeEnabled { JackRemoteSettings(store: store) }
             if !store.lightModeEnabled { UpdateSettings(checker: updateChecker) }
             Section {
@@ -123,6 +124,56 @@ private struct GeneralSettings: View {
         .formStyle(.grouped)
         .frame(height: 520)
         .sheet(isPresented: $importingClaude) { claudeImportSheet }
+    }
+}
+
+private struct VoiceCredentialSettings: View {
+    @State private var apiKey = ""
+    @State private var status: String?
+    @State private var failed = false
+
+    var body: some View {
+        Section {
+            SecureField("API key de Groq", text: $apiKey)
+            HStack {
+                Button("Guardar") { save() }
+                    .disabled(apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button("Borrar guardada", role: .destructive) { remove() }
+                if let status {
+                    Text(status).font(.system(size: 11))
+                        .foregroundStyle(failed ? JackPalette.amber : JackPalette.muted)
+                }
+            }
+        } header: {
+            Text("Dictado por voz")
+        } footer: {
+            Text("La clave se guarda en el llavero de este usuario y no se muestra al abrir Ajustes. También puedes definir GROQ_API_KEY en el entorno.")
+                .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
+        }
+    }
+
+    private func save() {
+        do {
+            try VoiceConfig.saveAPIKey(apiKey)
+            apiKey = ""
+            failed = false
+            status = "Clave guardada."
+        } catch {
+            failed = true
+            status = error.localizedDescription
+        }
+    }
+
+    private func remove() {
+        do {
+            try VoiceConfig.deleteAPIKey()
+            apiKey = ""
+            failed = false
+            status = "Clave guardada borrada."
+        } catch {
+            failed = true
+            status = error.localizedDescription
+        }
     }
 }
 

@@ -33,14 +33,25 @@ import simd
     private(set) var room: Entity?
     /// La mesa de ajedrez (si el archivo de la sala la trae).
     private(set) var chess: OfficeChessSet?
+    /// La ducha (si el archivo de la sala la trae) y quién se está duchando.
+    private(set) var shower: OfficeShower?
+    /// La cafetera de la mesita, con su vapor animado (viene aparte de la sala, en `OfficeCoffee.usdz`).
+    private var coffee: Entity?
+    /// La mesita del café (dónde se toma y la taza) y quién se está tomando uno.
+    private(set) var coffeeBar: OfficeCoffeeBar?
+    @Published private(set) var drinking: Int?
+    @Published private(set) var showering: Int?
     /// La luz ambiental de la sala: un entorno sintético cálido, no el cielo (el HDRI solo es fondo).
     private var ambient: EnvironmentResource?
     private var pointLights: [Entity] = []
+    /// Si los PC de los escritorios tienen su animación en marcha.
+    private var pcAnimating = false
     private var mirroredRoom: Entity?
     /// Los cristales de los monitores por puesto: el de la sala y el de su reflejo.
     private var screens: [String: [(entity: Entity, reflected: Bool)]] = [:]
     /// La pantalla de la tele, en la sala y en su reflejo.
     private var tvScreens: [(entity: Entity, reflected: Bool)] = []
+    private var tvTexture: TextureResource?
     /// El letrero de cada puesto en la pared, sobre su escritorio, y dónde queda esa pared.
     private var labels: [String: ModelEntity] = [:]
     private var walls: [Int: SIMD3<Float>] = [:]
@@ -68,6 +79,9 @@ import simd
             Self.solidWalls(in: room)
             Self.fixBackWallCorner(in: room)
             enlargeTV(in: room)
+            enlargePCs(in: room)
+            Self.playLoop(room)
+            pcAnimating = true
             await prepareWalls(in: room)
             // La mesa de ajedrez: se monta antes del espejo (para que también esté en el reflejo) y antes de que los puestos
             // aparten sus sillas (la de la mesa se copia de la del primer puesto tal como llega).
@@ -82,21 +96,50 @@ import simd
                 let actor = OfficeActor(index: index, slot: slot, layout: layout, model: model)
                 actor.attachChair(in: room)
                 actor.chess = chess
+                actor.walkBounds = (SIMD2(Float(layout.room.min[0]) + 0.5, -Float(layout.room.max[1]) + 0.5), SIMD2(Float(layout.room.max[0]) - 0.5, -Float(layout.room.min[1]) - 0.5))
                 world.addChild(actor.holder)
                 made.append(actor)
             }
             actors = made
+            // Los muebles, con las sillas apartadas (que es como están cuando alguien se levanta).
+            let obstacles = walkObstacles(in: room, slots: layout.slots)
+            for actor in made { actor.walkObstacles = obstacles }
+            shower = OfficeShower(room: room, world: world)
+            for actor in made { actor.shower = shower }
+            await addCoffee(resources, room: room)
             await addLights(resources)
             addGroundingShadows(room)
             for actor in made { addGroundingShadows(actor.holder) }
             if let mirror = layout.mirror { addMirror(mirror, room: room) }
             if let mirroredRoom { chess?.attachMirror(mirroredRoom) }
+            if let mirroredRoom { shower?.attachMirror(mirroredRoom) }
+            if let coffee, let reflected = mirroredRoom?.parent { mirrorCoffee(coffee, in: reflected) }
             collectScreens(layout: layout, room: room)
             collectTV(room: room)
             state = .ready
         } catch {
             state = .failed(error.localizedDescription)
         }
+    }
+
+    /// El suelo que ocupan los muebles grandes (x, z de RealityKit), para que los personajes los rodeen al caminar.
+    private func walkObstacles(in room: Entity, slots: [OfficeLayout.Slot]) -> [OfficeChessRoute.Obstacle] {
+        var rects: [OfficeChessRoute.Obstacle] = []
+        for name in ["WORKSTATION_01", "WORKSTATION_02", "WORKSTATION_03", "PROP_sofa", "PROP_sofa_big", "CHESS_table_top", "PROP_shower", "PROP_coffee_table"] {
+            guard let entity = room.findEntity(named: name) else { continue }
+            let bounds = entity.visualBounds(relativeTo: nil)
+            guard !bounds.isEmpty else { continue }
+            rects.append(((SIMD2(bounds.min.x, bounds.min.z), SIMD2(bounds.max.x, bounds.max.z)), false))
+        }
+        // Las sillas de los escritorios, ya apartadas.
+        for slot in slots {
+            guard let chair = room.findEntity(named: slot.chair) else { continue }
+            let bounds = chair.visualBounds(relativeTo: nil)
+            if !bounds.isEmpty { rects.append(((SIMD2(bounds.min.x, bounds.min.z), SIMD2(bounds.max.x, bounds.max.z)), true)) }
+        }
+        // Las sillas de la mesa de ajedrez, donde quedan al apartarlas para sentarse.
+        rects += (chess?.pulledChairFootprints() ?? []).map { ($0, true) }
+        return rects
     }
 
     /// Pone a un puesto el modelo de otro avatar (el archivo `<avatar>.usdz`); el personaje no se mueve ni deja lo que hacía.
@@ -113,6 +156,68 @@ import simd
                 func collect(_ entity: Entity) -> [Entity] { (entity.components.has(GroundingShadowComponent.self) ? [entity] : []) + entity.children.flatMap(collect) }
                 groundedEntities += collect(model)
             }
+        }
+    }
+
+    /// Manda a ducharse al personaje de un puesto (si la ducha está libre). Vuelve solo a su sofá al terminar.
+    func startShower(slot index: Int) {
+        guard shower != nil, showering == nil, actors.indices.contains(index) else { return }
+        showering = index
+        actors[index].onShowerDone = { [weak self] in
+            if self?.showering == index { self?.showering = nil }
+        }
+    }
+
+    // MARK: - Cafetera
+
+    /// Pone la cafetera en su marcador de la mesita y deja su vapor subiendo en bucle.
+    private func addCoffee(_ resources: Resources, room: Entity) async {
+        guard let url = resources.url("OfficeCoffee", "usdz"), let spot = room.findEntity(named: "PROP_coffee_spot"),
+              let model = try? await Entity(contentsOf: url) else { return }
+        model.name = "office-coffee"
+        model.position = spot.position(relativeTo: nil)
+        Self.softenSteam(model)
+        world.addChild(model)
+        Self.playLoop(model)
+        coffee = model
+        coffeeBar = OfficeCoffeeBar(coffee: model, room: room, world: world)
+        for actor in actors { actor.coffee = coffeeBar }
+    }
+
+    /// Su gemela en la sala del espejo, con el mismo vapor.
+    private func mirrorCoffee(_ coffee: Entity, in reflected: Entity) {
+        let copy = coffee.clone(recursive: true)
+        Self.flipCulling(copy)
+        reflected.addChild(copy)
+        Self.playLoop(copy)
+        coffeeBar?.attachMirror(copy, in: reflected)
+    }
+
+    private static func playLoop(_ entity: Entity) {
+        for animation in entity.availableAnimations {
+            entity.playAnimation(animation.repeat(duration: .infinity))
+        }
+    }
+
+    /// El vapor llega opaco (el exportador USD solo guarda la transparencia que viene de una textura): blanco y casi transparente.
+    private static func softenSteam(_ entity: Entity, inSteam: Bool = false) {
+        let steam = inSteam || entity.name.hasPrefix("COFFEE_steam")
+        if steam, var model = entity.components[ModelComponent.self] {
+            var material = UnlitMaterial(color: .white)
+            material.blending = .transparent(opacity: .init(floatLiteral: 0.3))
+            material.faceCulling = .none
+            model.materials = Array(repeating: material, count: max(model.materials.count, 1))
+            entity.components.set(model)
+        }
+        for child in entity.children { softenSteam(child, inSteam: steam) }
+    }
+
+    /// Manda al personaje de un puesto a tomarse un café (si la mesita está libre). Vuelve solo a su sofá al terminar.
+    func startCoffee(slot index: Int) {
+        guard coffeeBar != nil, drinking == nil, actors.indices.contains(index) else { return }
+        drinking = index
+        actors[index].onCoffeeDone = { [weak self] in
+            if self?.drinking == index { self?.drinking = nil }
         }
     }
 
@@ -136,6 +241,7 @@ import simd
         Self.flipCulling(copy)
         reflected.addChild(copy)
         mirroredRoom = copy
+        if pcAnimating { Self.playLoop(copy) }
         // Las luces también se reflejan: sin ellas el reflejo queda a oscuras.
         for light in pointLights {
             let copy = light.clone(recursive: false)
@@ -249,6 +355,20 @@ import simd
         tv.position += before.center - after.center
     }
 
+    /// Los PC de los escritorios, un poco más grandes, sin separarse de la mesa: crecen desde el centro de su base.
+    private func enlargePCs(in room: Entity) {
+        for name in ["PROP_pc_gamer_animation", "PROP_pc_gamer_animation_03"] {
+            guard let pc = room.findEntity(named: name) else { continue }
+            let before = pc.visualBounds(relativeTo: pc.parent)
+            pc.scale *= Self.pcScale
+            let after = pc.visualBounds(relativeTo: pc.parent)
+            pc.position += SIMD3(before.center.x - after.center.x, before.min.y - after.min.y, before.center.z - after.center.z)
+        }
+    }
+
+    /// Cuánto crecen los PC respecto al modelo.
+    private static let pcScale: Float = 1.15
+
     private func collectTV(room: Entity) {
         func models(under entity: Entity) -> [Entity] {
             (entity.components.has(ModelComponent.self) ? [entity] : []) + entity.children.flatMap(models(under:))
@@ -257,19 +377,24 @@ import simd
         if let screen = mirroredRoom?.findEntity(named: "TV_49Zoll_Screen1_0") { tvScreens += models(under: screen).map { ($0, true) } }
     }
 
-    /// Lo que enseña la tele.
-    func setTV(image: CGImage) {
+    /// Lo que enseña la tele. La primera imagen crea su textura; las siguientes la sustituyen sin tocar los materiales,
+    /// para que el logo animado pueda ir a varios fotogramas por segundo.
+    func setTV(image: CGImage) async {
         guard !tvScreens.isEmpty else { return }
-        Task { @MainActor in
-            guard let texture = try? await TextureResource(image: image, options: .init(semantic: .color)) else { return }
-            for (entity, reflected) in tvScreens {
-                guard var model = entity.components[ModelComponent.self] else { continue }
-                var material = UnlitMaterial(color: .white)
-                material.color = .init(tint: .white, texture: .init(texture))
-                if reflected { material.faceCulling = .front }
-                model.materials = Array(repeating: material, count: max(model.materials.count, 1))
-                entity.components.set(model)
-            }
+        let options = TextureResource.CreateOptions(semantic: .color)
+        if let tvTexture {
+            try? tvTexture.replace(withImage: image, options: options)
+            return
+        }
+        guard let texture = try? await TextureResource(image: image, options: options) else { return }
+        tvTexture = texture
+        for (entity, reflected) in tvScreens {
+            guard var model = entity.components[ModelComponent.self] else { continue }
+            var material = UnlitMaterial(color: .white)
+            material.color = .init(tint: .white, texture: .init(texture))
+            if reflected { material.faceCulling = .front }
+            model.materials = Array(repeating: material, count: max(model.materials.count, 1))
+            entity.components.set(model)
         }
     }
 
@@ -391,9 +516,16 @@ import simd
         }
     }
 
+    /// Si algo de la sala se mueve (alguien camina, se ducha o toma café, juega al ajedrez o se abre la puerta de la ducha);
+    /// con todos sentados y nada en marcha, la escena puede dibujarse a menos fotogramas por segundo.
+    var isBusy: Bool {
+        actors.contains { $0.isActive } || chess?.isBusy == true || shower?.isBusy == true
+    }
+
     func update(deltaTime: Double) {
         for actor in actors { actor.update(deltaTime: min(deltaTime, 0.1)) }
         chess?.update(deltaTime: min(deltaTime, 0.1))
+        shower?.update(deltaTime: min(deltaTime, 0.1))
     }
 
     // MARK: - Gráficos
@@ -461,8 +593,9 @@ import simd
             if quality.neon { logos.components.set(BloomComponent(scope: .hierarchical)) } else { logos.components.remove(BloomComponent.self) }
         }
         // El espejo: sin él no se dibuja la sala reflejada y el cristal pasa a ser un panel oscuro.
-        world.children.first { $0.name == "mirror-world" }?.isEnabled = quality.mirror
-        world.findEntity(named: "mirror-portal")?.isEnabled = quality.mirror
+        mirrorOn = quality.mirror
+        refreshMirror()
+        applyMirrorDetail(light: quality.mirror && quality.mirrorLight)
         if let glass = world.findEntity(named: "mirror-glass") as? ModelEntity, var model = glass.model {
             model.materials = model.materials.map { material in
                 guard var pbr = material as? PhysicallyBasedMaterial else { return material }
@@ -472,6 +605,70 @@ import simd
             glass.model = model
         }
         for actor in actors { actor.freezeIdle = !quality.idleAnimation }
+        setPCAnimation(quality.idleAnimation)
+    }
+
+    /// Los PC de la sala (y los de su reflejo) se animan igual que los personajes en reposo: con la calidad baja se quedan quietos.
+    private func setPCAnimation(_ on: Bool) {
+        guard on != pcAnimating, let room else { return }
+        pcAnimating = on
+        for entity in [room, mirroredRoom].compactMap({ $0 }) {
+            if on { Self.playLoop(entity) } else { entity.stopAllAnimations() }
+        }
+    }
+
+    // MARK: - Espejo
+
+    /// El espejo está encendido en los gráficos, y la cámara lo tiene (o puede tenerlo) a la vista.
+    private var mirrorOn = true
+    private var mirrorInView = true
+    /// Los muebles pequeños de la sala reflejada, que el reflejo ligero no dibuja (se buscan la primera vez que hacen falta).
+    private var mirrorSmallProps: [Entity]?
+    /// Lo que mide, como mucho, un objeto que el reflejo ligero se salta (en unidades de la escena; un personaje mide unas 6).
+    private static let mirrorSmallSize: Float = 1.0
+
+    /// Las cuatro esquinas del cristal del espejo y hacia dónde mira, para saber si la cámara lo ve.
+    var mirrorGlass: (corners: [SIMD3<Float>], normal: SIMD3<Float>)? {
+        guard let mirror = layout?.mirror else { return nil }
+        let center = OfficePose.world(x: mirror.center[0], y: mirror.center[1], z: mirror.center[2])
+        let half = SIMD3<Float>(0, Float(mirror.height) / 2, Float(mirror.width) / 2)
+        return ([SIMD3(1, 1, 1), SIMD3(1, 1, -1), SIMD3(1, -1, 1), SIMD3(1, -1, -1)].map { center + $0 * half }, SIMD3(1, 0, 0))
+    }
+
+    /// Con la cámara de espaldas al espejo o mirando a otro lado, no se dibuja la sala reflejada (no se ve).
+    func setMirrorInView(_ visible: Bool) {
+        guard visible != mirrorInView else { return }
+        mirrorInView = visible
+        refreshMirror()
+    }
+
+    private func refreshMirror() {
+        let enabled = mirrorOn && mirrorInView
+        world.children.first { $0.name == "mirror-world" }?.isEnabled = enabled
+        world.findEntity(named: "mirror-portal")?.isEnabled = enabled
+    }
+
+    /// El reflejo ligero: sin sombras de contacto ni de los focos, sin los halos y el rebote del suelo (solo los rellenos) y sin
+    /// los muebles pequeños, que en un espejo apenas se aprecian. Con `light: false` el reflejo queda completo.
+    private func applyMirrorDetail(light: Bool) {
+        guard let reflected = mirroredRoom?.parent else { return }
+        func all(_ entity: Entity) -> [Entity] { [entity] + entity.children.flatMap(all) }
+        let entities = all(reflected)
+        if light {
+            for entity in entities {
+                if entity.components.has(GroundingShadowComponent.self) { entity.components.remove(GroundingShadowComponent.self) }
+                if entity.components.has(SpotLightComponent.Shadow.self) { entity.components.remove(SpotLightComponent.Shadow.self) }
+                if let point = entity.components[PointLightComponent.self], point.attenuationRadius < 40 { entity.isEnabled = false }
+            }
+        }
+        if mirrorSmallProps == nil, light, let room = mirroredRoom {
+            mirrorSmallProps = all(room).filter { entity in
+                guard entity.components.has(ModelComponent.self) else { return false }
+                let bounds = entity.visualBounds(relativeTo: nil)
+                return !bounds.isEmpty && max(bounds.extents.x, bounds.extents.y, bounds.extents.z) < Self.mirrorSmallSize
+            }
+        }
+        for entity in mirrorSmallProps ?? [] { entity.isEnabled = !light }
     }
 
     // MARK: - Luces

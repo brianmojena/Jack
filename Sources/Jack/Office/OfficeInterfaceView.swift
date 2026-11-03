@@ -47,6 +47,13 @@ struct OfficeInterfaceView<Content: View>: View {
     /// La partida de ajedrez en curso (si la hay) y el puesto cuyo personaje está preparando una.
     @StateObject private var chess = OfficeChessGame()
     @State private var settingUpChess: Int?
+    /// La tarjeta de la partida es para jugar contra el personaje (el usuario se sienta a la mesa), no entre dos personajes.
+    @State private var versusSetup = false
+    /// Las partidas de cartas (Mentiroso, póker, blackjack) y el puesto cuyo personaje está preparando una.
+    @StateObject private var cards = OfficeCardSession()
+    @State private var settingUpCards: Int?
+    /// Dos personajes del sofá charlando de un tema al azar.
+    @StateObject private var talk = OfficeSofaTalk()
     @State private var camera = OfficeCamera(target: OfficePose.world(x: 3.2, y: -4.5, z: 2.4))
     @State private var dock: OfficeDock?
     @State private var actions: OfficeActions?
@@ -70,12 +77,25 @@ struct OfficeInterfaceView<Content: View>: View {
 
     private var slots: [OfficeLayout.Slot] { stage.layout?.slots ?? [] }
 
+    /// La personalidad del avatar que lleva ahora el puesto (los tres personajes añadidos después tienen la suya).
+    private func persona(of slot: OfficeLayout.Slot) -> OfficePersona? { OfficePersonas.persona(forAvatar: avatars.avatar(for: slot)) }
+
+    /// Cómo se llama la persona del puesto: la de su avatar, si tiene personalidad propia; si no, la del puesto.
+    private func name(of slot: OfficeLayout.Slot) -> String { persona(of: slot)?.name ?? slot.name }
+
     var body: some View {
-        OfficeSceneView(stage: stage, camera: camera, quality: graphics.quality, measuresFPS: graphics.showFPS, onFPS: { graphics.fps = $0 }, onPick: { tag, _ in if viewing == nil { pick(tag.index) } }, onPickNothing: { actions = nil; choosingAvatar = nil; settingUpChess = nil })
+        OfficeSceneView(stage: stage, camera: camera, quality: graphics.quality, measuresFPS: graphics.showFPS, onFPS: { graphics.fps = $0 }, onPick: { tag, _ in if viewing == nil, !chess.humanSeated, !cards.humanSeated { pick(tag.index) } }, onPickNothing: { actions = nil; choosingAvatar = nil; settingUpChess = nil; settingUpCards = nil })
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(JackPalette.chrome)
             .onGeometryChange(for: CGSize.self) { $0.size } action: { sceneSize = $0 }
+            .overlay { chessBoard }
             .overlay { anchoredOverlay }
+            .overlay(alignment: .bottomTrailing) { chessPanel }
+            .overlay(alignment: .top) { chessReturn }
+            .overlay(alignment: .top) { cardHUD }
+            .overlay(alignment: .bottom) { cardControls }
+            .overlay(alignment: .bottomTrailing) { cardDock }
+            .overlay(alignment: .top) { cardReturn }
             .overlay(alignment: .bottom) { dockOverlay }
             .overlay { screenContent }
             .overlay(alignment: .top) { screenOverlay }
@@ -94,9 +114,16 @@ struct OfficeInterfaceView<Content: View>: View {
                 if let viewing, slots.indices.contains(viewing), !working.contains(slots[viewing].id) { leaveScreen() }
                 // Quien se pone a trabajar deja la partida.
                 if slots.indices.contains(where: { working.contains(slots[$0].id) && chess.involves($0) }) { chess.stop(stage: stage) }
+                if slots.indices.contains(where: { working.contains(slots[$0].id) && cards.involves($0) }) { cards.stop() }
+                if slots.indices.contains(where: { working.contains(slots[$0].id) && talk.involves($0) }) { talk.stop() }
             }
-            .onChange(of: store.lightModeEnabled) { _, light in if light { chess.stop(stage: stage) } }
+            .onChange(of: store.lightModeEnabled) { _, light in if light { chess.stop(stage: stage); cards.stop(); talk.stop() } }
+            .onDisappear { chess.stop(stage: stage); cards.stop(); talk.stop() }
+            .onChange(of: chess.humanSeated) { _, seated in moveCameraToChessSeat(seated) }
+            .onChange(of: cards.humanSeated) { _, seated in moveCameraToCardSeat(seated) }
+            .onChange(of: talk.pair) { _, pair in updateTalkAnimations(pair) }
             .task(id: stage.state) { await refreshScreens() }
+            .task(id: stage.state) { await runTV() }
             .task(id: stage.state) { await narrate() }
     }
 
@@ -135,10 +162,10 @@ struct OfficeInterfaceView<Content: View>: View {
                 busy.insert(id)
                 let messages = conversation.messages
                 let previous = narration[slot.id]
-                let name = slot.name, tool = tool(for: slot), slotID = slot.id
+                let name = name(of: slot), persona = persona(of: slot)?.profile, tool = tool(for: slot), slotID = slot.id
                 Task {
                     defer { busy.remove(id) }
-                    guard let text = try? await narrator.summary(as: name, tool: tool, of: messages, previous: previous,
+                    guard let text = try? await narrator.summary(as: name, persona: persona, tool: tool, of: messages, previous: previous,
                                                                  lightMode: store.lightModeEnabled) else { return }
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { narration[slotID] = text }
                 }
@@ -153,12 +180,12 @@ struct OfficeInterfaceView<Content: View>: View {
         let worker = OfficeWorker(tool: tool(for: slot), status: status, messages: conversation.messages)
         let history = assignments.chat(in: slot.id)
         Task {
-            guard let text = try? await narrator.report(as: slot.name, history: history, worker: worker, lightMode: store.lightModeEnabled) else { return }
+            guard let text = try? await narrator.report(as: name(of: slot), persona: persona(of: slot)?.profile, history: history, worker: worker, lightMode: store.lightModeEnabled) else { return }
             assignments.append(OfficeLine(role: .person, text: text), slot: slot.id)
             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { narration[slot.id] = text }
             // Quien pidió ayuda se entera de cómo acabó la parte de su compañero.
             if let leader = assignments.leaders[slot.id] {
-                assignments.append(OfficeLine(role: .note, text: "\(slot.name): \(text)"), slot: leader)
+                assignments.append(OfficeLine(role: .note, text: "\(name(of: slot)): \(text)"), slot: leader)
             }
         }
     }
@@ -182,7 +209,7 @@ struct OfficeInterfaceView<Content: View>: View {
         Task {
             defer { thinking.remove(slot.id) }
             do {
-                let decision = try await narrator.reply(as: slot.name, history: history, worker: worker, team: team, catalog: catalog,
+                let decision = try await narrator.reply(as: name(of: slot), persona: persona(of: slot)?.profile, history: history, worker: worker, team: team, catalog: catalog,
                                                         lightMode: store.lightModeEnabled)
                 assignments.append(OfficeLine(role: .person, text: decision.reply), slot: slot.id)
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { narration[slot.id] = decision.reply }
@@ -190,7 +217,7 @@ struct OfficeInterfaceView<Content: View>: View {
                 if !decision.helpers.isEmpty { recruit(decision.helpers, leader: index) }
             } catch is CancellationError {
             } catch {
-                assignments.append(OfficeLine(role: .note, text: "\(slot.name) no pudo contestar: \(error.localizedDescription)"), slot: slot.id)
+                assignments.append(OfficeLine(role: .note, text: "\(name(of: slot)) no pudo contestar: \(error.localizedDescription)"), slot: slot.id)
                 withAnimation { narration[slot.id] = "Perdona, ahora mismo no puedo pensar (no responde \(OfficeNarrator.modelName))." }
             }
         }
@@ -203,9 +230,9 @@ struct OfficeInterfaceView<Content: View>: View {
         let leader = slots[index]
         for helper in helpers {
             let named = slots.firstIndex { $0.id != leader.id && isFree($0)
-                && $0.name.compare(helper.name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }
+                && name(of: $0).compare(helper.name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }
             guard let target = named ?? slots.firstIndex(where: { $0.id != leader.id && isFree($0) }) else {
-                assignments.append(OfficeLine(role: .note, text: "No hay compañeros libres para ayudar a \(leader.name)."), slot: leader.id)
+                assignments.append(OfficeLine(role: .note, text: "No hay compañeros libres para ayudar a \(name(of: leader))."), slot: leader.id)
                 return
             }
             let slot = slots[target]
@@ -216,10 +243,10 @@ struct OfficeInterfaceView<Content: View>: View {
             assignments.clearChat(slot: slot.id)
             assignments.setLeader(leader.id, for: slot.id)
             let tool = "\(choice.provider.title) · \(modelTitle(choice))"
-            assignments.append(OfficeLine(role: .note, text: "\(leader.name) le pidió ayuda a \(slot.name), que trabaja con \(tool)."), slot: leader.id)
-            assignments.append(OfficeLine(role: .note, text: "\(slot.name) ayuda a \(leader.name) con \(tool)."), slot: slot.id)
+            assignments.append(OfficeLine(role: .note, text: "\(name(of: leader)) le pidió ayuda a \(name(of: slot)), que trabaja con \(tool)."), slot: leader.id)
+            assignments.append(OfficeLine(role: .note, text: "\(name(of: slot)) ayuda a \(name(of: leader)) con \(tool)."), slot: slot.id)
             delegate(helper.task, slot: target)
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { narration[slot.id] = "Voy, \(leader.name) me pidió una mano." }
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { narration[slot.id] = "Voy, \(name(of: leader)) me pidió una mano." }
         }
     }
 
@@ -228,15 +255,18 @@ struct OfficeInterfaceView<Content: View>: View {
         !assignments.working.contains(slot.id) && !thinking.contains(slot.id)
             && conversation(in: slot).map { store.statuses[$0.id]?.isActive == true } != true
             && !chess.involves(slots.firstIndex { $0.id == slot.id } ?? -1)
+            && !talk.involves(slots.firstIndex { $0.id == slot.id } ?? -1)
+            && stage.showering != slots.firstIndex { $0.id == slot.id }
+            && stage.drinking != slots.firstIndex { $0.id == slot.id }
     }
 
     /// Los compañeros de una persona, para que decida a quién pedir ayuda y sepa cómo van los que ya la ayudan.
     private func teamDescription(for leader: OfficeLayout.Slot) -> String {
         slots.filter { $0.id != leader.id }.map { slot in
-            guard !isFree(slot) else { return "- \(slot.name): libre" }
+            guard !isFree(slot) else { return "- \(name(of: slot)): libre" }
             let conversation = conversation(in: slot)
             let status = conversation.map { (store.statuses[$0.id] ?? .idle).title } ?? "en su escritorio"
-            var line = "- \(slot.name): ocupado (\(tool(for: slot)), \(status))"
+            var line = "- \(name(of: slot)): ocupado (\(tool(for: slot)), \(status))"
             if assignments.leaders[slot.id] == leader.id {
                 line += ", te está ayudando"
                 if let said = conversation?.messages.last(where: { $0.role == "assistant" && !$0.text.isEmpty })?.text {
@@ -310,17 +340,8 @@ struct OfficeInterfaceView<Content: View>: View {
         guard stage.state == .ready else { return }
         var shown: [String: String] = [:]
         var labeled: [String: String] = [:]
-        var tvKey = ""
         var tick = 0
         while !Task.isCancelled {
-            // La tele: el uso de Claude, al minuto.
-            let usage = store.usage[.claude]
-            let minute = Int(Date().timeIntervalSince1970 / 60)
-            let key = "\(minute)|" + (usage?.windows ?? []).map { "\($0.id):\($0.usedPercent ?? -1):\($0.resetsAt?.timeIntervalSince1970 ?? 0)" }.joined(separator: ",")
-            if key != tvKey, let image = OfficeTVView.image(usage: usage, now: Date()) {
-                tvKey = key
-                stage.setTV(image: image)
-            }
             for (index, slot) in slots.enumerated() {
                 // El letrero de la pared: el nombre del chat del puesto, en cuanto lo tiene.
                 let title = conversation(in: slot)?.title ?? ""
@@ -374,6 +395,34 @@ struct OfficeInterfaceView<Content: View>: View {
         }
     }
 
+    // MARK: - Tele
+
+    /// Segundos que la tele enseña cada cosa antes de pasar a la otra.
+    private static var tvPhase: Double { 10 }
+
+    /// La tele alterna el uso de Claude con el logo de Jack en ASCII animado. Con la calidad baja (personajes quietos) el
+    /// logo queda fijo; si no, se anima a 15 fotogramas por segundo, u 8 si la escena va limitada a menos de 60.
+    private func runTV() async {
+        guard stage.state == .ready else { return }
+        let logo = OfficeTVLogo()
+        while !Task.isCancelled {
+            if let image = OfficeTVView.image(usage: store.usage[.claude], now: Date()) { await stage.setTV(image: image) }
+            try? await Task.sleep(for: .seconds(Self.tvPhase))
+
+            let quality = graphics.quality
+            let animated = quality.idleAnimation
+            let fps = quality.frameRate == 0 || quality.frameRate >= 60 ? 15.0 : 8.0
+            let start = Date()
+            repeat {
+                let t = animated ? Date().timeIntervalSince(start) : 3
+                if let image = await Task.detached(priority: .utility, operation: { logo.frame(at: t) }).value {
+                    await stage.setTV(image: image)
+                }
+                try? await Task.sleep(for: .seconds(animated ? 1 / fps : Self.tvPhase))
+            } while !Task.isCancelled && Date().timeIntervalSince(start) < Self.tvPhase
+        }
+    }
+
     // MARK: - Puestos y estado
 
     private func conversation(in slot: OfficeLayout.Slot) -> ChatConversation? {
@@ -388,9 +437,18 @@ struct OfficeInterfaceView<Content: View>: View {
     /// una respuesta o mandado a trabajar teclea despacio; con error se queda en el sofá negando con la cabeza.
     private var commands: [OfficeCommand] {
         slots.enumerated().map { index, slot in
+            // Duchándose: acaba y vuelve a su sofá antes de hacer otra cosa.
+            if stage.showering == index { return .shower }
+            // Tomando café: igual, acaba y vuelve a su sofá.
+            if stage.drinking == index { return .coffee }
             let atDesk = assignments.working.contains(slot.id)
+            // Jugando a las cartas, sentado a la mesa (también si su agente se pone a trabajar: entonces se acaba la partida).
+            if !atDesk, let id = cards.seat(of: index), let seat = stage.chess?.seats[id],
+               conversation(in: slot).map({ store.statuses[$0.id]?.isActive == true }) != true {
+                return .chess(seat)
+            }
             // Jugando al ajedrez, sentado a la mesa (salvo que su agente se ponga a trabajar).
-            if !atDesk, let color = chess.seat(of: index), let seat = stage.chess?.seats[color],
+            if !atDesk, let color = chess.seat(of: index), let seat = stage.chess?.seats[color.rawValue],
                conversation(in: slot).map({ store.statuses[$0.id]?.isActive == true }) != true {
                 return .chess(seat)
             }
@@ -434,26 +492,62 @@ struct OfficeInterfaceView<Content: View>: View {
         switch menu.step {
         case .root:
             let changeAvatar = OfficePill(title: "Cambiar avatar", symbol: "person.crop.circle", tint: .purple) { actions = nil; choosingAvatar = index }
+            let close = OfficePill(title: "Cerrar", symbol: "xmark", tint: .gray, back: true) { actions = nil }
             if chess.involves(index) {
-                return [OfficePill(title: "Terminar partida", symbol: "flag.checkered", tint: .purple) { actions = nil; chess.stop(stage: stage) }, changeAvatar]
+                return [OfficePill(title: "Terminar partida", symbol: "flag.checkered", tint: .purple) { actions = nil; chess.stop(stage: stage) }, changeAvatar, close]
+            }
+            if cards.involves(index) {
+                return [OfficePill(title: "Terminar partida", symbol: "flag.checkered", tint: .purple) { actions = nil; cards.stop() }, changeAvatar, close]
+            }
+            if talk.involves(index) {
+                return [OfficePill(title: "Dejar de charlar", symbol: "bubble.left.and.bubble.right", tint: .purple) { actions = nil; talk.stop() }, changeAvatar, close]
             }
             guard working else {
                 var items = [OfficePill(title: "Trabajar", symbol: "keyboard", tint: .orange, action: go(.work))]
                 // El ajedrez necesita la mesa, un compañero libre y que no se esté ahorrando (lo juega Gemma, en la nube).
                 if canPlayChess(index) {
-                    items.append(OfficePill(title: "Jugar ajedrez", symbol: "checkerboard.rectangle", tint: .teal) { actions = nil; settingUpChess = index })
+                    items.append(OfficePill(title: "Jugar ajedrez", symbol: "checkerboard.rectangle", tint: .teal) { actions = nil; versusSetup = false; settingUpChess = index })
+                }
+                // Contra el usuario: se sienta a la mesa frente al personaje (con la cámara en su silla) y chatean mientras juegan.
+                if canPlayCards(index) {
+                    items.append(OfficePill(title: "Jugar a las cartas", symbol: "suit.spade.fill", tint: .teal) { actions = nil; settingUpChess = nil; settingUpCards = index })
+                }
+                if canPlayChessAgainstMe {
+                    items.append(OfficePill(title: "Jugar contra mí", symbol: "person.2.fill", tint: .teal) { actions = nil; versusSetup = true; settingUpChess = index })
+                }
+                // Charlar: con cada compañero libre, de un tema curioso al azar (habla Gemma por los dos).
+                if !store.lightModeEnabled, !talk.isActive, !chess.isActive, !cards.isActive, onSofa(index) {
+                    for other in slots.indices where other != index && isFree(slots[other]) && onSofa(other) {
+                        items.append(OfficePill(title: "Charlar con \(name(of: slots[other]))", symbol: "bubble.left.and.bubble.right", tint: .blue) {
+                            actions = nil
+                            talk.start(index, other, people: Dictionary(uniqueKeysWithValues: slots.enumerated().map { entry in
+                                (entry.offset, OfficeSofaTalk.Person(name: name(of: entry.element), profile: persona(of: entry.element)?.profile, about: persona(of: entry.element)?.about))
+                            }),
+                                       lightMode: { store.lightModeEnabled })
+                        })
+                    }
+                }
+                // Bañarse, como en Los Sims: va a la ducha, se ducha unos segundos y vuelve a su sofá.
+                if stage.shower != nil, stage.showering == nil, onSofa(index) {
+                    items.append(OfficePill(title: "Bañarse", symbol: "shower", tint: .blue) { actions = nil; stage.startShower(slot: index) })
+                }
+                // Tomar café: va a la mesita, coge una taza, se la bebe y vuelve a su sofá.
+                if stage.coffeeBar != nil, stage.drinking == nil, onSofa(index) {
+                    items.append(OfficePill(title: "Tomar café", symbol: "cup.and.saucer", tint: .orange) { actions = nil; stage.startCoffee(slot: index) })
                 }
                 items.append(changeAvatar)
+                items.append(close)
                 return items
             }
             var items: [OfficePill] = []
-            items.append(OfficePill(title: "Hablar con \(slot.name)", symbol: "text.bubble", tint: .blue) { actions = nil; openChat(slot: index) })
+            items.append(OfficePill(title: "Hablar con \(name(of: slot))", symbol: "text.bubble", tint: .blue) { actions = nil; openChat(slot: index) })
             // Su monitor solo está encendido mientras trabaja con un agente.
             if conversation != nil, assignments.working.contains(slot.id) {
                 items.append(OfficePill(title: "Ver pantalla", symbol: "display", tint: .teal) { actions = nil; viewScreen(index) })
             }
             items.append(OfficePill(title: "Terminar de trabajar", symbol: "moon.zzz", tint: .purple) { actions = nil; stopWorking(slot: index) })
             items.append(changeAvatar)
+            items.append(close)
             return items
         case .work:
             // Lo primero, un encargo nuevo con el último modelo elegido; «Otro modelo» deja escoger otro.
@@ -503,8 +597,35 @@ struct OfficeInterfaceView<Content: View>: View {
         }
     }
 
+    /// Quien charla se pone a hablar (con la cabeza hacia su compañero); al acabar la charla, vuelve a su postura de siempre.
+    private func updateTalkAnimations(_ pair: [Int]) {
+        for (index, actor) in stage.actors.enumerated() {
+            guard pair.contains(index), let partner = pair.first(where: { $0 != index }), slots.indices.contains(index), slots.indices.contains(partner) else {
+                actor.talkClip = nil
+                continue
+            }
+            let mine = OfficePose(slots[index].sofa), theirs = OfficePose(slots[partner].sofa)
+            let forward = SIMD2(sin(mine.yaw), cos(mine.yaw))
+            let right = SIMD2(-forward.y, forward.x)
+            let toward = SIMD2(theirs.position.x - mine.position.x, theirs.position.z - mine.position.z)
+            actor.talkClip = simd_dot(toward, right) >= 0 ? "talk_right" : "talk_left"
+        }
+    }
+
+    /// Solo charla quien está sentado en su sofá.
+    private func onSofa(_ index: Int) -> Bool { stage.actors[safe: index]?.isOnSofa == true }
+
+    private var canPlayChessAgainstMe: Bool {
+        stage.chess != nil && !chess.isActive && !cards.isActive && !store.lightModeEnabled
+    }
+
+    /// Las cartas necesitan la mesa y, al menos, a este personaje libre (para el blackjack; el Mentiroso y el póker piden otro más).
+    private func canPlayCards(_ index: Int) -> Bool {
+        stage.chess != nil && !chess.isActive && !cards.isActive && !talk.isActive && !store.lightModeEnabled && slots.indices.contains(index) && isFree(slots[index])
+    }
+
     private func canPlayChess(_ index: Int) -> Bool {
-        stage.chess != nil && !chess.isActive && !store.lightModeEnabled && slots.indices.contains(where: { $0 != index && isFree(slots[$0]) })
+        stage.chess != nil && !chess.isActive && !cards.isActive && !store.lightModeEnabled && slots.indices.contains(where: { $0 != index && isFree(slots[$0]) })
     }
 
     /// El último proveedor y modelo elegidos; si nunca se eligió ninguno, el proveedor del último agente nuevo con su modelo por defecto.
@@ -536,7 +657,7 @@ struct OfficeInterfaceView<Content: View>: View {
         guard slots.indices.contains(index) else { return }
         let slot = slots[index]
         if assignments.conversation(in: slot.id) != id, let chat = store.conversations.first(where: { $0.id == id }) {
-            assignments.append(OfficeLine(role: .note, text: "\(slot.name) retoma «\(chat.title)» con \(chat.provider.title)."), slot: slot.id)
+            assignments.append(OfficeLine(role: .note, text: "\(name(of: slot)) retoma «\(chat.title)» con \(chat.provider.title)."), slot: slot.id)
         }
         assignments.assign(id, to: slot.id)
         openChat(slot: index)
@@ -672,7 +793,7 @@ struct OfficeInterfaceView<Content: View>: View {
                 ZStack {
                     ForEach(Array(slots.enumerated()), id: \.element.id) { index, slot in
                         let conversation = conversation(in: slot)
-                        let said = chess.involves(index) ? chess.said[index] : (assignments.working.contains(slot.id) ? narration[slot.id] : nil)
+                        let said = chess.involves(index) ? chess.said[index] : cards.involves(index) ? cards.said[index] : talk.involves(index) ? talk.said[index] : (assignments.working.contains(slot.id) ? narration[slot.id] : nil)
                         if conversation != nil || said != nil, stage.actors.indices.contains(index),
                            let point = camera.projectCurrent(stage.actors[index].headPosition, in: sceneSize) {
                             VStack(spacing: 6) {
@@ -685,7 +806,7 @@ struct OfficeInterfaceView<Content: View>: View {
                                 }
                             }
                             .modifier(OfficeAnchor(point: point, lift: 12,
-                                                   size: CGSize(width: said == nil ? 190 : 260, height: (said == nil ? 0 : 80) + (conversation == nil ? 0 : 34)),
+                                                   size: CGSize(width: said == nil ? 190 : 260, height: (said == nil ? 0 : 104) + (conversation == nil ? 0 : 34)),
                                                    bounds: sceneSize))
                         }
                     }
@@ -706,23 +827,164 @@ struct OfficeInterfaceView<Content: View>: View {
                             onPick: { chooseAvatar($0, slot: index) }, onClose: { choosingAvatar = nil }
                         )
                     }
+                    if let index = settingUpCards, slots.indices.contains(index), stage.actors.indices.contains(index),
+                       let chest = camera.projectCurrent(stage.actors[index].chestPosition, in: sceneSize) {
+                        OfficeCardSetupCard(
+                            me: name(of: slots[index]), anchor: chest, bounds: sceneSize,
+                            free: slots.indices.filter { isFree(slots[$0]) }.count,
+                            onStart: { startCards($0, with: index) },
+                            onClose: { settingUpCards = nil }
+                        )
+                    }
                     if let index = settingUpChess, slots.indices.contains(index), stage.actors.indices.contains(index),
                        let chest = camera.projectCurrent(stage.actors[index].chestPosition, in: sceneSize) {
                         OfficeChessSetupCard(
-                            me: .init(id: index, name: slots[index].name),
-                            rivals: slots.indices.filter { $0 != index && isFree(slots[$0]) }.map { .init(id: $0, name: slots[$0].name) },
+                            me: .init(id: index, name: name(of: slots[index])),
+                            rivals: slots.indices.filter { $0 != index && isFree(slots[$0]) }.map { .init(id: $0, name: name(of: slots[$0])) },
                             anchor: chest, bounds: sceneSize,
+                            versusMe: versusSetup,
                             onStart: { white, black in
                                 settingUpChess = nil
+                                let names = Dictionary(uniqueKeysWithValues: slots.enumerated().map { ($0.offset, name(of: $0.element)) })
+                                if versusSetup {
+                                    // El lado con puesto -1 es el usuario.
+                                    let (character, color) = white.slot >= 0 ? (white, ChessColor.white) : (black, ChessColor.black)
+                                    chess.start(against: .init(slot: character.slot, master: character.master, color: color), as: Self.playerName,
+                                                stage: stage, names: names, lightMode: { store.lightModeEnabled })
+                                    return
+                                }
                                 chess.start(white: .init(slot: white.slot, master: white.master, color: .white),
                                             black: .init(slot: black.slot, master: black.master, color: .black),
-                                            stage: stage, lightMode: { store.lightModeEnabled })
+                                            stage: stage, names: Dictionary(uniqueKeysWithValues: slots.enumerated().map { ($0.offset, name(of: $0.element)) }),
+                                            lightMode: { store.lightModeEnabled })
                             },
                             onClose: { settingUpChess = nil }
                         )
                     }
                 }
             }
+        }
+    }
+
+    // MARK: - Cartas
+
+    /// Sienta a la mesa al personaje pulsado y, si el juego lo pide, a otro libre; el usuario se les une cuando están sentados.
+    private func startCards(_ game: OfficeCardSession.Game, with index: Int) {
+        settingUpCards = nil
+        let others = slots.indices.filter { $0 != index && isFree(slots[$0]) }
+        let chosen = [index] + others.prefix(game.opponents - 1)
+        guard chosen.count == game.opponents else { return }
+        let people = chosen.map { OfficeCardSession.Person(slot: $0, name: name(of: slots[$0]), profile: persona(of: slots[$0])?.profile) }
+        cards.start(game, with: people, as: Self.playerName, stage: stage, lightMode: { store.lightModeEnabled })
+    }
+
+    /// Sentado a la mesa de cartas, la cámara pasa a su silla (puede girar y acercarse); al levantarse, vuelve a la sala.
+    private func moveCameraToCardSeat(_ seated: Bool) {
+        guard seated else {
+            camera.leaveFocus()
+            return
+        }
+        actions = nil
+        choosingAvatar = nil
+        closeDock()
+        if viewing != nil { leaveScreen() }
+        if let pose = stage.chess?.tablePose(for: "white") { camera.seat(pose) }
+    }
+
+    @ViewBuilder private var cardHUD: some View {
+        if cards.humanSeated, cards.phase != .idle, viewing == nil { OfficeCardHUD(session: cards) }
+    }
+
+    /// La mano (en el Mentiroso) y las decisiones del usuario.
+    @ViewBuilder private var cardControls: some View {
+        if cards.humanSeated, cards.phase != .idle, viewing == nil {
+            VStack(spacing: 10) {
+                if cards.game == .liar { OfficeCardHand(session: cards) }
+                OfficeCardActions(session: cards)
+            }
+            .padding(.bottom, 18)
+        }
+    }
+
+    @ViewBuilder private var cardDock: some View {
+        if cards.humanSeated, cards.phase != .idle, viewing == nil {
+            OfficeCardDock(session: cards,
+                           onStandUp: { OfficeSound.back.play(); cards.standUp() },
+                           onResetView: {
+                               OfficeSound.select.play()
+                               if let pose = stage.chess?.tablePose(for: "white") { camera.seat(pose) }
+                           },
+                           onQuit: { OfficeSound.back.play(); cards.stop() })
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+        }
+    }
+
+    /// Levantado de la mesa de cartas con la partida en marcha: un botón para volver (avisa si le toca decidir).
+    @ViewBuilder private var cardReturn: some View {
+        if cards.game != nil, !cards.humanSeated, cards.phase == .playing || cards.phase == .finished, viewing == nil {
+            OfficeTableReturnButton(title: "Volver a la mesa", subtitle: cards.prompt != nil ? "Te toca decidir" : (cards.hud.first ?? "La partida sigue"),
+                                    hot: cards.prompt != nil) {
+                OfficeSound.select.play()
+                cards.sit()
+            }
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
+    }
+
+    // MARK: - Ajedrez contra el usuario
+
+    /// Cómo se llama quien juega: el nombre de su cuenta del Mac.
+    private static var playerName: String {
+        NSFullUserName().split(separator: " ").first.map(String.init) ?? "Tú"
+    }
+
+    /// Sentado a la mesa, la cámara pasa a su silla; al levantarse, vuelve a la sala donde estuviera.
+    private func moveCameraToChessSeat(_ seated: Bool) {
+        guard seated else {
+            camera.leaveFocus()
+            return
+        }
+        actions = nil
+        choosingAvatar = nil
+        closeDock()
+        if viewing != nil { leaveScreen() }
+        if let color = chess.human, let pose = stage.chess?.cameraPose(for: color) { camera.seat(pose) }
+    }
+
+    private var chessOpponent: String {
+        chess.players.first.flatMap { slots.indices.contains($0.slot) ? name(of: slots[$0.slot]) : nil } ?? "Tu rival"
+    }
+
+    /// Las casillas del tablero, para mover las piezas con el ratón.
+    @ViewBuilder private var chessBoard: some View {
+        if chess.humanSeated, viewing == nil, let set = stage.chess {
+            OfficeChessBoardOverlay(game: chess, set: set, camera: camera, size: sceneSize, interval: graphics.quality.hudInterval)
+        }
+    }
+
+    /// Los controles de la partida (botón de la charla, levantarse, recolocar la vista y abandonar), mientras el usuario está sentado.
+    @ViewBuilder private var chessPanel: some View {
+        if chess.humanSeated, chess.phase != .idle, viewing == nil {
+            OfficeChessDock(game: chess, opponent: chessOpponent,
+                            onStandUp: { OfficeSound.back.play(); chess.standUp(stage: stage) },
+                            onResetView: {
+                                OfficeSound.select.play()
+                                if let color = chess.human, let pose = stage.chess?.cameraPose(for: color) { camera.seat(pose) }
+                            },
+                            onQuit: { OfficeSound.back.play(); chess.stop(stage: stage) },
+                            onSend: { chess.send($0, lightMode: { store.lightModeEnabled }) })
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+        }
+    }
+
+    /// Levantado de la mesa con la partida en marcha: un botón para volver a sentarse (avisa si le toca mover).
+    @ViewBuilder private var chessReturn: some View {
+        if chess.human != nil, !chess.humanSeated, chess.phase == .playing || chess.phase == .finishing, viewing == nil {
+            OfficeChessReturnButton(game: chess, opponent: chessOpponent) {
+                OfficeSound.select.play()
+                chess.sit(stage: stage)
+            }
+            .transition(.move(edge: .top).combined(with: .opacity))
         }
     }
 
@@ -750,7 +1012,7 @@ struct OfficeInterfaceView<Content: View>: View {
                     Label("Volver a la oficina", systemImage: "chevron.left")
                 }
                 .help("Volver a la oficina")
-                Text(slot.name).font(.office(12.5, .bold)).foregroundStyle(.white.opacity(0.6)).padding(.trailing, 8)
+                Text(name(of: slot)).font(.office(12.5, .bold)).foregroundStyle(.white.opacity(0.6)).padding(.trailing, 8)
             }
             .buttonStyle(OfficeGlassButtonStyle())
             .padding(5)
@@ -778,7 +1040,7 @@ struct OfficeInterfaceView<Content: View>: View {
             let conversation = conversation(in: slot)
             let status = conversation.map { store.statuses[$0.id] ?? .idle }
             OfficeColleagueView(
-                name: slot.name,
+                name: name(of: slot),
                 tool: tool(for: slot),
                 status: status,
                 lines: assignments.chat(in: slot.id),
@@ -963,25 +1225,69 @@ private struct OfficeModelBubble: View {
     }
 }
 
-/// Lo que cuenta el agente, en un bocadillo blanco sobre su personaje.
+/// Lo que cuenta el agente, en un bocadillo blanco sobre su personaje. Si no cabe en cuatro líneas, «Ver completo» lo abre entero.
 private struct OfficeSpeechBubble: View {
     let text: String
+    @State private var shownHeight: CGFloat = 0
+    @State private var fullHeight: CGFloat = 0
+    @State private var showingAll = false
+
+    private static let ink = Color(red: 0.13, green: 0.12, blue: 0.16)
+    private var truncated: Bool { fullHeight > shownHeight + 1 }
 
     var body: some View {
         VStack(spacing: -1) {
-            Text(text)
-                .font(.office(12, .medium))
-                .foregroundStyle(Color(red: 0.13, green: 0.12, blue: 0.16))
-                .multilineTextAlignment(.leading)
-                .lineLimit(4)
-                .frame(maxWidth: 240, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 12).padding(.vertical, 8)
-                .background(.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            VStack(alignment: .leading, spacing: 5) {
+                label
+                    .lineLimit(4)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { shownHeight = $0 }
+                    // El mismo texto sin límite de líneas, invisible, para saber si se ha cortado.
+                    .background(alignment: .topLeading) {
+                        label
+                            .lineLimit(nil)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .hidden()
+                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { fullHeight = $0 }
+                    }
+                if truncated {
+                    Button { showingAll = true } label: {
+                        Text("Ver completo")
+                            .font(.office(11, .bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 9).padding(.vertical, 3)
+                            .background(OfficeOrange.gradient, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .popover(isPresented: $showingAll, arrowEdge: .top) {
+                        ScrollView {
+                            Text(text)
+                                .font(.office(13, .medium))
+                                .multilineTextAlignment(.leading)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(16)
+                        }
+                        .frame(width: 380)
+                        .frame(maxHeight: 420)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             OfficeTail().fill(.white).frame(width: 14, height: 8)
         }
         .shadow(color: .black.opacity(0.35), radius: 8, y: 3)
-        .help(text)
+        .help(truncated ? "" : text)
+    }
+
+    private var label: some View {
+        Text(text)
+            .font(.office(12, .medium))
+            .foregroundStyle(Self.ink)
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: 240, alignment: .leading)
     }
 }
 

@@ -13,6 +13,8 @@ struct OfficeChessSetupCard: View {
     let rivals: [Candidate]
     let anchor: CGPoint
     let bounds: CGSize
+    /// Si el usuario es quien juega contra `me`: solo se elige el maestro del personaje y el color con el que juega el usuario.
+    var versusMe = false
     let onStart: (_ white: (slot: Int, master: ChessMaster), _ black: (slot: Int, master: ChessMaster)) -> Void
     let onClose: () -> Void
 
@@ -22,7 +24,7 @@ struct OfficeChessSetupCard: View {
     @State private var shown = false
 
     private let ink = Color(red: 0.11, green: 0.25, blue: 0.46)
-    private let size = CGSize(width: 340, height: 262)
+    private var size: CGSize { CGSize(width: 340, height: versusMe ? 238 : 262) }
 
     var body: some View {
         let x = min(max(anchor.x, size.width / 2 + 12), max(size.width / 2 + 12, bounds.width - size.width / 2 - 12))
@@ -52,6 +54,56 @@ struct OfficeChessSetupCard: View {
                 }
                 .buttonStyle(.plain)
             }
+            if versusMe {
+                versusRows
+            } else {
+                colleagueRows
+            }
+            Spacer(minLength: 0)
+            Button(action: start) {
+                Text("Empezar partida").font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
+                    .frame(maxWidth: .infinity).padding(.vertical, 9)
+                    .background(LinearGradient(colors: [Color(red: 1.0, green: 0.66, blue: 0.27), Color(red: 0.96, green: 0.45, blue: 0.09)],
+                                               startPoint: .top, endPoint: .bottom), in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(!versusMe && rival == nil)
+            .opacity(!versusMe && rival == nil ? 0.5 : 1)
+        }
+        .padding(14)
+        .background(.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color(red: 0.74, green: 0.8, blue: 0.88), lineWidth: 1))
+        .shadow(color: .black.opacity(0.32), radius: 10, y: 4)
+    }
+
+    /// Contra el usuario: él con el color que elija y el personaje con el maestro que interpreta.
+    private var versusRows: some View {
+        VStack(spacing: 8) {
+            row(color: meIsWhite ? "Blancas" : "Negras", symbol: meIsWhite ? "circle" : "circle.fill") {
+                Text(me.name).font(.system(size: 13, weight: .bold)).foregroundStyle(ink)
+            } master: {
+                masterMenu(for: meIsWhite ? 0 : 1)
+            }
+            Button {
+                OfficeSound.select.play()
+                meIsWhite.toggle()
+            } label: {
+                Label("Cambiar colores", systemImage: "arrow.up.arrow.down").font(.system(size: 11, weight: .semibold)).foregroundStyle(ink.opacity(0.75))
+            }
+            .buttonStyle(.plain)
+            HStack(spacing: 6) {
+                Image(systemName: meIsWhite ? "circle.fill" : "circle").font(.system(size: 10, weight: .bold)).foregroundStyle(ink.opacity(0.7))
+                Text(meIsWhite ? "Negras" : "Blancas").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(ink.opacity(0.6))
+                Text("Tú").font(.system(size: 13, weight: .bold)).foregroundStyle(ink)
+                Spacer(minLength: 0)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(red: 0.93, green: 0.96, blue: 1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+    }
+
+    private var colleagueRows: some View {
             VStack(spacing: 8) {
                 row(color: meIsWhite ? "Blancas" : "Negras", symbol: meIsWhite ? "circle" : "circle.fill") {
                     Text(me.name).font(.system(size: 13, weight: .bold)).foregroundStyle(ink)
@@ -71,21 +123,6 @@ struct OfficeChessSetupCard: View {
                     masterMenu(for: meIsWhite ? 1 : 0)
                 }
             }
-            Spacer(minLength: 0)
-            Button(action: start) {
-                Text("Empezar partida").font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
-                    .frame(maxWidth: .infinity).padding(.vertical, 9)
-                    .background(LinearGradient(colors: [Color(red: 1.0, green: 0.66, blue: 0.27), Color(red: 0.96, green: 0.45, blue: 0.09)],
-                                               startPoint: .top, endPoint: .bottom), in: Capsule())
-            }
-            .buttonStyle(.plain)
-            .disabled(rival == nil)
-            .opacity(rival == nil ? 0.5 : 1)
-        }
-        .padding(14)
-        .background(.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color(red: 0.74, green: 0.8, blue: 0.88), lineWidth: 1))
-        .shadow(color: .black.opacity(0.32), radius: 10, y: 4)
     }
 
     private func row<Who: View, Master: View>(color: String, symbol: String, @ViewBuilder who: () -> Who, @ViewBuilder master: () -> Master) -> some View {
@@ -142,6 +179,14 @@ struct OfficeChessSetupCard: View {
     }
 
     private func start() {
+        if versusMe {
+            // `meIsWhite` es el color del personaje; el otro lado es el usuario (puesto -1, sin maestro propio).
+            OfficeSound.select.play()
+            let mine = (slot: me.id, master: meIsWhite ? masters.0 : masters.1)
+            let yours = (slot: -1, master: mine.master)
+            if meIsWhite { onStart(mine, yours) } else { onStart(yours, mine) }
+            return
+        }
         guard let rival else { return }
         OfficeSound.select.play()
         let mine = (slot: me.id, master: meIsWhite ? masters.0 : masters.1)

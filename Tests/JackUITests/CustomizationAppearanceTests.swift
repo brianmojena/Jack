@@ -117,8 +117,9 @@ final class CustomizationAppearanceTests: XCTestCase {
         host.cacheDisplay(in: host.bounds, to: bitmap)
         let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
         try png.write(to: URL(fileURLWithPath: path), options: .atomic)
-        XCTAssertEqual(bitmap.pixelsWide, Int(size.width), "The snapshot should preserve the editor's 720-point width")
-        XCTAssertEqual(bitmap.pixelsHigh, Int(size.height), "The snapshot should preserve the editor's 620-point height")
+        let scale = window.backingScaleFactor
+        XCTAssertEqual(bitmap.pixelsWide, Int((size.width * scale).rounded()), "The snapshot should preserve the editor's 720-point width at the window's backing scale")
+        XCTAssertEqual(bitmap.pixelsHigh, Int((size.height * scale).rounded()), "The snapshot should preserve the editor's 620-point height at the window's backing scale")
         XCTAssertGreaterThan(nonBackgroundPixelCount(bitmap), 200, "The snapshot should contain rasterized editor controls and text, not only a background")
     }
 

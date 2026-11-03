@@ -24,6 +24,7 @@ final class AgentBridgeTests: XCTestCase {
         let archive = ChatArchive(directory: folder)
         var drivers: [DelegatingDriver] = []
         let store = ChatStore(archive: archive, preferences: nil, driverFactory: { _ in let driver = DelegatingDriver(); drivers.append(driver); return driver })
+        store.gitSnapshotCaptureOverride = { _ in nil }
         defer { store.shutdown(); store.bridge.stop(); try? FileManager.default.removeItem(at: folder) }
         // One slot: the sub-agent can only run because a waiting orchestrator gives up its slot.
         store.setConcurrency(1)
@@ -54,7 +55,7 @@ final class AgentBridgeTests: XCTestCase {
         XCTAssertEqual(store.statuses[child.id], .queued)
 
         async let waited = callTool(delegation, "wait_for_agents", ["timeout_seconds": 30])
-        try await until { drivers.count == 2 }
+        try await until { drivers.count == 2 && drivers[1].callback != nil }
         XCTAssertTrue(drivers[1].prompt.hasPrefix("Write the tests"), drivers[1].prompt)
         XCTAssertTrue(drivers[1].prompt.hasSuffix(ChatDelegation.subAgentGuidance), "Every delegated task carries Jack's shared-folder notes")
         let childDelegation = try XCTUnwrap(drivers[1].delegation, "Sub-agents share the notebook in Normal mode")

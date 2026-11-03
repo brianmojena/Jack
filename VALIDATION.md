@@ -1,3 +1,11 @@
+## Release 0.3.63 — 3 de noviembre de 2026
+
+- La suite final terminó con código 0: **512 pruebas XCTest y 5 pruebas Swift Testing, sin fallos**. Registro: `/private/tmp/jack-0.3.63-tests-publish.log`.
+- La compilación Release terminó con `BUILD SUCCEEDED`. `codesign --verify --deep --strict` y `/private/tmp/jack-check-release-credentials.py` pasaron; la comprobación de credenciales no expuso la clave.
+- ZIP íntegro: `build/release/Jack-0.3.63.zip`. SHA-256: `0695c2c58b43b6ebbdbd18742218f6cedd31ad67a6dcc8f6d872986f864878ea`.
+- Las funciones nuevas de esta versión están disponibles en modo Normal; Light conserva su comportamiento anterior. Al salir de la Oficina 3D o entrar en Light, `OfficeInterfaceView` detiene las partidas de ajedrez y cartas y la charla del sofá.
+- No se hicieron pruebas manuales de las escenas 3D ni llamadas reales a servicios cloud.
+
 ## Personalización en Normal — 3 de noviembre de 2026
 
 Implementación de personalización declarativa en modo Normal; todo el código de esta funcionalidad fue escrito por Luna.

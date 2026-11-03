@@ -51,15 +51,25 @@ final class ClaudeIntegrationTests: XCTestCase {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("jack-live-tests-" + UUID().uuidString)
         var drivers: [LiveDriver] = []
         let store = ChatStore(archive: ChatArchive(directory: folder), preferences: nil, driverFactory: { _ in let driver = LiveDriver(); drivers.append(driver); return driver })
+        store.gitSnapshotCaptureOverride = { _ in nil }
         return (store, folder, { drivers })
     }
     private func settle() async { for _ in 0..<5 { await Task.yield() }; try? await Task.sleep(nanoseconds: 80_000_000) }
+    @MainActor private func waitFor(_ condition: @MainActor () -> Bool, _ description: String) async {
+        for _ in 0..<200 {
+            if condition() { return }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        if condition() { return }
+        XCTFail("Timed out waiting for \(description)")
+    }
 
     @MainActor func testKeptAliveDriverIsReusedTakesMessagesMidTurnAndInterruptsInsteadOfCancelling() async throws {
         let (store, folder, drivers) = fixture()
         defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
         let id = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .claude))
-        store.send("primero"); await settle()
+        store.send("primero")
+        await waitFor({ drivers().first?.callback != nil }, "first Claude turn")
         let driver = try XCTUnwrap(drivers().first)
         XCTAssertTrue(store.canSend(to: id))
         store.send("y además esto", to: id)
@@ -68,7 +78,8 @@ final class ClaudeIntegrationTests: XCTestCase {
         XCTAssertEqual(store.waiting[id]?.first?.sent, true)
         XCTAssertEqual(store.selectedConversation?.messages.map(\.text), ["primero"], "it waits until the agent reads it")
         driver.callback?(.text(id: "a1", text: "trabajando", replace: true))
-        driver.read(); await settle()
+        driver.read()
+        await waitFor({ store.waiting[id] == nil && store.selectedConversation?.messages.map(\.text) == ["primero", "trabajando", "y además esto"] }, "delivered waiting message")
         XCTAssertNil(store.waiting[id])
         XCTAssertEqual(store.selectedConversation?.messages.map(\.text), ["primero", "trabajando", "y además esto"])
 
@@ -80,13 +91,16 @@ final class ClaudeIntegrationTests: XCTestCase {
         driver.callback?(.approval(ChatApproval(id: "late", title: "Late permission", detail: "")))
         XCTAssertEqual(store.statuses[id], .idle)
         XCTAssertTrue(store.approvals[id]?.isEmpty != false)
-        driver.callback?(.completed); driver.finish(); await settle()
+        driver.callback?(.completed); driver.finish()
+        await waitFor({ store.statuses[id] == .idle && !store.isBusy(id) }, "interrupted Claude turn cleanup")
         XCTAssertEqual(store.statuses[id], .idle)
 
-        store.send("segundo"); await settle()
+        store.send("segundo")
+        await waitFor({ driver.runs == 2 && driver.continuation != nil }, "reused Claude driver")
         XCTAssertEqual(drivers().count, 1, "the same process serves the next turn")
         XCTAssertEqual(driver.runs, 2)
-        driver.finish(); await settle()
+        driver.finish()
+        await waitFor({ store.statuses[id] == .idle }, "second Claude turn cleanup")
     }
 
     @MainActor func testStoppingLiveAgentBeforeStartupDoesNotLaunchIt() async throws {
@@ -156,16 +170,20 @@ final class ClaudeIntegrationTests: XCTestCase {
         let store = ChatStore(archive: ChatArchive(directory: folder), preferences: nil, driverFactory: { _ in
             TurnDriver(started: { prompts.append($0) }, continuation: { finish = $0 })
         })
+        store.gitSnapshotCaptureOverride = { _ in nil }
         defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
         let id = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .codex))
-        store.send("primero"); await settle()
+        store.send("primero")
+        await waitFor({ prompts == ["primero"] && finish != nil }, "first queued-message turn")
         store.send("a", to: id); store.send("b", to: id)
         XCTAssertEqual(store.waiting[id]?.map(\.sent), [false, false])
-        finish?.resume(); finish = nil; await settle()
+        finish?.resume(); finish = nil
+        await waitFor({ prompts == ["primero", "a\n\nb"] && finish != nil }, "batched follow-up turn")
         XCTAssertEqual(prompts, ["primero", "a\n\nb"], "held messages go out together as the next turn")
         XCTAssertNil(store.waiting[id])
         XCTAssertEqual(store.selectedConversation?.messages.last?.text, "a\n\nb")
-        finish?.resume(); await settle()
+        finish?.resume()
+        await waitFor({ store.statuses[id] == .idle }, "follow-up turn cleanup")
     }
 
     @MainActor func testAgentStartsTurnByItselfAndIdleEventsUpdateTheTranscript() async throws {
@@ -194,9 +212,11 @@ final class ClaudeIntegrationTests: XCTestCase {
         let (store, folder, drivers) = fixture()
         defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
         let id = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .claude))
-        store.send("primero"); await settle()
+        store.send("primero")
+        await waitFor({ drivers().first?.callback != nil }, "Claude driver callback")
         let driver = try XCTUnwrap(drivers().first)
-        driver.callback?(.completed); driver.finish(); await settle()
+        driver.callback?(.completed); driver.finish()
+        await waitFor({ store.statuses[id] == .idle && !store.isBusy(id) }, "completed Claude turn")
         driver.idle?(.approvalResolved("old"))
         XCTAssertEqual(store.statuses[id], .idle)
         XCTAssertFalse(store.isBusy(id))
@@ -249,7 +269,8 @@ final class ClaudeIntegrationTests: XCTestCase {
         let id = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .claude))
         // Exercise the Manual → Accept edits transition independently of the new-agent default.
         store.updateMode(id: id, mode: "manual", supported: ChatRunMode.choices(for: .claude))
-        store.send("edita algo"); await settle()
+        store.send("edita algo")
+        await waitFor({ drivers().first?.callback != nil && store.statuses[id] == .running }, "Claude driver callback")
         let driver = try XCTUnwrap(drivers().first)
         store.cycleMode(id)
         XCTAssertEqual(driver.modes, ["acceptEdits"])
@@ -258,13 +279,16 @@ final class ClaudeIntegrationTests: XCTestCase {
         XCTAssertEqual(store.selectedConversation?.mode, "plan", "the agent's own mode changes reach the picker")
 
         driver.callback?(.approval(ChatApproval(id: "p1", title: "Ejecutar un comando", detail: "{}")))
+        await waitFor({ store.statuses[id] == .waiting && store.approvals[id]?.contains(where: { $0.id == "p1" }) == true }, "pending permission")
         XCTAssertEqual(store.statuses[id], .waiting)
-        store.send("no, usa make", to: id); await settle()
+        store.send("no, usa make", to: id)
+        await waitFor({ driver.responses.contains(where: { $0.0 == "p1" }) }, "permission denial response")
         XCTAssertEqual(driver.responses.first?.0, "p1")
         XCTAssertEqual(driver.responses.first?.1, "deny")
         XCTAssertEqual(driver.responses.first?.2, "no, usa make")
         XCTAssertTrue(driver.injected.isEmpty)
-        driver.finish(); await settle()
+        driver.finish()
+        await waitFor({ store.statuses[id] == .idle }, "completed Claude turn")
     }
 
     @MainActor func testFailedCommandReadIsReportedAndRetriedInsteadOfRememberedAsEmpty() async throws {

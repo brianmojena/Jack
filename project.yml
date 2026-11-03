@@ -25,6 +25,9 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.jack.core
         GENERATE_INFOPLIST_FILE: YES
+      configs:
+        Release:
+          EXCLUDED_SOURCE_FILE_NAMES: VoiceKey.swift
   Jack:
     type: application
     platform: macOS
@@ -35,6 +38,9 @@ targets:
         buildPhase: resources
       # The 3D office: rooms and characters exported from Blender (scripts/office-assets.sh).
       - path: Resources/Office/Runtime
+        buildPhase: resources
+      # Card art (back, jack, queen, king, joker), prepared by scripts/office_cards_art.py.
+      - path: Resources/Office/Cards
         buildPhase: resources
     dependencies:
       - target: JackCore

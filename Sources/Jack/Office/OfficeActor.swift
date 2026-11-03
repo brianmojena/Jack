@@ -13,6 +13,10 @@ enum OfficeCommand: Equatable {
     case desk(waiting: Bool)
     /// Sentado a la mesa de ajedrez, en el asiento indicado.
     case chess(OfficeChessSeat)
+    /// A ducharse, como en Los Sims; al terminar vuelve a su sofá (`OfficeActor.onShowerDone`).
+    case shower
+    /// A tomarse un café a la mesita; al terminar vuelve a su sofá (`OfficeActor.onCoffeeDone`).
+    case coffee
 }
 
 /// Qué hace un jugador sentado a la mesa de ajedrez.
@@ -33,7 +37,7 @@ enum OfficeChessMood: Equatable {
 /// Un personaje de la oficina: un esqueleto de Mixamo con todos sus clips en una sola línea de tiempo,
 /// que se recorta por clip, y los recorridos calculados en Blender para ir del sofá al escritorio y volver.
 @MainActor final class OfficeActor {
-    private enum Phase { case sofa, toDesk, desk, toSofa, toChess, chess, fromChess }
+    private enum Phase { case sofa, toDesk, desk, toSofa, toChess, chess, fromChess, toShower, showering, fromShower, toCoffee, drinking, fromCoffee }
 
     let index: Int
     let slot: OfficeLayout.Slot
@@ -62,6 +66,16 @@ enum OfficeChessMood: Equatable {
     private let deskPose: OfficePose
     private let pulledChair: Float
 
+    /// Mientras charla en el sofá, el clip de hablar que le toca: `talk_right` si tiene al compañero a su derecha, `talk_left` si a
+    /// su izquierda. Sin charla, `nil`.
+    var talkClip: String?
+
+    /// El suelo que ocupan los muebles (x, z de RealityKit) y los límites de la sala, para que al caminar los rodee.
+    var walkObstacles: [OfficeChessRoute.Obstacle] = []
+    var walkBounds: OfficeChessRoute.Rect?
+    /// Los recorridos al escritorio y de vuelta, con el camino calculado entre los muebles (si no, los de Blender).
+    private var deskRoutes: (toDesk: OfficeRoutePath, toSofa: OfficeRoutePath)?
+
     /// La mesa de ajedrez, si la sala la tiene.
     var chess: OfficeChessSet?
     /// Los recorridos del sofá a la mesa y de vuelta, calculados al sentarse.
@@ -73,8 +87,33 @@ enum OfficeChessMood: Equatable {
     private var moodTime = 0.0
     /// Ya está sentado a la mesa y listo para jugar.
     var isSeatedAtChess: Bool { phase == .chess }
+    /// Está caminando o haciendo algo más que teclear en su escritorio o estar sentado (ducha, café, jugada de ajedrez).
+    var isActive: Bool {
+        switch phase {
+        case .sofa, .desk: opacity != (concealed ? 0 : 1)  // solo si se está desvaneciendo
+        case .chess: chessMood != .waiting && chessMood != .thinking
+        default: true
+        }
+    }
     /// Ha vuelto a su sofá (o nunca salió de él).
     var isOnSofa: Bool { phase == .sofa }
+
+    /// La ducha de la sala, si la tiene.
+    var shower: OfficeShower?
+    /// Se llama al volver de la ducha al sofá (o si no se pudo ir).
+    var onShowerDone: (() -> Void)?
+    private var showerRoute: (toShower: OfficeRoutePath, openAt: Int, toSofa: OfficeRoutePath, closeAt: Int)?
+    private var showerTime = 0.0
+    private var mosaic: (real: Entity, reflected: Entity?)?
+
+    /// La mesita del café, si la sala la tiene.
+    var coffee: OfficeCoffeeBar?
+    /// Se llama al volver del café al sofá (o si no se pudo ir).
+    var onCoffeeDone: (() -> Void)?
+    private var coffeeRoute: (toBar: OfficeRoutePath, toSofa: OfficeRoutePath)?
+    private var drinkTime = 0.0
+    /// La articulación de la mano izquierda: el modelo con esqueleto y los índices de la cadena desde la raíz.
+    private var leftHandJoint: (model: ModelEntity, chain: [Int])?
 
     /// Con `true` el personaje y su silla se desvanecen, para que no tapen su pantalla cuando la cámara se pone delante.
     var concealed = false
@@ -130,6 +169,7 @@ enum OfficeChessMood: Equatable {
         timeline = newModel.availableAnimations.max { $0.definition.duration < $1.definition.duration }
         // Los clips y reproductores eran del modelo anterior: se vuelven a crear con el siguiente fotograma.
         resources = [:]
+        leftHandJoint = nil
         controller = nil
         mirrorController = nil
         playing = nil
@@ -179,23 +219,30 @@ enum OfficeChessMood: Equatable {
             apply(sofaPose)
             setChair(offset: pulledChair)
             if case .sofa(let failed) = command {
-                play(failed ? "no" : "idle_sit")
-                updateFreeze(shouldFreeze: freezeIdle && !failed, deltaTime: deltaTime)
+                play(failed ? "no" : (talkClip ?? "idle_sit"))
+                updateFreeze(shouldFreeze: freezeIdle && !failed && talkClip == nil, deltaTime: deltaTime)
             }
-            if case .desk = command { begin(.toDesk) }
+            if case .desk = command { prepareDeskRoutes(); begin(.toDesk) }
             if case .chess(let seat) = command, startChess(seat) { begin(.toChess) }
+            if case .shower = command {
+                if startShower() { begin(.toShower) } else { onShowerDone?() }
+            }
+            if case .coffee = command {
+                if startCoffee() { begin(.toCoffee) } else { onCoffeeDone?() }
+            }
         case .toDesk:
-            if advance(clips: slot.toDesk.clips, poses: toDesk, deltaTime: deltaTime) { phase = .desk }
+            if advance(clips: deskRoutes?.toDesk.clips ?? slot.toDesk.clips, poses: deskRoutes?.toDesk.poses ?? toDesk, deltaTime: deltaTime) { phase = .desk }
         case .desk:
             apply(deskPose)
             setChair(offset: deskPose.chairOffset)
             if case .desk(let waiting) = command {
                 play("type", speed: waiting ? 0.25 : 1)
             } else {
+                prepareDeskRoutes()
                 begin(.toSofa)
             }
         case .toSofa:
-            if advance(clips: slot.toSofa.clips, poses: toSofa, deltaTime: deltaTime) { phase = .sofa }
+            if advance(clips: deskRoutes?.toSofa.clips ?? slot.toSofa.clips, poses: deskRoutes?.toSofa.poses ?? toSofa, deltaTime: deltaTime) { phase = .sofa }
         case .toChess:
             guard let route = chessRoute else { phase = .sofa; break }
             if advance(clips: route.toSeat.clips, poses: route.toSeat.poses, deltaTime: deltaTime) { phase = .chess }
@@ -215,6 +262,57 @@ enum OfficeChessMood: Equatable {
         case .fromChess:
             guard let route = chessRoute else { phase = .sofa; break }
             if advance(clips: route.toSofa.clips, poses: route.toSofa.poses, deltaTime: deltaTime) { phase = .sofa }
+        case .toShower:
+            guard let route = showerRoute, let shower else { finishShower(); break }
+            let before = frame
+            let arrived = advance(clips: route.toShower.clips, poses: route.toShower.poses, deltaTime: deltaTime)
+            if before < Double(route.openAt), frame >= Double(route.openAt) { shower.openDoor() }
+            if arrived {
+                // Dentro: se cierra la puerta, cae el agua y el mosaico lo tapa todo menos la cabeza.
+                shower.closeDoor()
+                shower.setWater(true)
+                setMosaic(true)
+                showerTime = 0
+                phase = .showering
+            }
+        case .showering:
+            guard let shower else { finishShower(); break }
+            apply(away(shower.inside))
+            play("stand_idle")
+            showerTime += deltaTime
+            if showerTime > OfficeShower.duration {
+                shower.setWater(false)
+                setMosaic(false)
+                shower.openDoor()
+                begin(.fromShower)
+            }
+        case .fromShower:
+            guard let route = showerRoute, let shower else { finishShower(); break }
+            let before = frame
+            let arrived = advance(clips: route.toSofa.clips, poses: route.toSofa.poses, deltaTime: deltaTime)
+            if before < Double(route.closeAt), frame >= Double(route.closeAt) { shower.closeDoor() }
+            if arrived { finishShower() }
+        case .toCoffee:
+            guard let route = coffeeRoute, let coffee else { finishCoffee(); break }
+            if advance(clips: route.toBar.clips, poses: route.toBar.poses, deltaTime: deltaTime) {
+                // Delante de la mesita: coge la taza y se la bebe.
+                coffee.takeCup()
+                drinkTime = 0
+                phase = .drinking
+            }
+        case .drinking:
+            guard let coffee else { finishCoffee(); break }
+            apply(away(coffee.spot))
+            play("drink")
+            coffee.follow(hand: leftHand())
+            drinkTime += deltaTime
+            if drinkTime > (layout.clips["drink"]?.duration ?? 8.9) {
+                coffee.returnCup()
+                begin(.fromCoffee)
+            }
+        case .fromCoffee:
+            guard let route = coffeeRoute else { finishCoffee(); break }
+            if advance(clips: route.toSofa.clips, poses: route.toSofa.poses, deltaTime: deltaTime) { finishCoffee() }
         }
     }
 
@@ -282,19 +380,122 @@ enum OfficeChessMood: Equatable {
         setChair(offset: pose.chairOffset)
     }
 
+    /// Calcula, una vez, el camino entre el sofá y el escritorio rodeando los muebles.
+    private func prepareDeskRoutes() {
+        guard deskRoutes == nil, !walkObstacles.isEmpty, let template = layout.slots.first,
+              let toDesk = OfficeChessRoute.toDesk(actor: slot, template: template, obstacles: walkObstacles, bounds: walkBounds),
+              let toSofa = OfficeChessRoute.toSofaFromDesk(actor: slot, template: template, obstacles: walkObstacles, bounds: walkBounds) else { return }
+        deskRoutes = (toDesk, toSofa)
+    }
+
     /// Prepara los recorridos a la mesa; `false` si no se pueden calcular (entonces se queda en el sofá).
     private func startChess(_ seat: OfficeChessSeat) -> Bool {
         guard let chess, let template = layout.slots.first,
-              let toSeat = OfficeChessRoute.toSeat(actor: slot, template: template, seat: seat, table: (chess.tableCenter, chess.tableHalf), chairStart: chess.offset(of: seat.color), fps: layout.fps),
-              let toSofa = OfficeChessRoute.toSofa(actor: slot, template: template, seat: seat, table: (chess.tableCenter, chess.tableHalf), fps: layout.fps) else { return false }
+              let toSeat = OfficeChessRoute.toSeat(actor: slot, template: template, seat: seat, table: (chess.tableCenter, chess.tableHalf), obstacles: walkObstacles, bounds: walkBounds, chairStart: chess.offset(of: seat.id), fps: layout.fps),
+              let toSofa = OfficeChessRoute.toSofa(actor: slot, template: template, seat: seat, table: (chess.tableCenter, chess.tableHalf), obstacles: walkObstacles, bounds: walkBounds, fps: layout.fps) else { return false }
         chessRoute = (toSeat, toSofa, seat)
         chessMood = .waiting
         return true
     }
 
+    /// Prepara los recorridos a la ducha y de vuelta; `false` si no hay ducha, está ocupada o no se pueden calcular.
+    private func startShower() -> Bool {
+        guard let shower, shower.occupant == nil || shower.occupant == index, let template = layout.slots.first,
+              let there = OfficeShowerRoute.toShower(actor: slot, template: template, shower: shower, fps: layout.fps, obstacles: walkObstacles, bounds: walkBounds),
+              let back = OfficeShowerRoute.toSofa(actor: slot, template: template, shower: shower, fps: layout.fps, obstacles: walkObstacles, bounds: walkBounds) else { return false }
+        shower.occupant = index
+        showerRoute = (there.path, there.openAt, back.path, back.closeAt)
+        return true
+    }
+
+    private func finishShower() {
+        setMosaic(false)
+        if let shower, shower.occupant == index {
+            shower.setWater(false)
+            shower.closeDoor()
+            shower.occupant = nil
+        }
+        showerRoute = nil
+        phase = .sofa
+        onShowerDone?()
+    }
+
+    /// Una pose lejos del escritorio, con su silla apartada como está mientras el personaje anda por la sala.
+    private func away(_ pose: OfficePose) -> OfficePose {
+        var pose = pose
+        pose.chairOffset = pulledChair
+        return pose
+    }
+
+    /// Prepara los recorridos a la mesita del café y de vuelta; `false` si no hay mesita, está ocupada o no se pueden calcular.
+    private func startCoffee() -> Bool {
+        guard let coffee, coffee.occupant == nil || coffee.occupant == index, layout.clips["drink"] != nil, let template = layout.slots.first,
+              let there = OfficeCoffeeRoute.toBar(actor: slot, template: template, bar: coffee, obstacles: walkObstacles, bounds: walkBounds),
+              let back = OfficeCoffeeRoute.toSofa(actor: slot, template: template, bar: coffee, obstacles: walkObstacles, bounds: walkBounds) else { return false }
+        coffee.occupant = index
+        coffeeRoute = (there, back)
+        return true
+    }
+
+    private func finishCoffee() {
+        if let coffee, coffee.occupant == index {
+            coffee.returnCup()
+            coffee.occupant = nil
+        }
+        coffeeRoute = nil
+        phase = .sofa
+        onCoffeeDone?()
+    }
+
+    /// Dónde está ahora la mano izquierda (la articulación de la muñeca), en la escena.
+    func leftHand() -> simd_float4x4? {
+        if leftHandJoint == nil { leftHandJoint = Self.joint(endingWith: "LeftHand", in: model) }
+        guard let (skinned, chain) = leftHandJoint else { return nil }
+        let transforms = skinned.jointTransforms
+        var matrix = matrix_identity_float4x4
+        for index in chain where transforms.indices.contains(index) { matrix *= transforms[index].matrix }
+        return skinned.transformMatrix(relativeTo: nil) * matrix
+    }
+
+    /// La articulación cuyo nombre acaba en `suffix` y la cadena de articulaciones desde la raíz hasta ella (los nombres son
+    /// rutas, «Hips/Spine/…»; cada transformación es relativa a la de su padre).
+    private static func joint(endingWith suffix: String, in entity: Entity) -> (model: ModelEntity, chain: [Int])? {
+        if let model = entity as? ModelEntity, let target = model.jointNames.first(where: { $0.hasSuffix(suffix) }) {
+            let names = model.jointNames
+            var chain: [Int] = []
+            var prefix = ""
+            for part in target.split(separator: "/") {
+                prefix = prefix.isEmpty ? String(part) : prefix + "/" + part
+                if let index = names.firstIndex(of: prefix) { chain.append(index) }
+            }
+            return (model, chain)
+        }
+        for child in entity.children {
+            if let found = joint(endingWith: suffix, in: child) { return found }
+        }
+        return nil
+    }
+
+    /// El mosaico de Los Sims, colgado del personaje y de su reflejo.
+    private func setMosaic(_ on: Bool) {
+        if on, mosaic == nil, let shower, let panel = shower.makeMosaic() {
+            holder.addChild(panel)
+            let copy = mirrorHolder.map { reflection -> Entity in
+                let copy = panel.clone(recursive: true)
+                reflection.addChild(copy)
+                return copy
+            }
+            mosaic = (panel, copy)
+        } else if !on, let current = mosaic {
+            shower?.removeMosaic(current.real)
+            current.reflected?.removeFromParent()
+            mosaic = nil
+        }
+    }
+
     private func setChair(offset: Float) {
         if phase == .toChess || phase == .chess || phase == .fromChess, let seat = chessRoute?.seat {
-            chess?.setChair(seat.color, offset: offset)
+            chess?.setChair(seat.id, offset: offset)
             return
         }
         chair?.position = chairBase + chairDirection * offset
@@ -303,9 +504,16 @@ enum OfficeChessMood: Equatable {
 
     private func play(_ clip: String, speed: Float = 1) {
         if playing == clip {
-            controller?.speed = speed
-            mirrorController?.speed = speed
-            return
+            // Un clip en bucle que se haya parado (o quedado en pausa sin que toque) se pone en marcha otra vez: así al caminar
+            // las piernas nunca se quedan quietas mientras el personaje se desplaza.
+            let stalled = controller.map { ($0.isComplete || $0.isStopped || ($0.isPaused && !frozen)) } ?? false
+            if stalled, layout.clips[clip]?.loop == true {
+                playing = nil
+            } else {
+                controller?.speed = speed
+                mirrorController?.speed = speed
+                return
+            }
         }
         guard let resource = resource(for: clip) else { return }
         controller = model.playAnimation(resource, transitionDuration: 0.25, startsPaused: false)
@@ -320,7 +528,10 @@ enum OfficeChessMood: Equatable {
         guard let timeline, let info = layout.clips[clip] else { return nil }
         let view = AnimationView(source: timeline.definition, name: clip, repeatMode: info.loop ? .repeat : .none,
                                  trimStart: info.start, trimDuration: info.duration)
-        guard let resource = try? AnimationResource.generate(with: view) else { return nil }
+        guard var resource = try? AnimationResource.generate(with: view) else { return nil }
+        // El modo de repetición de la vista recortada no repite (el clip de caminar acababa tras una zancada y las piernas se
+        // quedaban quietas mientras el personaje seguía desplazándose): se repite el recurso entero.
+        if info.loop { resource = resource.repeat(duration: .infinity) }
         resources[clip] = resource
         return resource
     }

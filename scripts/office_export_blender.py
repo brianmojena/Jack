@@ -28,6 +28,24 @@ CHAIRS = {"PROP_gaming_chair_02": (0, -1), "PROP_gaming_chair_03": (0, -1), "PRO
 CHAIR_PULL = 1.5
 # El cristal del espejo no se exporta: la app lo dibuja ella misma, con el reflejo de la sala (ver OfficeMirror).
 MIRROR_GLASS = "EspejoCuerpoEntero_Espejo_0"
+# Los PC de los escritorios traen su propia animación (ventiladores y luces): la sala se exporta con ella, en estos fotogramas.
+PC_FRAMES = (0, 30)
+# La cafetera tiene su vapor animado: va aparte (OfficeCoffee.usdz) y la app la pone en el marcador PROP_coffee_spot.
+COFFEE = "COFFEE"
+
+# Aligerado al exportar: cuánto se conserva (ratio de «Decimate») de los triángulos de las mallas grandes de cada pieza. Lo que
+# hace pesada la escena son pocas piezas con cientos de miles de triángulos que desde la cámara de la oficina no se distinguen:
+# aquí se recortan solo en la exportación y el .blend queda intacto. Las mallas pequeñas (pantallas, cristales, caras) no se tocan.
+LIGHT_RATIOS = {
+    "WORKSTATION_01": 0.35, "WORKSTATION_02": 0.35, "WORKSTATION_03": 0.35,
+    "COFFEE": 0.4, "PROP_lang_logos": 0.5, "PROP_sofa": 0.5,
+    "CHAR_LAMINE_rig": 0.4,
+}
+# Los tramos de nombre de las mallas que no se aligeran nunca (el vapor es una malla animada y las caras se ven de cerca).
+LIGHT_KEEP = ("steam", "face", "glass", "screen")
+LIGHT_MIN_TRIS = 1500
+# Las botas de Lamine pesan 36.000 triángulos y apenas se ven.
+LIGHT_MESH_RATIOS = {"CHAR_LAMINE_boot": 0.2}
 
 COMMON = dict(
     generate_preview_surface=True, export_textures_mode="NEW", overwrite_textures=True, convert_orientation=True,
@@ -71,6 +89,48 @@ def runtime_materials():
             shader = _principled(material)
             shader.inputs["Emission Color"].default_value = entry[2]
             shader.inputs["Emission Strength"].default_value = entry[3]
+
+
+def _triangles(obj):
+    return sum(len(p.vertices) - 2 for p in obj.data.polygons)
+
+
+@contextlib.contextmanager
+def lightweight_meshes():
+    """Aligera durante la exportación las mallas grandes de `LIGHT_RATIOS` con un modificador «Decimate» (puesto el primero de
+    la pila, antes del esqueleto, para no tocar los pesos), y lo deja todo como estaba al terminar.
+
+    El exportador de USD escribe las mallas con esqueleto sin evaluar sus modificadores: a esas se les aplica el «Decimate» sobre
+    una copia de la malla, que sustituye a la original solo durante la exportación (los pesos viajan con la malla).
+    """
+    added, swapped = [], []
+    for obj in bpy.data.objects:
+        if obj.type != "MESH" or _triangles(obj) < LIGHT_MIN_TRIS or any(word in obj.name.lower() for word in LIGHT_KEEP):
+            continue
+        ratio = LIGHT_MESH_RATIOS.get(obj.name, LIGHT_RATIOS.get(_top(obj).name))
+        if ratio is None:
+            continue
+        modifier = obj.modifiers.new("light_decimate", "DECIMATE")
+        modifier.decimate_type = "COLLAPSE"
+        modifier.ratio = ratio
+        obj.modifiers.move(len(obj.modifiers) - 1, 0)
+        if any(m.type == "ARMATURE" for m in obj.modifiers):
+            original = obj.data
+            obj.data = original.copy()
+            with bpy.context.temp_override(object=obj, active_object=obj, selected_objects=[obj]):
+                bpy.ops.object.modifier_apply(modifier=modifier.name)
+            swapped.append((obj, original))
+        else:
+            added.append((obj, modifier.name))
+    try:
+        yield
+    finally:
+        for obj, name in added:
+            obj.modifiers.remove(obj.modifiers[name])
+        for obj, original in swapped:
+            copy = obj.data
+            obj.data = original
+            bpy.data.meshes.remove(copy)
 
 
 def _glass(obj):
@@ -137,15 +197,22 @@ def export_room(folder):
     bpy.context.view_layer.update()
     bpy.ops.object.select_all(action="DESELECT")
     for obj in bpy.data.objects:
-        if obj.type in ("LIGHT", "CAMERA") or _top(obj).name.startswith("CHAR_") or obj.hide_get() or obj.hide_viewport or _glass(obj) or obj.name == MIRROR_GLASS:
+        if obj.type in ("LIGHT", "CAMERA") or _top(obj).name.startswith("CHAR_") or _top(obj).name == COFFEE or obj.hide_get() or obj.hide_viewport \
+                or _glass(obj) or obj.name == MIRROR_GLASS:
             continue
         try:
             obj.select_set(True)
         except RuntimeError:
             pass
     os.makedirs(folder, exist_ok=True)
-    bpy.ops.wm.usd_export(filepath=os.path.join(folder, "OfficeRoom.usdc"), export_animation=False, export_materials=True,
-                          export_armatures=False, use_instancing=True, **COMMON)
+    # Las sillas van sin animación (las mueve la app); lo único animado que queda en la sala son los PC.
+    frames = (scene.frame_start, scene.frame_end)
+    scene.frame_start, scene.frame_end = PC_FRAMES
+    try:
+        bpy.ops.wm.usd_export(filepath=os.path.join(folder, "OfficeRoom.usdc"), export_animation=True, export_materials=True,
+                              export_armatures=False, use_instancing=True, **COMMON)
+    finally:
+        scene.frame_start, scene.frame_end = frames
     for name, (action, location) in saved.items():
         chair = bpy.data.objects[name]
         chair.animation_data.action = action
@@ -182,6 +249,33 @@ def export_character(key, folder, total_frames):
         scene.frame_set(1)
 
 
+def export_coffee(folder):
+    """La cafetera con su animación, en el origen (la app la coloca); `False` si la sala no la tiene."""
+    root = bpy.data.objects.get(COFFEE)
+    if root is None:
+        return False
+    scene = bpy.context.scene
+    animated = [o for o in _descendants(root) if o.animation_data and o.animation_data.action]
+    end = max((int(o.animation_data.action.frame_range[1]) for o in animated), default=1)
+    saved = (root.location.copy(), scene.frame_start, scene.frame_end)
+    root.location = (0, 0, 0)
+    scene.frame_start, scene.frame_end = 1, end
+    scene.frame_set(1)
+    bpy.context.view_layer.update()
+    bpy.ops.object.select_all(action="DESELECT")
+    for obj in [root] + _descendants(root):
+        obj.select_set(True)
+    os.makedirs(folder, exist_ok=True)
+    try:
+        bpy.ops.wm.usd_export(filepath=os.path.join(folder, "OfficeCoffee.usdc"), export_animation=True, export_materials=True,
+                              export_armatures=False, use_instancing=False, **COMMON)
+    finally:
+        root.location = saved[0]
+        scene.frame_start, scene.frame_end = saved[1], saved[2]
+        scene.frame_set(1)
+    return True
+
+
 def export_all(total_frames=None):
     # Por omisión, hasta donde llegan las líneas de tiempo de los personajes (ALL_<clave>).
     if total_frames is None:
@@ -190,8 +284,9 @@ def export_all(total_frames=None):
         shutil.rmtree(STAGING)
     os.makedirs(STAGING)
     prepare_images()
-    with runtime_materials():
+    with runtime_materials(), lightweight_meshes():
         export_room(os.path.join(STAGING, "OfficeRoom"))
-    for key in CHARACTERS:
-        export_character(key, os.path.join(STAGING, key), total_frames)
+        export_coffee(os.path.join(STAGING, "OfficeCoffee"))
+        for key in CHARACTERS:
+            export_character(key, os.path.join(STAGING, key), total_frames)
     print("Exportado en", STAGING)
