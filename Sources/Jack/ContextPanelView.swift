@@ -15,7 +15,7 @@ struct ContextLogoButton: View {
             ZStack {
                 providerGlyph(conversation.provider, size: 18)
                 if let fraction = usage?.fraction {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    RoundedRectangle(cornerRadius: JackPalette.radius(7), style: .continuous)
                         .trim(from: 0, to: fraction)
                         .stroke(ContextPanel.tint(fraction), style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
                         .frame(width: 22, height: 22)

@@ -18,7 +18,7 @@ struct AttachmentChip: View {
                 else { Image(nsImage: NSWorkspace.shared.icon(forFile: path)).resizable() }
             }
             .frame(width: 26, height: 26)
-            .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: JackPalette.radius(5), style: .continuous))
             Text(name).font(.system(size: 11, weight: .medium)).lineLimit(1).truncationMode(.middle)
                 .frame(maxWidth: 160, alignment: .leading)
             if let onRemove {
@@ -28,7 +28,7 @@ struct AttachmentChip: View {
             }
         }
         .padding(.leading, 4).padding(.trailing, onRemove == nil ? 9 : 6).padding(.vertical, 4)
-        .background(JackPalette.panelStrong, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(JackPalette.panelStrong, in: RoundedRectangle(cornerRadius: JackPalette.radius(8), style: .continuous))
         .contentShape(Rectangle())
         .onTapGesture(count: 2) { NSWorkspace.shared.open(URL(fileURLWithPath: path)) }
         .contextMenu {
@@ -58,9 +58,9 @@ struct AttachmentChip: View {
 /// Shown over the conversation while files are dragged onto it.
 struct AttachmentDropOverlay: View {
     var body: some View {
-        RoundedRectangle(cornerRadius: 14, style: .continuous)
+        RoundedRectangle(cornerRadius: JackPalette.radius(14), style: .continuous)
             .strokeBorder(JackPalette.accent, style: StrokeStyle(lineWidth: 2, dash: [7, 5]))
-            .background(JackPalette.accent.opacity(0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(JackPalette.accent.opacity(0.07), in: RoundedRectangle(cornerRadius: JackPalette.radius(14), style: .continuous))
             .overlay {
                 VStack(spacing: 8) {
                     Image(systemName: "paperclip").font(.system(size: 26, weight: .medium))

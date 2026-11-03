@@ -264,23 +264,23 @@ struct JackSidebar: View {
                 navButton("square.and.pencil", "Nuevo agente", shortcut: "⌘N") { onNewConversation(nil) }
                 if let onShowAutomations {
                     navButton("clock.arrow.2.circlepath", "Automatizaciones", shortcut: "", action: onShowAutomations)
-                        .background(automationsActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
+                        .background(automationsActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: JackPalette.radius(6)))
                 }
                 if let onShowClaudeCloud {
                     navButton("cloud", "Claude Code Cloud", shortcut: "", action: onShowClaudeCloud)
-                        .background(claudeCloudActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
+                        .background(claudeCloudActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: JackPalette.radius(6)))
                 }
                 if let onShowClaudeChat {
                     navButton("bubble.left.and.bubble.right", "Claude Chat", shortcut: "", action: onShowClaudeChat)
-                        .background(claudeChatActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
+                        .background(claudeChatActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: JackPalette.radius(6)))
                 }
                 if let onShowArtifacts {
                     navButton("square.stack.3d.up", "Artefactos", shortcut: "", action: onShowArtifacts)
-                        .background(artifactsActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
+                        .background(artifactsActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: JackPalette.radius(6)))
                 }
                 if let onShowOffice {
                     navButton("building.2.crop.circle", "Oficina", shortcut: "", action: onShowOffice)
-                        .background(officeActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
+                        .background(officeActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: JackPalette.radius(6)))
                 }
                 searchField
             }
@@ -351,23 +351,23 @@ struct JackSidebar: View {
             VStack(spacing: 2) {
                 if let onShowAutomations {
                     navButton("clock.arrow.2.circlepath", "Automatizaciones", shortcut: "", action: onShowAutomations)
-                        .background(automationsActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
+                        .background(automationsActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: JackPalette.radius(6)))
                 }
                 if let onShowClaudeCloud {
                     navButton("cloud", "Claude Code Cloud", shortcut: "", action: onShowClaudeCloud)
-                        .background(claudeCloudActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
+                        .background(claudeCloudActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: JackPalette.radius(6)))
                 }
                 if let onShowClaudeChat {
                     navButton("bubble.left.and.bubble.right", "Claude Chat", shortcut: "", action: onShowClaudeChat)
-                        .background(claudeChatActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
+                        .background(claudeChatActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: JackPalette.radius(6)))
                 }
                 if let onShowArtifacts {
                     navButton("square.stack.3d.up", "Artefactos", shortcut: "", action: onShowArtifacts)
-                        .background(artifactsActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
+                        .background(artifactsActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: JackPalette.radius(6)))
                 }
                 if let onShowOffice {
                     navButton("building.2.crop.circle", "Oficina", shortcut: "", action: onShowOffice)
-                        .background(officeActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
+                        .background(officeActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: JackPalette.radius(6)))
                 }
                 HStack {
                     SettingsLink { Label("Ajustes", systemImage: "gearshape") }.help("Ajustes (⌘,)")
@@ -436,7 +436,7 @@ struct JackSidebar: View {
             }
         }
         .padding(.horizontal, 8).frame(height: 27)
-        .background(searchFocused ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .background(searchFocused ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: JackPalette.radius(6), style: .continuous))
     }
 
     private func list(now: Date) -> some View {
@@ -906,7 +906,7 @@ struct SidebarRow: View, Equatable {
         }
         .padding(.leading, native ? CGFloat(row.depth) * 4 : 18 + CGFloat(row.depth) * 4).padding(.trailing, native ? 0 : 8).padding(.vertical, native ? 3 : 5)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(selected && !native ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .background(selected && !native ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: JackPalette.radius(6), style: .continuous))
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityValue(row.status.title)

@@ -124,6 +124,40 @@ import Darwin
         XCTAssertTrue(center.error?.contains("regular") == true)
     }
 
+    func testBorderAndShapeTokensDecodeAndLastActivePackWins() throws {
+        let json = ##"{"schemaVersion":1,"id":"shape","name":"Shape","theme":{"border":"#11223380","cornerRadius":12,"borderWidth":2},"commands":[]}"##
+        let decoded = try CustomizationCenter.decodePack(Data(json.utf8))
+        XCTAssertEqual(decoded.theme?.border, "#11223380")
+        XCTAssertEqual(decoded.theme?.cornerRadius, 12)
+        XCTAssertEqual(decoded.theme?.borderWidth, 2)
+
+        let center = CustomizationCenter(directory: temporaryDirectory(), enabled: true)
+        try center.save(.init(id: "one", name: "one", theme: .init(border: "#111111", cornerRadius: 4, borderWidth: 1)))
+        try center.save(.init(id: "two", name: "two", theme: .init(cornerRadius: 20)))
+        try center.setPackEnabled("one", true); try center.setPackEnabled("two", true)
+        XCTAssertEqual(center.effectiveTheme?.cornerRadius, 20)
+        XCTAssertEqual(center.effectiveTheme?.border, "#111111")
+        XCTAssertEqual(center.effectiveTheme?.borderWidth, 1)
+    }
+
+    func testInvalidBorderAndShapeTokensAreRejected() throws {
+        let center = CustomizationCenter(directory: temporaryDirectory(), enabled: true)
+        XCTAssertThrowsError(try center.save(.init(id: "bad_border", name: "Bad", theme: .init(border: "red"))))
+        XCTAssertThrowsError(try center.save(.init(id: "bad_radius", name: "Bad", theme: .init(cornerRadius: 25))))
+        XCTAssertThrowsError(try center.save(.init(id: "neg_radius", name: "Bad", theme: .init(cornerRadius: -1))))
+        XCTAssertThrowsError(try center.save(.init(id: "bad_width", name: "Bad", theme: .init(borderWidth: 5))))
+        XCTAssertNoThrow(try center.save(.init(id: "edge_ok", name: "Ok", theme: .init(border: "#ABCDEF", cornerRadius: 24, borderWidth: 0))))
+    }
+
+    func testLegacyThemeJSONWithoutNewFieldsStillDecodes() throws {
+        let json = ##"{"schemaVersion":1,"id":"legacy","name":"Legacy","theme":{"accent":"#123456"},"commands":[]}"##
+        let decoded = try CustomizationCenter.decodePack(Data(json.utf8))
+        XCTAssertEqual(decoded.theme?.accent, "#123456")
+        XCTAssertNil(decoded.theme?.border)
+        XCTAssertNil(decoded.theme?.cornerRadius)
+        XCTAssertNil(decoded.theme?.borderWidth)
+    }
+
     func testReloadChecksRegularFileSizeBeforeReadingAndRejectsPackSymlinks() throws {
         let directory = temporaryDirectory(); let center = CustomizationCenter(directory: directory, enabled: true)
         let packs = directory.appendingPathComponent("Packs")

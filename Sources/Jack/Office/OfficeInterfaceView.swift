@@ -1236,8 +1236,8 @@ private struct OfficeBubble<Content: View>: View {
     var body: some View {
         VStack(spacing: -1) {
             content
-                .background(OfficeOrange.gradient, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 17, style: .continuous).strokeBorder(.white.opacity(0.7), lineWidth: 1.6))
+                .background(OfficeOrange.gradient, in: RoundedRectangle(cornerRadius: JackPalette.radius(17), style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(17), style: .continuous).strokeBorder(.white.opacity(0.7), lineWidth: 1.6))
             OfficeTail()
                 .fill(OfficeOrange.bottom)
                 .overlay(OfficeTail().stroke(.white.opacity(0.7), lineWidth: 1.6))
@@ -1358,7 +1358,7 @@ private struct OfficeSpeechBubble: View {
                 }
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
-            .background(.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(.white, in: RoundedRectangle(cornerRadius: JackPalette.radius(14), style: .continuous))
             OfficeTail().fill(.white).frame(width: 14, height: 8)
         }
         .shadow(color: .black.opacity(0.35), radius: 8, y: 3)

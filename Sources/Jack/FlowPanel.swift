@@ -105,8 +105,8 @@ private struct NormalFlowDiagramPanel: View {
             Text("Pregunta").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(JackPalette.muted)
             TextEditor(text: $diagram.question).font(.system(size: 12)).frame(minHeight: 48, maxHeight: 72)
                 .scrollContentBackground(.hidden).padding(5)
-                .background(JackPalette.panelStrong, in: RoundedRectangle(cornerRadius: 7))
-                .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(JackPalette.hairline))
+                .background(JackPalette.panelStrong, in: RoundedRectangle(cornerRadius: JackPalette.radius(7)))
+                .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(7)).strokeBorder(JackPalette.hairline))
             HStack {
                 Button("Usar última pregunta") {
                     if let latest = conversation?.messages.last(where: { $0.role == "user" })?.text { diagram.question = latest }
@@ -221,7 +221,7 @@ private struct NativeFlowGraph: View {
                         return CGPoint(x: (from.x + to.x + nodeWidth) / 2, y: (from.y + nodeHeight + to.y) / 2)
                     }()
                     Text(edge.label ?? "").font(.system(size: 10, weight: .medium)).foregroundStyle(JackPalette.secondaryText)
-                        .padding(.horizontal, 4).padding(.vertical, 2).background(JackPalette.canvas.opacity(0.92), in: RoundedRectangle(cornerRadius: 4))
+                        .padding(.horizontal, 4).padding(.vertical, 2).background(JackPalette.canvas.opacity(0.92), in: RoundedRectangle(cornerRadius: JackPalette.radius(4)))
                         .position(labelPoint).help(edge.label ?? "").textSelection(.enabled)
                 }
                 ForEach(graph.nodes) { node in
@@ -237,11 +237,11 @@ private struct NativeFlowGraph: View {
                     .padding(10).frame(width: nodeWidth, height: nodeHeight, alignment: .leading)
                     .background {
                         if node.kind == .start || node.kind == .end { Capsule().fill(JackPalette.panel) }
-                        else { RoundedRectangle(cornerRadius: 9).fill(JackPalette.panel) }
+                        else { RoundedRectangle(cornerRadius: JackPalette.radius(9)).fill(JackPalette.panel) }
                     }
                     .overlay {
                         if node.kind == .start || node.kind == .end { Capsule().stroke(node.kind == .decision ? JackPalette.amber.opacity(0.6) : JackPalette.hairline) }
-                        else { RoundedRectangle(cornerRadius: 9).stroke(node.kind == .decision ? JackPalette.amber.opacity(0.6) : JackPalette.hairline) }
+                        else { RoundedRectangle(cornerRadius: JackPalette.radius(9)).stroke(node.kind == .decision ? JackPalette.amber.opacity(0.6) : JackPalette.hairline) }
                     }
                     .position(x: point.x + nodeWidth / 2, y: point.y + nodeHeight / 2)
                 }
@@ -348,7 +348,7 @@ private struct FlowNode: View {
         HStack(alignment: .top, spacing: 10) {
             ZStack {
                 if step.isDecision {
-                    RoundedRectangle(cornerRadius: 3).fill(tint.opacity(0.2)).frame(width: 18, height: 18).rotationEffect(.degrees(45))
+                    RoundedRectangle(cornerRadius: JackPalette.radius(3)).fill(tint.opacity(0.2)).frame(width: 18, height: 18).rotationEffect(.degrees(45))
                     Image(systemName: "questionmark").font(.system(size: 8, weight: .bold)).foregroundStyle(tint)
                 } else {
                     Circle().fill(tint.opacity(0.18)).frame(width: 22, height: 22)
@@ -373,8 +373,8 @@ private struct FlowNode: View {
         }
         .padding(.horizontal, 12).padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(step.isDecision ? tint.opacity(0.5) : JackPalette.hairline, lineWidth: 1))
+        .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: JackPalette.radius(9), style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(9), style: .continuous).strokeBorder(step.isDecision ? tint.opacity(0.5) : JackPalette.hairline, lineWidth: JackPalette.borderWidth(1)))
         .textSelection(.enabled)
         .contextMenu {
             Button("Copiar paso", systemImage: "doc.on.doc") {
@@ -394,7 +394,7 @@ private struct FlowFiles: View {
                 Text(file.split(separator: "/").last.map(String.init) ?? file)
                     .font(.system(size: 10.5, design: .monospaced)).lineLimit(1)
                     .padding(.horizontal, 5).padding(.vertical, 1.5)
-                    .background(JackPalette.codeBackground, in: RoundedRectangle(cornerRadius: 4))
+                    .background(JackPalette.codeBackground, in: RoundedRectangle(cornerRadius: JackPalette.radius(4)))
                     .help(file)
             }
             if files.count > 4 { Text("+\(files.count - 4)").font(.system(size: 10.5)).foregroundStyle(JackPalette.muted) }

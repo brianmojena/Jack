@@ -63,7 +63,7 @@ struct OfficeCardSetupCard: View {
                     }
                     .padding(.horizontal, 10).padding(.vertical, 8)
                     .frame(maxWidth: .infinity)
-                    .background(Color(red: 0.93, green: 0.96, blue: 1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .background(Color(red: 0.93, green: 0.96, blue: 1), in: RoundedRectangle(cornerRadius: JackPalette.radius(12), style: .continuous))
                     .opacity(enabled ? 1 : 0.45)
                 }
                 .buttonStyle(.plain)
@@ -72,8 +72,8 @@ struct OfficeCardSetupCard: View {
             Spacer(minLength: 0)
         }
         .padding(14)
-        .background(.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color(red: 0.74, green: 0.8, blue: 0.88), lineWidth: 1))
+        .background(.white, in: RoundedRectangle(cornerRadius: JackPalette.radius(18), style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(18), style: .continuous).strokeBorder(Color(red: 0.74, green: 0.8, blue: 0.88), lineWidth: 1))
         .shadow(color: .black.opacity(0.32), radius: 10, y: 4)
     }
 }
@@ -93,8 +93,8 @@ struct OfficeCardHUD: View {
                 }
             }
             .padding(.horizontal, 16).padding(.vertical, 8)
-            .background(.black.opacity(0.5), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.white.opacity(0.15), lineWidth: 1))
+            .background(.black.opacity(0.5), in: RoundedRectangle(cornerRadius: JackPalette.radius(14), style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(14), style: .continuous).strokeBorder(.white.opacity(0.15), lineWidth: 1))
             if let banner = session.banner {
                 Text(banner).font(.office(16, .bold)).foregroundStyle(.white)
                     .padding(.horizontal, 20).padding(.vertical, 9)
@@ -178,8 +178,8 @@ struct OfficeCardActions: View {
             HStack(spacing: 8, content: content)
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
-        .background(.black.opacity(0.5), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(.white.opacity(0.15), lineWidth: 1))
+        .background(.black.opacity(0.5), in: RoundedRectangle(cornerRadius: JackPalette.radius(18), style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(18), style: .continuous).strokeBorder(.white.opacity(0.15), lineWidth: 1))
         .shadow(color: .black.opacity(0.3), radius: 8, y: 3)
     }
 

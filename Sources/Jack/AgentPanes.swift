@@ -318,7 +318,7 @@ private struct PaneDropOverlay: View {
             case .bottom: CGRect(x: 0, y: half.height, width: full.width, height: half.height)
             case .center: full
             }
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: JackPalette.radius(12), style: .continuous)
                 .fill(JackPalette.accent.opacity(0.12))
                 .strokeBorder(JackPalette.accent, style: StrokeStyle(lineWidth: 2, dash: [7, 5]))
                 .overlay {
@@ -455,7 +455,7 @@ struct AgentPaneView: View, Equatable {
             .help("Enviar")
         }
         .padding(.horizontal, 10).padding(.vertical, 7)
-        .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: JackPalette.radius(10), style: .continuous))
         .padding(.horizontal, 8).padding(.bottom, 8).padding(.top, 2)
     }
 

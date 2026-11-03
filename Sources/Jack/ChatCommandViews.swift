@@ -94,7 +94,7 @@ struct CommandSuggestions: View {
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 12).padding(.vertical, 6)
-                    .background(index == selection ? JackPalette.accent : .clear, in: RoundedRectangle(cornerRadius: 6))
+                    .background(index == selection ? JackPalette.accent : .clear, in: RoundedRectangle(cornerRadius: JackPalette.radius(6)))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -102,8 +102,8 @@ struct CommandSuggestions: View {
             }
         }
         .padding(4)
-        .jackGlass(in: RoundedRectangle(cornerRadius: 10, style: .continuous), basic: JackPalette.composer)
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(JackPalette.hairline, lineWidth: 1))
+        .jackGlass(in: RoundedRectangle(cornerRadius: JackPalette.radius(10), style: .continuous), basic: JackPalette.composer)
+        .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(10), style: .continuous).strokeBorder(JackPalette.hairline, lineWidth: JackPalette.borderWidth(1)))
     }
 
     /// Commands whose name starts with the query first, then those that contain it.

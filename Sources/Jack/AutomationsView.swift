@@ -74,8 +74,8 @@ struct AutomationsView: View {
             .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 24)
         }
         .padding(12)
-        .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(JackPalette.hairline, lineWidth: 1))
+        .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: JackPalette.radius(8), style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(8), style: .continuous).strokeBorder(JackPalette.hairline, lineWidth: JackPalette.borderWidth(1)))
         .opacity(automation.enabled ? 1 : 0.55)
     }
 
@@ -136,7 +136,7 @@ private struct AutomationEditor: View {
             Text("Prompt").font(.system(size: 11, weight: .medium)).foregroundStyle(JackPalette.muted)
             TextEditor(text: $automation.prompt).font(.system(size: 12.5))
                 .frame(height: 110).scrollContentBackground(.hidden)
-                .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: 6))
+                .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: JackPalette.radius(6)))
             Picker("Cuándo", selection: $automation.frequency) {
                 ForEach(AutomationFrequency.allCases) { Text($0.title).tag($0) }
             }

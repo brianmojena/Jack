@@ -52,7 +52,7 @@ struct NewAgentProviderButton: View {
                         }
                         .padding(8)
                         .background(option == provider ? JackPalette.selection : .clear,
-                                    in: RoundedRectangle(cornerRadius: 6))
+                                    in: RoundedRectangle(cornerRadius: JackPalette.radius(6)))
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)

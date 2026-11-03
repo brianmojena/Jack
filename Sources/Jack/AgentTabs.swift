@@ -23,7 +23,7 @@ struct StripTab<Icon: View, Title: View>: View {
             Button(action: onClose) {
                 Image(systemName: "xmark").font(.system(size: 8.5, weight: .bold))
                     .frame(width: 16, height: 16)
-                    .background(hovering && !selected ? JackPalette.panelStrong : .clear, in: RoundedRectangle(cornerRadius: 4))
+                    .background(hovering && !selected ? JackPalette.panelStrong : .clear, in: RoundedRectangle(cornerRadius: JackPalette.radius(4)))
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -50,7 +50,7 @@ struct StripTab<Icon: View, Title: View>: View {
             JackPalette.canvas
         } else {
             Color.clear
-                .jackGlass(in: RoundedRectangle(cornerRadius: 8, style: .continuous), basic: .clear)
+                .jackGlass(in: RoundedRectangle(cornerRadius: JackPalette.radius(8), style: .continuous), basic: .clear)
                 .padding(.vertical, 5).padding(.horizontal, 2)
         }
     }
@@ -66,7 +66,7 @@ struct StripIconButton: View {
         Button(action: action) {
             Image(systemName: symbol).font(.system(size: 12.5))
                 .frame(width: 28, height: 26)
-                .background(active ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .background(active ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: JackPalette.radius(6), style: .continuous))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

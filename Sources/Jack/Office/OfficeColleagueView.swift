@@ -51,9 +51,9 @@ struct OfficeColleagueView: View {
             if mode == .chat { composer }
         }
         .frame(maxWidth: 720)
-        .background(JackPalette.canvas, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(JackPalette.hairline, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(JackPalette.canvas, in: RoundedRectangle(cornerRadius: JackPalette.radius(18), style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(18), style: .continuous).strokeBorder(JackPalette.hairline, lineWidth: JackPalette.borderWidth(1)))
+        .clipShape(RoundedRectangle(cornerRadius: JackPalette.radius(18), style: .continuous))
         .shadow(color: .black.opacity(0.4), radius: 22, y: 8)
         .onAppear { focused = true }
     }
@@ -139,7 +139,7 @@ struct OfficeColleagueView: View {
                 Text(line.text)
                     .font(.system(size: 13)).foregroundStyle(.white).textSelection(.enabled)
                     .padding(.horizontal, 12).padding(.vertical, 8)
-                    .background(JackPalette.accent, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .background(JackPalette.accent, in: RoundedRectangle(cornerRadius: JackPalette.radius(14), style: .continuous))
             }
         case .person:
             HStack(alignment: .top, spacing: 8) {
@@ -147,7 +147,7 @@ struct OfficeColleagueView: View {
                 Text(line.text)
                     .font(.system(size: 13)).textSelection(.enabled)
                     .padding(.horizontal, 12).padding(.vertical, 8)
-                    .background(JackPalette.panelStrong, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .background(JackPalette.panelStrong, in: RoundedRectangle(cornerRadius: JackPalette.radius(14), style: .continuous))
                 Spacer(minLength: 80)
             }
         case .task:
@@ -166,7 +166,7 @@ struct OfficeColleagueView: View {
             Button("Ver pantalla", action: onViewScreen).controlSize(.small)
         }
         .padding(10)
-        .background(JackPalette.amber.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(JackPalette.amber.opacity(0.12), in: RoundedRectangle(cornerRadius: JackPalette.radius(10), style: .continuous))
     }
 
     private var composer: some View {
@@ -186,8 +186,8 @@ struct OfficeColleagueView: View {
             .buttonStyle(.plain).disabled(!canSend).help("Enviar (Enter)")
         }
         .padding(.leading, 14).padding(.trailing, 8).padding(.vertical, 6)
-        .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(JackPalette.hairline, lineWidth: 1))
+        .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: JackPalette.radius(14), style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(14), style: .continuous).strokeBorder(JackPalette.hairline, lineWidth: JackPalette.borderWidth(1)))
         .padding(.horizontal, 12).padding(.bottom, 12).padding(.top, 2)
     }
 
@@ -287,7 +287,7 @@ private struct OfficeTaskRow: View {
                     .font(.system(size: 11.5, design: .monospaced)).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(10)
-                    .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: JackPalette.radius(8), style: .continuous))
             }
         }
     }
@@ -308,7 +308,7 @@ private struct OfficeTyping: View {
                     }
                 }
                 .padding(.horizontal, 12).padding(.vertical, 11)
-                .background(JackPalette.panelStrong, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .background(JackPalette.panelStrong, in: RoundedRectangle(cornerRadius: JackPalette.radius(14), style: .continuous))
             }
             Text("\(name) está pensando…").font(.system(size: 11)).foregroundStyle(JackPalette.faint)
         }
@@ -320,14 +320,14 @@ private struct OfficeHeaderButtonStyle: ButtonStyle {
         configuration.label
             .foregroundStyle(JackPalette.muted)
             .padding(.horizontal, 6).frame(minHeight: 26)
-            .background(configuration.isPressed ? JackPalette.panelStrong : JackPalette.panel, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .background(configuration.isPressed ? JackPalette.panelStrong : JackPalette.panel, in: RoundedRectangle(cornerRadius: JackPalette.radius(8), style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: JackPalette.radius(8), style: .continuous))
     }
 }
 
 struct OfficeRowStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .background(configuration.isPressed ? JackPalette.panelStrong : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .background(configuration.isPressed ? JackPalette.panelStrong : .clear, in: RoundedRectangle(cornerRadius: JackPalette.radius(8), style: .continuous))
     }
 }

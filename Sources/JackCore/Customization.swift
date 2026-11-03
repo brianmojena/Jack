@@ -27,11 +27,14 @@ public struct CustomizationPack: Codable, Equatable {
 
 public struct CustomizationTheme: Codable, Equatable {
     public var appearance: Appearance?
-    public var canvas, chrome, panel, selection, accent, text, muted: String?
+    public var canvas, chrome, panel, selection, accent, text, muted, border: String?
+    public var cornerRadius: Int?
+    public var borderWidth: Int?
     public enum Appearance: String, Codable { case system, light, dark }
-    public init(appearance: Appearance? = nil, canvas: String? = nil, chrome: String? = nil, panel: String? = nil, selection: String? = nil, accent: String? = nil, text: String? = nil, muted: String? = nil) {
+    public init(appearance: Appearance? = nil, canvas: String? = nil, chrome: String? = nil, panel: String? = nil, selection: String? = nil, accent: String? = nil, text: String? = nil, muted: String? = nil, border: String? = nil, cornerRadius: Int? = nil, borderWidth: Int? = nil) {
         self.appearance = appearance; self.canvas = canvas; self.chrome = chrome; self.panel = panel
         self.selection = selection; self.accent = accent; self.text = text; self.muted = muted
+        self.border = border; self.cornerRadius = cornerRadius; self.borderWidth = borderWidth
     }
 }
 
@@ -76,7 +79,7 @@ public struct CustomizationCommand: Codable, Equatable, Identifiable {
     public var effectiveTheme: CustomizationTheme? {
         guard isEnabled else { return nil }
         let values = activePacks.compactMap(\.theme); guard !values.isEmpty else { return nil }
-        return .init(appearance: pick(\.appearance, values), canvas: pick(\.canvas, values), chrome: pick(\.chrome, values), panel: pick(\.panel, values), selection: pick(\.selection, values), accent: pick(\.accent, values), text: pick(\.text, values), muted: pick(\.muted, values))
+        return .init(appearance: pick(\.appearance, values), canvas: pick(\.canvas, values), chrome: pick(\.chrome, values), panel: pick(\.panel, values), selection: pick(\.selection, values), accent: pick(\.accent, values), text: pick(\.text, values), muted: pick(\.muted, values), border: pick(\.border, values), cornerRadius: pick(\.cornerRadius, values), borderWidth: pick(\.borderWidth, values))
     }
     public var effectiveLayout: CustomizationLayout? {
         guard isEnabled else { return nil }
@@ -263,9 +266,11 @@ public struct CustomizationCommand: Codable, Equatable, Identifiable {
         guard pack.schemaVersion == 1 else { throw ValidationError.invalid("schemaVersion") }
         guard validID(pack.id), bounded(pack.name, 120), pack.author.map({ bounded($0, 120) }) ?? true else { throw ValidationError.invalid("id/name/author") }
         if let theme = pack.theme {
-            for color in [theme.canvas, theme.chrome, theme.panel, theme.selection, theme.accent, theme.text, theme.muted].compactMap({ $0 }) {
+            for color in [theme.canvas, theme.chrome, theme.panel, theme.selection, theme.accent, theme.text, theme.muted, theme.border].compactMap({ $0 }) {
                 guard color.range(of: "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$", options: .regularExpression) != nil else { throw ValidationError.invalid("color HEX") }
             }
+            if let v = theme.cornerRadius, !(0...24).contains(v) { throw ValidationError.invalid("cornerRadius") }
+            if let v = theme.borderWidth, !(0...4).contains(v) { throw ValidationError.invalid("borderWidth") }
         }
         if let layout = pack.layout {
             if let v = layout.sidebarWidth, !(210...400).contains(v) { throw ValidationError.invalid("sidebarWidth") }
@@ -293,7 +298,7 @@ enum ModCommand {
         Reglas; incumplirlas hace que Jack rechace el archivo:
         - Raíz: schemaVersion (entero 1), id, name y commands (array, admitido vacío). author, theme y layout son opcionales.
         - id: de 1 a 64 bytes ASCII en minúsculas (a-z, 0-9, - y _) e igual al nombre del archivo. name y author: hasta 120 bytes. Archivo: hasta 1 MiB y hasta 100 comandos.
-        - theme: appearance es system, light o dark; canvas, chrome, panel, selection, accent, text y muted son #RRGGBB o #RRGGBBAA.
+        - theme: appearance es system, light o dark; canvas, chrome, panel, selection, accent, text, muted y border son #RRGGBB o #RRGGBBAA; cornerRadius es entero 0-24 y borderWidth entero 0-4. Todo opcional: lo que se omita conserva el valor actual de Jack.
         - layout: interface es basic, ice, terminal, office u office2D; sidebarPosition left o right; workspacePosition right o bottom; sidebarWidth 210-400; workspaceWidth 300-1200; workspaceHeight 180-700; sidebarVisible, statusBarVisible y explorerVisible booleanas. Todo opcional: lo que se omita conserva el valor actual de Jack.
         - Cada comando de commands: name (ASCII de 1 a 64, único sin distinguir mayúsculas, y distinto de los reservados: \(reserved)), title de hasta 120 bytes, kind prompt o terminal y content de hasta 20000 bytes si es prompt o 8000 si es terminal. Un prompt sustituye {{args}} por los argumentos del usuario; un comando de terminal es literal y no admite {{args}}.
         - Devuelve solo JSON válido, sin comentarios.

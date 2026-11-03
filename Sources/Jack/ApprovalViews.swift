@@ -35,10 +35,10 @@ struct ApprovalCard: View {
             }
         }
         .padding(12)
-        .background(tint.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(tint.opacity(0.07), in: RoundedRectangle(cornerRadius: JackPalette.radius(10), style: .continuous))
         // Ice: floats as glass over the transcript, which scrolls beneath the composer.
-        .jackGlass(in: RoundedRectangle(cornerRadius: 10, style: .continuous), basic: .clear)
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(tint.opacity(0.35), lineWidth: 1))
+        .jackGlass(in: RoundedRectangle(cornerRadius: JackPalette.radius(10), style: .continuous), basic: .clear)
+        .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(10), style: .continuous).strokeBorder(tint.opacity(0.35), lineWidth: 1))
     }
 
     private var symbol: String {
@@ -212,7 +212,7 @@ struct ChatQuestionForm: View {
             }
             .font(.system(size: 12))
             .padding(.horizontal, 8).padding(.vertical, 6)
-            .background(chosen ? JackPalette.accent.opacity(0.1) : JackPalette.panel, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .background(chosen ? JackPalette.accent.opacity(0.1) : JackPalette.panel, in: RoundedRectangle(cornerRadius: JackPalette.radius(6), style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

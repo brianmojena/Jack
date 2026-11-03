@@ -165,7 +165,7 @@ private struct BatterySaverRow: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 8).padding(.vertical, 6)
-            .background(hovering ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .background(hovering ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: JackPalette.radius(6), style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

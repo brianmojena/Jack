@@ -95,7 +95,7 @@ struct CodeBlockView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(10)
         }
-        .background(JackPalette.codeBackground, in: RoundedRectangle(cornerRadius: 7))
-        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(JackPalette.hairline, lineWidth: 0.5))
+        .background(JackPalette.codeBackground, in: RoundedRectangle(cornerRadius: JackPalette.radius(7)))
+        .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(7)).strokeBorder(JackPalette.hairline, lineWidth: JackPalette.borderWidth(0.5)))
     }
 }

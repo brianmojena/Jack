@@ -9,7 +9,8 @@ let package = Package(
         .executable(name: "Jack", targets: ["Jack"]),
         .executable(name: "JackProbe", targets: ["JackProbe"]),
         .executable(name: "JackChatProbe", targets: ["JackChatProbe"]),
-        .executable(name: "jack-progress", targets: ["JackProgress"])
+        .executable(name: "jack-progress", targets: ["JackProgress"]),
+        .executable(name: "jack-ctl", targets: ["JackCtl"])
     ],
     dependencies: [
         .package(url: "https://github.com/migueldeicaza/SwiftTerm", from: "1.20.0")
@@ -21,6 +22,7 @@ let package = Package(
         .executableTarget(name: "JackProbe", dependencies: ["JackCore"]),
         .executableTarget(name: "JackChatProbe", dependencies: ["JackCore"]),
         .executableTarget(name: "JackProgress", dependencies: ["JackCore"]),
+        .executableTarget(name: "JackCtl", dependencies: ["JackCore"]),
         .testTarget(name: "JackCoreTests", dependencies: ["JackCore"]),
         .testTarget(name: "JackUITests", dependencies: ["Jack"])
     ],

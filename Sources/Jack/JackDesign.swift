@@ -15,7 +15,16 @@ enum JackPalette {
     static var panelStrong: Color { Color(nsColor: themed(\.panel) ?? adaptive(light: NSColor.black.withAlphaComponent(0.065), dark: NSColor.white.withAlphaComponent(0.08))) }
     static let codeBackground = Color(nsColor: adaptive(light: NSColor.black.withAlphaComponent(0.035), dark: NSColor.white.withAlphaComponent(0.035)))
     static var composer: Color { canvas }
-    static let hairline = Color(nsColor: adaptive(light: NSColor.black.withAlphaComponent(0.1), dark: NSColor.white.withAlphaComponent(0.085)))
+    static var hairline: Color { Color(nsColor: themed(\.border) ?? adaptive(light: NSColor.black.withAlphaComponent(0.1), dark: NSColor.white.withAlphaComponent(0.085))) }
+    /// Scales a corner radius to the theme's `cornerRadius` (8 = unchanged); mods only apply in Normal mode.
+    static func radius(_ base: CGFloat) -> CGFloat {
+        guard let value = MainActor.assumeIsolated({ CustomizationAppearance.shared.paletteTheme?.cornerRadius }) else { return base }
+        return base * CGFloat(value) / 8
+    }
+    /// Stroke width for borders drawn with `hairline` (1 = unchanged).
+    static func borderWidth(_ base: CGFloat = 1) -> CGFloat {
+        MainActor.assumeIsolated { CustomizationAppearance.shared.paletteTheme?.borderWidth }.map(CGFloat.init) ?? base
+    }
     static var accent: Color { themed(\.accent).map { Color(nsColor: $0) } ?? Color.accentColor }
     static var muted: Color { themed(\.muted).map { Color(nsColor: $0) } ?? Color(nsColor: .secondaryLabelColor) }
     static let faint = Color(nsColor: .tertiaryLabelColor)
@@ -294,7 +303,7 @@ struct BetaBadge: View {
         Text("BETA").font(.system(size: 8, weight: .bold)).tracking(0.4)
             .padding(.horizontal, 4).padding(.vertical, 1.5)
             .foregroundStyle(providerColor(.stellar))
-            .background(providerColor(.stellar).opacity(0.14), in: RoundedRectangle(cornerRadius: 3, style: .continuous))
+            .background(providerColor(.stellar).opacity(0.14), in: RoundedRectangle(cornerRadius: JackPalette.radius(3), style: .continuous))
             .help("Stellar Code está en beta")
             .accessibilityLabel("Beta")
     }
@@ -305,7 +314,7 @@ struct SSHBadge: View {
         Text("SSH").font(.system(size: 8, weight: .bold)).tracking(0.4)
             .padding(.horizontal, 4).padding(.vertical, 1.5)
             .foregroundStyle(JackPalette.accent)
-            .background(JackPalette.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: 3, style: .continuous))
+            .background(JackPalette.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: JackPalette.radius(3), style: .continuous))
             .help("Se ejecuta en otra máquina por SSH")
             .accessibilityLabel("Remoto por SSH")
     }

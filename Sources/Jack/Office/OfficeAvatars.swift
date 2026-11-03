@@ -89,8 +89,8 @@ struct OfficeAvatarPicker: View {
             }
         }
         .padding(14)
-        .background(.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color(red: 0.74, green: 0.8, blue: 0.88), lineWidth: 1))
+        .background(.white, in: RoundedRectangle(cornerRadius: JackPalette.radius(18), style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(18), style: .continuous).strokeBorder(Color(red: 0.74, green: 0.8, blue: 0.88), lineWidth: 1))
         .shadow(color: .black.opacity(0.32), radius: 10, y: 4)
     }
 
@@ -113,7 +113,7 @@ struct OfficeAvatarPicker: View {
                     }
                     .frame(width: 92, height: 118)
                     .background(LinearGradient(colors: [Color(red: 0.93, green: 0.96, blue: 1), Color(red: 0.82, green: 0.88, blue: 0.96)],
-                                               startPoint: .top, endPoint: .bottom), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                               startPoint: .top, endPoint: .bottom), in: RoundedRectangle(cornerRadius: JackPalette.radius(12), style: .continuous))
                     if isCurrent {
                         Image(systemName: "checkmark").font(.system(size: 9, weight: .black)).foregroundStyle(.white)
                             .frame(width: 20, height: 20).background(Color(red: 0.22, green: 0.55, blue: 0.95), in: Circle())
@@ -125,8 +125,8 @@ struct OfficeAvatarPicker: View {
                     .foregroundStyle(Color(red: 0.11, green: 0.25, blue: 0.46).opacity(unavailable ? 0.45 : 1))
             }
             .padding(4)
-            .background(hovered == avatar.id && !unavailable ? Color(red: 0.88, green: 0.95, blue: 1) : .clear, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(isCurrent ? Color(red: 0.22, green: 0.55, blue: 0.95) : .clear, lineWidth: 2))
+            .background(hovered == avatar.id && !unavailable ? Color(red: 0.88, green: 0.95, blue: 1) : .clear, in: RoundedRectangle(cornerRadius: JackPalette.radius(14), style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(14), style: .continuous).strokeBorder(isCurrent ? Color(red: 0.22, green: 0.55, blue: 0.95) : .clear, lineWidth: 2))
             .opacity(unavailable ? 0.55 : 1)
         }
         .buttonStyle(.plain)

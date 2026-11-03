@@ -31,8 +31,8 @@ struct MarkdownTableView: View {
                 }
             }
             .background(JackPalette.codeBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 7))
-            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(JackPalette.hairline, lineWidth: 0.5))
+            .clipShape(RoundedRectangle(cornerRadius: JackPalette.radius(7)))
+            .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(7)).strokeBorder(JackPalette.hairline, lineWidth: JackPalette.borderWidth(0.5)))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { availableWidth = $0 }

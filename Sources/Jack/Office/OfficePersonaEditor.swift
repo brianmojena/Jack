@@ -82,8 +82,8 @@ struct OfficePersonaEditor<Host: OfficeHost>: View {
         }
         .foregroundStyle(Self.navy)
         .padding(18)
-        .background(.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color(red: 0.74, green: 0.8, blue: 0.88), lineWidth: 1))
+        .background(.white, in: RoundedRectangle(cornerRadius: JackPalette.radius(18), style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(18), style: .continuous).strokeBorder(Color(red: 0.74, green: 0.8, blue: 0.88), lineWidth: 1))
         .shadow(color: .black.opacity(0.32), radius: 12, y: 5)
         .onChange(of: provider) { _, new in
             // Al cambiar de proveedor, lo que había escrito era de otro.
@@ -143,7 +143,7 @@ struct OfficePersonaEditor<Host: OfficeHost>: View {
                                 Spacer(minLength: 0)
                             }
                             .padding(.horizontal, 8).padding(.vertical, 5)
-                            .background(selected ? Color(red: 0.88, green: 0.95, blue: 1) : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .background(selected ? Color(red: 0.88, green: 0.95, blue: 1) : .clear, in: RoundedRectangle(cornerRadius: JackPalette.radius(8), style: .continuous))
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
@@ -152,8 +152,8 @@ struct OfficePersonaEditor<Host: OfficeHost>: View {
                 .padding(4)
             }
             .frame(height: min(CGFloat(options.count) * 29 + 8, 150))
-            .background(Color(red: 0.95, green: 0.97, blue: 1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color(red: 0.74, green: 0.8, blue: 0.88), lineWidth: 1))
+            .background(Color(red: 0.95, green: 0.97, blue: 1), in: RoundedRectangle(cornerRadius: JackPalette.radius(10), style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(10), style: .continuous).strokeBorder(Color(red: 0.74, green: 0.8, blue: 0.88), lineWidth: 1))
         }
     }
 
@@ -214,8 +214,8 @@ struct OfficePersonaEditor<Host: OfficeHost>: View {
                 .scrollContentBackground(.hidden)
                 .padding(6)
                 .frame(height: 120)
-                .background(Color(red: 0.95, green: 0.97, blue: 1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color(red: 0.74, green: 0.8, blue: 0.88), lineWidth: 1))
+                .background(Color(red: 0.95, green: 0.97, blue: 1), in: RoundedRectangle(cornerRadius: JackPalette.radius(10), style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(10), style: .continuous).strokeBorder(Color(red: 0.74, green: 0.8, blue: 0.88), lineWidth: 1))
                 .overlay(alignment: .topLeading) {
                     if profile.isEmpty {
                         Text("Cómo es, cómo habla, qué le gusta… («Eres …»)").font(.system(size: 12.5)).opacity(0.4).padding(.horizontal, 11).padding(.vertical, 14).allowsHitTesting(false)

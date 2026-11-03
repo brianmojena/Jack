@@ -258,11 +258,11 @@ private struct OfficeGraphicsPanel: View {
 private struct OfficeGlassPanel: ViewModifier {
     func body(content: Content) -> some View {
         if #available(macOS 26.0, iOS 26.0, *) {
-            content.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            content.glassEffect(.regular, in: RoundedRectangle(cornerRadius: JackPalette.radius(18), style: .continuous))
         } else {
             content
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(.white.opacity(0.16), lineWidth: 1))
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: JackPalette.radius(18), style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(18), style: .continuous).strokeBorder(.white.opacity(0.16), lineWidth: 1))
                 .shadow(color: .black.opacity(0.4), radius: 16, y: 6)
         }
     }

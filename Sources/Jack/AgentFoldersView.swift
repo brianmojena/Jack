@@ -96,13 +96,13 @@ private struct AgentFoldersPanel: View {
                             .font(.system(size: 10, design: .monospaced)).textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .frame(height: 140).padding(6).background(JackPalette.panel, in: RoundedRectangle(cornerRadius: 6))
+                    .frame(height: 140).padding(6).background(JackPalette.panel, in: RoundedRectangle(cornerRadius: JackPalette.radius(6)))
                     Button("Integrar con fast-forward…", systemImage: "arrow.merge") { showingIntegrationConfirmation = true }
                         .disabled(busy || !review.hasReviewedCommits)
                     Text("Si no es viable ahora, asegúrate de que la base no tenga cambios locales sin confirmar y ejecuta en Terminal: `cd \(shellArgument(review.basePath)) && git switch \(shellArgument(review.baseBranch)) && git merge --ff-only \(shellArgument(review.head))`. Integra exactamente el commit revisado.")
                         .font(.system(size: 10)).foregroundStyle(JackPalette.muted).fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(8).background(JackPalette.panelStrong, in: RoundedRectangle(cornerRadius: 8))
+                .padding(8).background(JackPalette.panelStrong, in: RoundedRectangle(cornerRadius: JackPalette.radius(8)))
             }
         }
     }
@@ -127,7 +127,7 @@ private struct AgentFoldersPanel: View {
             }
         }
         .padding(.vertical, 5).padding(.horizontal, 8)
-        .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: 6))
+        .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: JackPalette.radius(6)))
         .help(path)
     }
 

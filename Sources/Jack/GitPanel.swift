@@ -273,9 +273,9 @@ struct GitPanel: View {
                 .focused($messageFocused)
                 .onSubmit { if canCommit { session.commit() } }
                 .padding(.horizontal, 9).padding(.vertical, 7)
-                .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(messageFocused ? JackPalette.accent.opacity(0.6) : JackPalette.hairline, lineWidth: 1))
+                .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: JackPalette.radius(8), style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(8), style: .continuous)
+                    .strokeBorder(messageFocused ? JackPalette.accent.opacity(0.6) : JackPalette.hairline, lineWidth: JackPalette.borderWidth(1)))
             HStack(spacing: 8) {
                 Button(nothingStaged ? "Commit de todo" : "Commit") { session.commit() }
                     .controlSize(.small).buttonStyle(.borderedProminent)

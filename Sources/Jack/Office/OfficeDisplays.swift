@@ -13,7 +13,7 @@ struct OfficeLabelView: View {
     var body: some View {
         ZStack {
             Color(red: 0.06, green: 0.05, blue: 0.07)
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
+            RoundedRectangle(cornerRadius: JackPalette.radius(26), style: .continuous)
                 .strokeBorder(Self.neon.opacity(0.55), lineWidth: 5)
                 .shadow(color: Self.neon, radius: 14)
                 .padding(16)
@@ -123,7 +123,7 @@ struct OfficeTVView: View {
         .padding(44)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(LinearGradient(colors: [Color(white: 0.16), Color(white: 0.08)], startPoint: .top, endPoint: .bottom),
-                    in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    in: RoundedRectangle(cornerRadius: JackPalette.radius(14), style: .continuous))
     }
 
     private func renewal(_ window: UsageWindow?) -> String {

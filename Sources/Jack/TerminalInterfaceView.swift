@@ -455,7 +455,7 @@ struct TerminalInterfaceView: View {
                                         }
                                         .font(.system(size: 12)).padding(8).contentShape(Rectangle())
                                         .background(row.id == workspace.snapshot.selectedID ? JackPalette.selection : .clear,
-                                                    in: RoundedRectangle(cornerRadius: 6))
+                                                    in: RoundedRectangle(cornerRadius: JackPalette.radius(6)))
                                     }.buttonStyle(.plain)
                                     .contextMenu {
                                         Button("Abrir al lado") { splitID = row.id }
@@ -663,7 +663,7 @@ private struct NativeTerminalPane: View {
                 VStack(spacing: 10) {
                     Text("El proceso ha terminado").font(.system(size: 12, weight: .medium))
                     Button("Abrir de nuevo", action: reopen)
-                }.padding(16).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+                }.padding(16).background(.regularMaterial, in: RoundedRectangle(cornerRadius: JackPalette.radius(10)))
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }

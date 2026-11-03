@@ -57,6 +57,7 @@
 		22D3BF00FE3AD394A5774F43 /* ArtifactPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61D2267782A3D3E8EBBD9FE6 /* ArtifactPanel.swift */; };
 		2396B58AD7563EEE47BDB282 /* OfficeHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4481F83120371ADB736A6852 /* OfficeHost.swift */; };
 		23C27E17768412C6E4895294 /* OfficeAssignments.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05109BEC027632469B1BE7E8 /* OfficeAssignments.swift */; };
+		2432367D4C31F7AAF687A57F /* JackCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A669F4C23030DFB614FB88C4 /* JackCore.framework */; };
 		264ACAE40D81F03FB17D90FE /* OfficeChessPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AEFE88E5FE3B5A05EA0BE71 /* OfficeChessPlayer.swift */; };
 		26A5E22A1BECEA834881B1D4 /* Avatar_DEADPOOL.png in Resources */ = {isa = PBXBuildFile; fileRef = 0115E6D3245B4235B6E44CAE /* Avatar_DEADPOOL.png */; };
 		26F33593401C4D6EF10CC974 /* AgentBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 112E9D6E62140F40A3F29A21 /* AgentBridge.swift */; };
@@ -140,6 +141,7 @@
 		653B96547F29843CB8ADC999 /* OfficeActor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5D348F05E6FB68E9B8B2B8E /* OfficeActor.swift */; };
 		65A13EB3B9C4B32BED9D89D5 /* Avatar_LAMINE.png in Resources */ = {isa = PBXBuildFile; fileRef = 2C4091408F121190C72E76A9 /* Avatar_LAMINE.png */; };
 		6710432588B24B1A6CB97E59 /* TerminalInterfaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3130A5E80CADC1AE5B40976C /* TerminalInterfaceView.swift */; };
+		686196E608B832A56A19FFE2 /* jack-ctl in Embed Dependencies */ = {isa = PBXBuildFile; fileRef = B37F4B978E9E8F59C971F1E7 /* jack-ctl */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		6A298857C592C72C99645AEE /* OfficeProbe_chess.exr in Resources */ = {isa = PBXBuildFile; fileRef = 0B3D2FCDB3BB86E41638DC95 /* OfficeProbe_chess.exr */; };
 		6A89D2DA42A687D07F5F2C3F /* SimulatorPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A3D7246F7BBDA7A8018807 /* SimulatorPanel.swift */; };
 		6B19A3C12DEF7AE66729AA83 /* OfficeChessGame.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D025C650A4072CEEFE9A0C3 /* OfficeChessGame.swift */; };
@@ -325,6 +327,7 @@
 		FB3768AA2CC8AAB469CCD9A9 /* OfficeCoffee.usdz in Resources */ = {isa = PBXBuildFile; fileRef = FA3913908EAAFE4B49420F97 /* OfficeCoffee.usdz */; };
 		FB8D133AB460B06C837E3330 /* OfficeCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = B84D6FF4E5B0A5142CE3466B /* OfficeCanvas.swift */; };
 		FC19D2D5A244B0E2775C3482 /* CH31.usdz in Resources */ = {isa = PBXBuildFile; fileRef = 0D6B7F996310DFC0D7965C38 /* CH31.usdz */; };
+		FD2DB397ADC1C70F67933319 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = D25E338010A6DCE454E4B674 /* main.swift */; };
 		FD733015495B4D55D0039B68 /* OfficePersonas.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7000AAC5B5D05A170361D0C /* OfficePersonas.swift */; };
 		FDA0C86DE21F32B305B5F8F8 /* BrowserPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5019EA3818C709E8D20043A4 /* BrowserPicker.swift */; };
 		FDB53DA97ED906902CFF2AD5 /* ChatUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D0A660EF197200211C217B4 /* ChatUsage.swift */; };
@@ -335,6 +338,20 @@
 
 /* Begin PBXContainerItemProxy section */
 		0A500A2458529209FEA7CBFE /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0D6918EDC0DA90E9F7119A31 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 61A0A070CDB6618923644A0D;
+			remoteInfo = JackCore;
+		};
+		283463950442A9F286E38891 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0D6918EDC0DA90E9F7119A31 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 5F86CD11052DB837E51A8A27;
+			remoteInfo = "jack-ctl";
+		};
+		835CD24BD3C9CA486C58BC7E /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 0D6918EDC0DA90E9F7119A31 /* Project object */;
 			proxyType = 1;
@@ -365,6 +382,7 @@
 			dstSubfolderSpec = 6;
 			files = (
 				4634192947D42C964EB9182B /* jack-progress in Embed Dependencies */,
+				686196E608B832A56A19FFE2 /* jack-ctl in Embed Dependencies */,
 			);
 			name = "Embed Dependencies";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -546,6 +564,7 @@
 		B28C9861FC67C38346F78797 /* VoiceTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTranscriber.swift; sourceTree = "<group>"; };
 		B332971E94CCDE4220748943 /* RemoteAgentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteAgentView.swift; sourceTree = "<group>"; };
 		B33E00280F531F45985C9478 /* REMY.usdz */ = {isa = PBXFileReference; lastKnownFileType = file.usdz; path = REMY.usdz; sourceTree = "<group>"; };
+		B37F4B978E9E8F59C971F1E7 /* jack-ctl */ = {isa = PBXFileReference; includeInIndex = 0; path = "jack-ctl"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B4AA7C809CECC6EBC1900B9D /* OfficeOutings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeOutings.swift; sourceTree = "<group>"; };
 		B5D348F05E6FB68E9B8B2B8E /* OfficeActor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeActor.swift; sourceTree = "<group>"; };
 		B75005054FFF98AFBB8AEFBC /* Office2DViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Office2DViewModel.swift; sourceTree = "<group>"; };
@@ -578,6 +597,7 @@
 		CCFCEC6A2BE443EE8AB64111 /* AutomationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutomationsView.swift; sourceTree = "<group>"; };
 		CDDD94D4D38FF19A730E48F5 /* LightNewAgentSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LightNewAgentSheet.swift; sourceTree = "<group>"; };
 		D08E6CDC5CAE8387F825A794 /* OpenCodeCLI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodeCLI.swift; sourceTree = "<group>"; };
+		D25E338010A6DCE454E4B674 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		D270EF82D7E479169076203B /* BrowserAddress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserAddress.swift; sourceTree = "<group>"; };
 		D509AEAE925B54594B2E191B /* PaneLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaneLayout.swift; sourceTree = "<group>"; };
 		D8E5B74C47ED76F7F4E3175D /* ChatModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModels.swift; sourceTree = "<group>"; };
@@ -639,6 +659,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		CB2B8C988413517B6F04F507 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2432367D4C31F7AAF687A57F /* JackCore.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -658,6 +686,7 @@
 		10185CEDD28044A0F4B46BD2 /* Products */ = {
 			isa = PBXGroup;
 			children = (
+				B37F4B978E9E8F59C971F1E7 /* jack-ctl */,
 				DE478C8255BAFA828A7913CE /* jack-progress */,
 				FB9EA786E5FECB86077B5F5E /* Jack.app */,
 				A669F4C23030DFB614FB88C4 /* JackCore.framework */,
@@ -777,6 +806,7 @@
 			children = (
 				E4219796004773F28B8EA80D /* Jack */,
 				17659D72BFDF6A512C205A66 /* JackCore */,
+				E4A49B4C91114F20E26F2F2A /* JackCtl */,
 				0826807F57042F6D90F99C01 /* JackMobile */,
 				60632093AB25CD4E80A56787 /* JackProgress */,
 			);
@@ -970,6 +1000,14 @@
 			path = Jack;
 			sourceTree = "<group>";
 		};
+		E4A49B4C91114F20E26F2F2A /* JackCtl */ = {
+			isa = PBXGroup;
+			children = (
+				D25E338010A6DCE454E4B674 /* main.swift */,
+			);
+			path = JackCtl;
+			sourceTree = "<group>";
+		};
 		F42015615B7C6B2D04B3435C /* Office */ = {
 			isa = PBXGroup;
 			children = (
@@ -1033,6 +1071,7 @@
 			dependencies = (
 				B98D51581535FAF4D02E4205 /* PBXTargetDependency */,
 				17BC1517F151D10B79F19C4F /* PBXTargetDependency */,
+				48F3062C90A863A3E190D48D /* PBXTargetDependency */,
 			);
 			name = Jack;
 			packageProductDependencies = (
@@ -1041,6 +1080,25 @@
 			productName = Jack;
 			productReference = FB9EA786E5FECB86077B5F5E /* Jack.app */;
 			productType = "com.apple.product-type.application";
+		};
+		5F86CD11052DB837E51A8A27 /* jack-ctl */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AFF2BCCCA35DB7AF135632D4 /* Build configuration list for PBXNativeTarget "jack-ctl" */;
+			buildPhases = (
+				80429B322095364EB21CDA38 /* Sources */,
+				CB2B8C988413517B6F04F507 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D83C01785587A84EF09FBA90 /* PBXTargetDependency */,
+			);
+			name = "jack-ctl";
+			packageProductDependencies = (
+			);
+			productName = "jack-ctl";
+			productReference = B37F4B978E9E8F59C971F1E7 /* jack-ctl */;
+			productType = "com.apple.product-type.tool";
 		};
 		61A0A070CDB6618923644A0D /* JackCore */ = {
 			isa = PBXNativeTarget;
@@ -1092,6 +1150,9 @@
 					30C3744496B0DE2E20AAFCC0 = {
 						ProvisioningStyle = Manual;
 					};
+					5F86CD11052DB837E51A8A27 = {
+						ProvisioningStyle = Manual;
+					};
 					61A0A070CDB6618923644A0D = {
 						ProvisioningStyle = Manual;
 					};
@@ -1122,6 +1183,7 @@
 				30C3744496B0DE2E20AAFCC0 /* Jack */,
 				C3F944AB482A4FAD180911F4 /* JackMobile */,
 				0912C5E5184D8D95F5C5C4C2 /* jack-progress */,
+				5F86CD11052DB837E51A8A27 /* jack-ctl */,
 			);
 		};
 /* End PBXProject section */
@@ -1405,6 +1467,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		80429B322095364EB21CDA38 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FD2DB397ADC1C70F67933319 /* main.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		BEEBF929D4B07C77962C5DAF /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -1499,6 +1569,11 @@
 			target = 0912C5E5184D8D95F5C5C4C2 /* jack-progress */;
 			targetProxy = A088144D66007CCC6266DE08 /* PBXContainerItemProxy */;
 		};
+		48F3062C90A863A3E190D48D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 5F86CD11052DB837E51A8A27 /* jack-ctl */;
+			targetProxy = 283463950442A9F286E38891 /* PBXContainerItemProxy */;
+		};
 		B7A7F0AC287BA3ED27AF12D0 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 61A0A070CDB6618923644A0D /* JackCore */;
@@ -1508,6 +1583,11 @@
 			isa = PBXTargetDependency;
 			target = 61A0A070CDB6618923644A0D /* JackCore */;
 			targetProxy = 8A116BAE66410D0001A37F03 /* PBXContainerItemProxy */;
+		};
+		D83C01785587A84EF09FBA90 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 61A0A070CDB6618923644A0D /* JackCore */;
+			targetProxy = 835CD24BD3C9CA486C58BC7E /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -1580,6 +1660,17 @@
 				PRODUCT_NAME = Jack;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		62C8B7A15DE955BB4AB1AA5C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = "dev.jack.jack-ctl";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
 			};
 			name = Release;
 		};
@@ -1763,6 +1854,17 @@
 			};
 			name = Debug;
 		};
+		D0B388344103ED16CAD5FBCD /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = "dev.jack.jack-ctl";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Debug;
+		};
 		D766EB41D40D4BE673672FBF /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1800,6 +1902,15 @@
 			buildConfigurations = (
 				8762A5D07F5C76391781604B /* Debug */,
 				D766EB41D40D4BE673672FBF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		AFF2BCCCA35DB7AF135632D4 /* Build configuration list for PBXNativeTarget "jack-ctl" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D0B388344103ED16CAD5FBCD /* Debug */,
+				62C8B7A15DE955BB4AB1AA5C /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

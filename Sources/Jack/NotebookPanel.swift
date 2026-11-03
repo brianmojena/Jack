@@ -185,8 +185,8 @@ struct NotebookPanel: View {
             }
             ForEach(Array(cell.outputs.enumerated()), id: \.offset) { _, output in NotebookOutputView(output: output) }
         }
-        .padding(10).background(JackPalette.panel, in: RoundedRectangle(cornerRadius: 8))
-        .overlay { RoundedRectangle(cornerRadius: 8).stroke(session.runningCell == cell.id ? JackPalette.accent : JackPalette.hairline, lineWidth: 1) }
+        .padding(10).background(JackPalette.panel, in: RoundedRectangle(cornerRadius: JackPalette.radius(8)))
+        .overlay { RoundedRectangle(cornerRadius: JackPalette.radius(8)).stroke(session.runningCell == cell.id ? JackPalette.accent : JackPalette.hairline, lineWidth: JackPalette.borderWidth(1)) }
     }
     private func inputBar(_ prompt: String) -> some View {
         HStack {
@@ -238,7 +238,7 @@ struct NotebookOutputView: View {
             } else {
                 plain(data["text/plain"]?.text ?? "Salida MIME: \(data.keys.sorted().joined(separator: ", "))")
             }
-        }.padding(8).frame(maxWidth: .infinity, alignment: .leading).background(JackPalette.canvas.opacity(0.7), in: RoundedRectangle(cornerRadius: 5))
+        }.padding(8).frame(maxWidth: .infinity, alignment: .leading).background(JackPalette.canvas.opacity(0.7), in: RoundedRectangle(cornerRadius: JackPalette.radius(5)))
     }
     private func plain(_ text: String) -> some View {
         // Jupyter tracebacks commonly contain ANSI color sequences.

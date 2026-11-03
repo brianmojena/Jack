@@ -211,8 +211,8 @@ private struct ConversationWelcome: View {
                     .buttonStyle(.plain)
                 }
             }
-            .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(JackPalette.hairline, lineWidth: 0.5))
+            .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: JackPalette.radius(10), style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(10), style: .continuous).strokeBorder(JackPalette.hairline, lineWidth: JackPalette.borderWidth(0.5)))
         }
         .frame(maxWidth: 520, alignment: .leading)
         .frame(maxWidth: .infinity)

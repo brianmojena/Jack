@@ -120,9 +120,9 @@ struct Office2DView: View {
                 if visibleAgents.indices.contains(desk.index) {
                     let agent = visibleAgents[desk.index]
                     Button { select(agent.id) } label: {
-                        RoundedRectangle(cornerRadius: 10)
+                        RoundedRectangle(cornerRadius: JackPalette.radius(10))
                             .fill(Color.white.opacity(selectedID == agent.id ? 0.08 : 0.001))
-                            .overlay(RoundedRectangle(cornerRadius: 10).stroke(officeAccent.opacity(selectedID == agent.id ? 0.65 : 0), lineWidth: 2))
+                            .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(10)).stroke(officeAccent.opacity(selectedID == agent.id ? 0.65 : 0), lineWidth: 2))
                     }
                     .buttonStyle(.plain)
                     .frame(width: desk.deskFrame.width, height: desk.deskFrame.height)
@@ -223,8 +223,8 @@ struct Office2DView: View {
             }
         }
         .padding(12)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(.white.opacity(0.09), lineWidth: 1))
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: JackPalette.radius(16)))
+        .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(16)).stroke(.white.opacity(0.09), lineWidth: 1))
         .shadow(color: .black.opacity(0.25), radius: 16, y: 6)
         .padding(.horizontal, 12).padding(.top, sidebarVisible ? 12 : 32)
         .environment(\.colorScheme, .dark)
@@ -255,7 +255,7 @@ struct Office2DView: View {
     private func decorButton(title: String, symbol: String, point: CGPoint, size: CGSize, tint: Color,
                              action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            RoundedRectangle(cornerRadius: 12).fill(.white.opacity(0.001))
+            RoundedRectangle(cornerRadius: JackPalette.radius(12)).fill(.white.opacity(0.001))
                 .overlay(alignment: .top) {
                     Image(systemName: symbol).font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(tint).padding(8).background(.black.opacity(0.65), in: Circle())
@@ -295,11 +295,11 @@ struct Office2DView: View {
             if viewModel.agents.isEmpty { Text("Sin agentes activos").font(.system(size: 12)).foregroundStyle(officeMuted).padding(20) }
         }
         .background {
-            RoundedRectangle(cornerRadius: 18)
+            RoundedRectangle(cornerRadius: JackPalette.radius(18))
                 .fill(.ultraThinMaterial)
-                .overlay(RoundedRectangle(cornerRadius: 18).fill(Color(red: 14 / 255, green: 18 / 255, blue: 46 / 255).opacity(0.58)))
+                .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(18)).fill(Color(red: 14 / 255, green: 18 / 255, blue: 46 / 255).opacity(0.58)))
         }
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(.white.opacity(0.09), lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(18)).stroke(.white.opacity(0.09), lineWidth: 1))
         .shadow(color: .black.opacity(0.35), radius: 20, y: 8)
         .transition(.move(edge: .trailing).combined(with: .opacity))
     }
@@ -326,9 +326,9 @@ struct Office2DView: View {
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 9).frame(maxWidth: .infinity, alignment: .leading)
-        .background(selectedID == agent.id ? color.opacity(0.15) : .white.opacity(0.035), in: RoundedRectangle(cornerRadius: 13))
-        .overlay(RoundedRectangle(cornerRadius: 13).stroke(selectedID == agent.id ? color.opacity(0.55) : .clear, lineWidth: 1))
-        .contentShape(RoundedRectangle(cornerRadius: 13))
+        .background(selectedID == agent.id ? color.opacity(0.15) : .white.opacity(0.035), in: RoundedRectangle(cornerRadius: JackPalette.radius(13)))
+        .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(13)).stroke(selectedID == agent.id ? color.opacity(0.55) : .clear, lineWidth: 1))
+        .contentShape(RoundedRectangle(cornerRadius: JackPalette.radius(13)))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(agent.name), \(conversation?.provider.title ?? agent.kind), \(shortPath(conversation?.projectPath ?? "")), \(stateTitle(agent.state))")
     }
@@ -364,7 +364,7 @@ struct Office2DView: View {
                         .buttonStyle(Office2DIconButtonStyle())
                 }
                 HStack(spacing: 9) { stateBadge(agent.state); Text(agent.activity ?? stateTitle(agent.state)).font(.system(size: 12)).foregroundStyle(officeMuted).lineLimit(2) }
-                    .padding(9).frame(maxWidth: .infinity, alignment: .leading).background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
+                    .padding(9).frame(maxWidth: .infinity, alignment: .leading).background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: JackPalette.radius(12)))
                 detailRow("Actividad", value: conversation.map { relativeTime($0.updatedAt) } ?? "—")
                 detailRow("Carpeta", value: conversation?.projectPath ?? "—", monospaced: true)
                 Button { viewModel.open(agentID: agent.id) } label: {
@@ -384,8 +384,8 @@ struct Office2DView: View {
         .scrollBounceBehavior(.basedOnSize)
         .frame(maxHeight: 340)
         .frame(width: 310, alignment: .leading)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
-        .overlay(RoundedRectangle(cornerRadius: 20).stroke(color.opacity(0.4), lineWidth: 1))
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: JackPalette.radius(20)))
+        .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(20)).stroke(color.opacity(0.4), lineWidth: 1))
         .shadow(color: .black.opacity(0.45), radius: 25, y: 10).shadow(color: color.opacity(0.15), radius: 22)
         .transition(.move(edge: .bottom).combined(with: .opacity))
     }
@@ -398,8 +398,8 @@ struct Office2DView: View {
             Button("Crear un agente", systemImage: "plus", action: onNew).buttonStyle(.borderedProminent).tint(officeAccent)
         }
         .padding(.horizontal, 26).padding(.vertical, 22).frame(maxWidth: 340)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
-        .overlay(RoundedRectangle(cornerRadius: 20).stroke(.white.opacity(0.09), lineWidth: 1))
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: JackPalette.radius(20)))
+        .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(20)).stroke(.white.opacity(0.09), lineWidth: 1))
         .shadow(color: .black.opacity(0.35), radius: 30, y: 10)
     }
 
@@ -448,7 +448,7 @@ struct Office2DView: View {
 
     private var brandIcon: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 9).fill(LinearGradient(colors: [Color(red: 0.49, green: 0.55, blue: 1), Color(red: 0.88, green: 0.40, blue: 0.74)], startPoint: .topLeading, endPoint: .bottomTrailing))
+            RoundedRectangle(cornerRadius: JackPalette.radius(9)).fill(LinearGradient(colors: [Color(red: 0.49, green: 0.55, blue: 1), Color(red: 0.88, green: 0.40, blue: 0.74)], startPoint: .topLeading, endPoint: .bottomTrailing))
             Circle().fill(Color(red: 0.035, green: 0.047, blue: 0.14)).frame(width: 13, height: 13).offset(y: -2)
             HStack(spacing: 3) {
                 Circle().fill(.white).frame(width: 2.2, height: 2.2)
@@ -576,7 +576,7 @@ private struct Office2DCharacterAvatar: View {
 private struct Office2DIconButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label.foregroundStyle(Color(red: 0.56, green: 0.59, blue: 0.79))
-            .background(.white.opacity(configuration.isPressed ? 0.14 : 0.05), in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(.white.opacity(0.09), lineWidth: 1))
+            .background(.white.opacity(configuration.isPressed ? 0.14 : 0.05), in: RoundedRectangle(cornerRadius: JackPalette.radius(10)))
+            .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(10)).stroke(.white.opacity(0.09), lineWidth: 1))
     }
 }

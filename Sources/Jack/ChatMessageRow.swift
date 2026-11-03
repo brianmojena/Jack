@@ -28,7 +28,7 @@ struct ChatMessageRow: View, Equatable {
                 Text("Jack").font(.system(size: 11, weight: .semibold)).foregroundStyle(JackPalette.accent)
                 Text(message.text).font(.system(size: 12)).textSelection(.enabled)
                 ForEach(message.attachments ?? [], id: \.self) { AttachmentChip(path: $0) }
-            }.padding(10).frame(maxWidth: .infinity, alignment: .leading).background(JackPalette.panel, in: RoundedRectangle(cornerRadius: 6))
+            }.padding(10).frame(maxWidth: .infinity, alignment: .leading).background(JackPalette.panel, in: RoundedRectangle(cornerRadius: JackPalette.radius(6)))
         case "error": errorMessage
         case "user": userMessage
         case "reasoning":
@@ -59,7 +59,7 @@ struct ChatMessageRow: View, Equatable {
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 9)
-        .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: JackPalette.radius(6), style: .continuous))
         .overlay(alignment: .leading) {
             UnevenRoundedRectangle(topLeadingRadius: 6, bottomLeadingRadius: 6, style: .continuous)
                 .fill(JackPalette.accent.opacity(0.7)).frame(width: 2)
@@ -88,8 +88,8 @@ struct ChatMessageRow: View, Equatable {
             Text(message.text).font(.system(size: 12, design: design)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(11)
-        .background(JackPalette.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(JackPalette.red.opacity(0.25), lineWidth: 0.5))
+        .background(JackPalette.red.opacity(0.08), in: RoundedRectangle(cornerRadius: JackPalette.radius(6)))
+        .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(6)).strokeBorder(JackPalette.red.opacity(0.25), lineWidth: 0.5))
         .padding(.leading, chatActivityInset)
     }
 
@@ -551,8 +551,8 @@ struct PlanBox: View {
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(12)
-            .background(JackPalette.codeBackground, in: RoundedRectangle(cornerRadius: 7))
-            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(JackPalette.hairline, lineWidth: 0.5))
+            .background(JackPalette.codeBackground, in: RoundedRectangle(cornerRadius: JackPalette.radius(7)))
+            .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(7)).strokeBorder(JackPalette.hairline, lineWidth: JackPalette.borderWidth(0.5)))
     }
 }
 
@@ -587,7 +587,7 @@ struct DiffView: View {
         }
         .padding(.vertical, 5)
         .background(JackPalette.codeBackground)
-        .overlay(Rectangle().strokeBorder(JackPalette.hairline, lineWidth: 0.5))
+        .overlay(Rectangle().strokeBorder(JackPalette.hairline, lineWidth: JackPalette.borderWidth(0.5)))
         .contextMenu {
             Button("Copiar diff", systemImage: "doc.on.doc") {
                 let text = lines.map { marker($0.kind).trimmingCharacters(in: .whitespaces) + $0.text }.joined(separator: "\n")
@@ -631,8 +631,8 @@ struct OutputBox: View {
                     .padding(.bottom, 4)
             }
         }
-        .background(JackPalette.codeBackground, in: RoundedRectangle(cornerRadius: 7))
-        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(JackPalette.hairline, lineWidth: 0.5))
+        .background(JackPalette.codeBackground, in: RoundedRectangle(cornerRadius: JackPalette.radius(7)))
+        .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(7)).strokeBorder(JackPalette.hairline, lineWidth: JackPalette.borderWidth(0.5)))
     }
 }
 

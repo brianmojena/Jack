@@ -236,7 +236,7 @@ struct SimulatorPanel: View {
                 Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold)).foregroundStyle(JackPalette.muted)
             }
             .padding(.horizontal, 8).frame(height: 26)
-            .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: JackPalette.radius(7), style: .continuous))
         }
         .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
         .disabled(session.devices.isEmpty)

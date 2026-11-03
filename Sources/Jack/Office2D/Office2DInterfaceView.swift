@@ -14,7 +14,7 @@ struct OfficePresentationPicker: View {
         .pickerStyle(.segmented)
         .frame(width: 100)
         .padding(4)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: JackPalette.radius(10)))
         .environment(\.colorScheme, .dark)
         .help("Cambiar entre Oficina 2D y Oficina 3D")
     }

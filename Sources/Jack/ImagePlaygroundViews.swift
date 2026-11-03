@@ -92,14 +92,14 @@ struct ImageRequestCard: View {
             }
         }
         .padding(12)
-        .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: JackPalette.radius(12), style: .continuous))
         // Ice: floats as glass over the transcript, which scrolls beneath the composer.
-        .jackGlass(in: RoundedRectangle(cornerRadius: 12, style: .continuous), basic: .clear)
+        .jackGlass(in: RoundedRectangle(cornerRadius: JackPalette.radius(12), style: .continuous), basic: .clear)
         .overlay {
             if request.isPending {
                 GlowBorder(cornerRadius: 12)
             } else {
-                RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(JackPalette.hairline, lineWidth: 0.5)
+                RoundedRectangle(cornerRadius: JackPalette.radius(12), style: .continuous).strokeBorder(JackPalette.hairline, lineWidth: JackPalette.borderWidth(0.5))
             }
         }
         .accessibilityElement(children: .contain)
@@ -132,8 +132,8 @@ struct ImageRequestCard: View {
             }
         }
         .frame(width: width, height: Self.previewHeight)
-        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(.white.opacity(0.12), lineWidth: 0.5))
+        .clipShape(RoundedRectangle(cornerRadius: JackPalette.radius(9), style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(9), style: .continuous).strokeBorder(.white.opacity(0.12), lineWidth: 0.5))
         .onTapGesture { if let savedPath { NSWorkspace.shared.open(URL(fileURLWithPath: savedPath)) } }
         .accessibilityHidden(true)
     }

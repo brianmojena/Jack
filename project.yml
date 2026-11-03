@@ -50,6 +50,10 @@ targets:
         embed: true
         copy:
           destination: executables
+      - target: jack-ctl
+        embed: true
+        copy:
+          destination: executables
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.jack.desktop
@@ -109,6 +113,18 @@ targets:
     type: tool
     platform: macOS
     sources: [Sources/JackProgress]
+    dependencies:
+      - target: JackCore
+        embed: false
+    settings:
+      base:
+        SKIP_INSTALL: YES
+        # Uses the JackCore.framework embedded in Jack.app/Contents/Frameworks.
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
+  jack-ctl:
+    type: tool
+    platform: macOS
+    sources: [Sources/JackCtl]
     dependencies:
       - target: JackCore
         embed: false

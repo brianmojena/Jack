@@ -263,8 +263,8 @@ struct OfficeTableDock: View {
         }
         .padding(12)
         .frame(width: 320)
-        .background(.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color(red: 0.74, green: 0.8, blue: 0.88), lineWidth: 1))
+        .background(.white, in: RoundedRectangle(cornerRadius: JackPalette.radius(18), style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(18), style: .continuous).strokeBorder(Color(red: 0.74, green: 0.8, blue: 0.88), lineWidth: 1))
         .shadow(color: .black.opacity(0.32), radius: 10, y: 4)
     }
 
@@ -283,7 +283,7 @@ struct OfficeTableDock: View {
                                 if line.fromMe { Spacer(minLength: 36) }
                                 Text(line.text).font(.system(size: 12.5)).foregroundStyle(line.fromMe ? .white : ink)
                                     .padding(.horizontal, 10).padding(.vertical, 5)
-                                    .background(line.fromMe ? orange : Color(red: 0.93, green: 0.96, blue: 1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    .background(line.fromMe ? orange : Color(red: 0.93, green: 0.96, blue: 1), in: RoundedRectangle(cornerRadius: JackPalette.radius(12), style: .continuous))
                                 if !line.fromMe { Spacer(minLength: 36) }
                               }
                             }

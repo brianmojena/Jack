@@ -179,7 +179,7 @@ private struct FileRow: View, Equatable {
         }
         .padding(.leading, 10 + CGFloat(row.depth) * 14).padding(.trailing, 8)
         .frame(height: 24)
-        .background(selected ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+        .background(selected ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: JackPalette.radius(5), style: .continuous))
         .padding(.horizontal, 6)
         .contentShape(Rectangle())
     }

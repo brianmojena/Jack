@@ -641,7 +641,7 @@ struct TerminalPanel: View {
                     Button("Abrir de nuevo") { session.restart() }.controlSize(.small)
                 }
                 .padding(14)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: JackPalette.radius(10), style: .continuous))
             }
         }
     }
@@ -844,14 +844,14 @@ struct BrowserPanel: View {
                         .onSubmit { session.open(session.address) }
                 }
                 .padding(.horizontal, 9).frame(height: 26)
-                .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: JackPalette.radius(7), style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(7), style: .continuous)
                     .strokeBorder(addressFocused ? JackPalette.accent.opacity(0.6) : .clear, lineWidth: 1))
                 .padding(.horizontal, 4)
                 Button { session.setPicking(!session.picking) } label: {
                     Image(systemName: "cursorarrow.rays").font(.system(size: 11.5, weight: .medium))
                         .frame(width: 24, height: 24)
-                        .background(session.picking ? JackPalette.accent.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .background(session.picking ? JackPalette.accent.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: JackPalette.radius(6), style: .continuous))
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -881,8 +881,8 @@ struct BrowserPanel: View {
                         Button("Reintentar") { session.open(session.address) }.controlSize(.small)
                     }
                     .padding(18).frame(maxWidth: 320)
-                    .background(JackPalette.canvas, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(JackPalette.hairline))
+                    .background(JackPalette.canvas, in: RoundedRectangle(cornerRadius: JackPalette.radius(12), style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(12), style: .continuous).strokeBorder(JackPalette.hairline))
                 }
             }
             .overlay(alignment: .top) {
@@ -997,8 +997,8 @@ private struct BrowserPickComposer: View {
             }
         }
         .padding(10)
-        .background(JackPalette.canvas, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(JackPalette.hairline))
+        .background(JackPalette.canvas, in: RoundedRectangle(cornerRadius: JackPalette.radius(12), style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(12), style: .continuous).strokeBorder(JackPalette.hairline))
         .shadow(color: .black.opacity(0.18), radius: 10, y: 3)
         .padding(10)
         .onAppear { focused = true }

@@ -117,8 +117,8 @@ struct LightNewAgentSheet: View {
             }
             .frame(height: 64)
             .padding(8)
-            .background(JackPalette.composer, in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(messageFocused ? JackPalette.accent.opacity(0.6) : JackPalette.hairline, lineWidth: 1))
+            .background(JackPalette.composer, in: RoundedRectangle(cornerRadius: JackPalette.radius(8)))
+            .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(8)).strokeBorder(messageFocused ? JackPalette.accent.opacity(0.6) : JackPalette.hairline, lineWidth: JackPalette.borderWidth(1)))
 
             HStack {
                 Text(canCreate ? "⌘↩ para crear" : "Escribe la tarea o elige una carpeta")
@@ -192,9 +192,9 @@ struct LightNewAgentSheet: View {
             }
             .buttonStyle(.plain)
         }
-        .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: 8))
+        .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: JackPalette.radius(8)))
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: JackPalette.radius(8))
                 .strokeBorder(dropTargeted ? JackPalette.accent : JackPalette.hairline, style: StrokeStyle(lineWidth: dropTargeted ? 2 : 0.5, dash: dropTargeted ? [5, 3] : []))
         )
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
@@ -281,9 +281,9 @@ struct LightNewAgentSheet: View {
                     }
                     .padding(9)
                     .frame(maxWidth: .infinity)
-                    .background(selected ? JackPalette.accent.opacity(0.1) : JackPalette.panel, in: RoundedRectangle(cornerRadius: 8))
-                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(selected ? JackPalette.accent : JackPalette.hairline, lineWidth: selected ? 1.5 : 0.5))
-                    .contentShape(RoundedRectangle(cornerRadius: 8))
+                    .background(selected ? JackPalette.accent.opacity(0.1) : JackPalette.panel, in: RoundedRectangle(cornerRadius: JackPalette.radius(8)))
+                    .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(8)).strokeBorder(selected ? JackPalette.accent : JackPalette.hairline, lineWidth: selected ? 1.5 : 0.5))
+                    .contentShape(RoundedRectangle(cornerRadius: JackPalette.radius(8)))
                 }
                 .buttonStyle(.plain)
                 .help(option == .stellar

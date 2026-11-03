@@ -180,8 +180,8 @@ struct StartView: View {
         .jackGlass(in: RoundedRectangle(cornerRadius: ice ? 18 : 8, style: .continuous), basic: JackPalette.panel)
         .overlay {
             if !ice {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(focused ? JackPalette.accent.opacity(0.45) : JackPalette.hairline, lineWidth: 1)
+                RoundedRectangle(cornerRadius: JackPalette.radius(8), style: .continuous)
+                    .strokeBorder(focused ? JackPalette.accent.opacity(0.45) : JackPalette.hairline, lineWidth: JackPalette.borderWidth(1))
             }
         }
         .frame(maxWidth: MainWindowView.columnWidth).frame(maxWidth: .infinity)

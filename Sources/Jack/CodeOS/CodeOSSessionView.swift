@@ -52,7 +52,7 @@ struct CodeOSSessionView: View {
     /// Jack's own history sidebar and chat, in Ice. Only the glass takes the project's colour: the sidebar pane,
     /// the header pill, the composer and the other glass pieces of the chat.
     private func chat(_ id: UUID) -> some View {
-        let pane = RoundedRectangle(cornerRadius: 30, style: .continuous)
+        let pane = RoundedRectangle(cornerRadius: JackPalette.radius(30), style: .continuous)
         return HStack(spacing: 16) {
             // The glass is a layer behind the sidebar: a list inside a glass view would paint over it.
             ZStack {

@@ -286,10 +286,10 @@ struct ChatProgressPanel: View {
                         .padding(.horizontal, 34).padding(.vertical, 6)
                 }
             }
-            .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: JackPalette.radius(10), style: .continuous))
             // Ice: floats as glass over the transcript, which scrolls beneath the composer.
-            .jackGlass(in: RoundedRectangle(cornerRadius: 10, style: .continuous), basic: .clear)
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(JackPalette.hairline, lineWidth: 0.5))
+            .jackGlass(in: RoundedRectangle(cornerRadius: JackPalette.radius(10), style: .continuous), basic: .clear)
+            .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(10), style: .continuous).strokeBorder(JackPalette.hairline, lineWidth: JackPalette.borderWidth(0.5)))
             .frame(maxWidth: width).frame(maxWidth: .infinity)
             .padding(.horizontal, 22).padding(.top, 4).padding(.bottom, 4)
         }

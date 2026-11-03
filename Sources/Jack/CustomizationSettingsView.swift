@@ -94,8 +94,8 @@ struct CustomizationSettingsView: View {
                     .font(.system(size: 10, design: .monospaced))
                     .scrollContentBackground(.hidden)
                     .padding(5)
-                    .background(JackPalette.codeBackground, in: RoundedRectangle(cornerRadius: 7))
-                    .overlay(RoundedRectangle(cornerRadius: 7).stroke(JackPalette.hairline))
+                    .background(JackPalette.codeBackground, in: RoundedRectangle(cornerRadius: JackPalette.radius(7)))
+                    .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(7)).stroke(JackPalette.hairline))
                     .frame(minHeight: 175, maxHeight: .infinity)
                     .onChange(of: json) { _, text in validateAndSave(text) }
             }

@@ -73,8 +73,8 @@ struct OfficeChessSetupCard: View {
             .opacity(!versusMe && rival == nil ? 0.5 : 1)
         }
         .padding(14)
-        .background(.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color(red: 0.74, green: 0.8, blue: 0.88), lineWidth: 1))
+        .background(.white, in: RoundedRectangle(cornerRadius: JackPalette.radius(18), style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: JackPalette.radius(18), style: .continuous).strokeBorder(Color(red: 0.74, green: 0.8, blue: 0.88), lineWidth: 1))
         .shadow(color: .black.opacity(0.32), radius: 10, y: 4)
     }
 
@@ -101,7 +101,7 @@ struct OfficeChessSetupCard: View {
             }
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(red: 0.93, green: 0.96, blue: 1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .background(Color(red: 0.93, green: 0.96, blue: 1), in: RoundedRectangle(cornerRadius: JackPalette.radius(12), style: .continuous))
         }
     }
 
@@ -143,7 +143,7 @@ struct OfficeChessSetupCard: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(red: 0.93, green: 0.96, blue: 1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(Color(red: 0.93, green: 0.96, blue: 1), in: RoundedRectangle(cornerRadius: JackPalette.radius(12), style: .continuous))
     }
 
     private var rivalMenu: some View {

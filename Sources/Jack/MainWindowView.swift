@@ -127,7 +127,7 @@ struct MainWindowView: View {
                 case .sidebar: sidebar
                 case .chat:
                     if let embeddedHeader {
-                        let pane = RoundedRectangle(cornerRadius: 30, style: .continuous)
+                        let pane = RoundedRectangle(cornerRadius: JackPalette.radius(30), style: .continuous)
                         VStack(spacing: 14) {
                             HStack(spacing: 14) {
                                 embeddedHeader
@@ -827,7 +827,7 @@ struct MainWindowView: View {
                 AgentActivityView(conversation: conversation, status: status, tokens: store.tokenUsage[conversation.id], projectPath: conversation.projectPath,
                                   locating: store.locating.contains(conversation.id))
                     .padding(.vertical, ice ? 6 : 0)
-                    .jackGlass(in: RoundedRectangle(cornerRadius: 12, style: .continuous), basic: .clear)
+                    .jackGlass(in: RoundedRectangle(cornerRadius: JackPalette.radius(12), style: .continuous), basic: .clear)
                     .frame(maxWidth: Self.columnWidth).frame(maxWidth: .infinity)
                     .padding(.horizontal, 22)
             }
@@ -982,7 +982,7 @@ struct MainWindowView: View {
                     }.buttonStyle(.plain).foregroundStyle(JackPalette.muted).help("Cerrar")
                 }
                 .padding(.horizontal, 8).padding(.vertical, 6)
-                .background(JackPalette.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+                .background(JackPalette.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: JackPalette.radius(6)))
             }
             if !mentionOptions.isEmpty, AgentMentions.query(in: draft) != nil,
                dismissedMentionDraft != draft {
@@ -1001,14 +1001,14 @@ struct MainWindowView: View {
                                     .font(.system(size: 9, design: .monospaced)).foregroundStyle(JackPalette.faint)
                             }
                             .padding(.horizontal, 8).padding(.vertical, 5)
-                            .background(index == mentionSelection ? JackPalette.panelStrong : .clear, in: RoundedRectangle(cornerRadius: 5))
+                            .background(index == mentionSelection ? JackPalette.panelStrong : .clear, in: RoundedRectangle(cornerRadius: JackPalette.radius(5)))
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                     }
                 }
                 .padding(.bottom, 4)
-                .background(JackPalette.panel.opacity(0.7), in: RoundedRectangle(cornerRadius: 7))
+                .background(JackPalette.panel.opacity(0.7), in: RoundedRectangle(cornerRadius: JackPalette.radius(7)))
                 .accessibilityLabel("Destinos de agentes")
             }
             if !attached.isEmpty {
@@ -1212,8 +1212,8 @@ struct MainWindowView: View {
         .jackGlass(in: RoundedRectangle(cornerRadius: ice ? 18 : 8, style: .continuous), basic: JackPalette.panel)
         .overlay {
             if !ice {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(focusedComposer == conversation.id ? JackPalette.accent.opacity(0.45) : JackPalette.hairline, lineWidth: 1)
+                RoundedRectangle(cornerRadius: JackPalette.radius(8), style: .continuous)
+                    .strokeBorder(focusedComposer == conversation.id ? JackPalette.accent.opacity(0.45) : JackPalette.hairline, lineWidth: JackPalette.borderWidth(1))
             }
         }
         .frame(maxWidth: Self.columnWidth).frame(maxWidth: .infinity)

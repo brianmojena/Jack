@@ -161,7 +161,7 @@ struct ClaudeCloudPanel: View {
                         Text(error).font(.callout).multilineTextAlignment(.center)
                         Button("Reintentar") { session.reload() }
                         Button("Ir al inicio") { session.home() }
-                    }.padding(24).frame(maxWidth: 420).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    }.padding(24).frame(maxWidth: 420).background(.regularMaterial, in: RoundedRectangle(cornerRadius: JackPalette.radius(12)))
                 }
             }
         }
