@@ -303,6 +303,7 @@
 		EA5AF718CED48B60FEF2D5CF /* OfficeInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE36C499F0CD0494F65F0521 /* OfficeInput.swift */; };
 		EB4769F610D6F7890CBE5D6D /* OfficeProbe_sofa.exr in Resources */ = {isa = PBXBuildFile; fileRef = 4D62294F7536095356FAA42A /* OfficeProbe_sofa.exr */; };
 		EC04FA625364509E11174352 /* MarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BF3FCA24BA069D694B0B6F5 /* MarkdownText.swift */; };
+		EC2FDDB9F5C92E0F87CD45CC /* Sounds in Resources */ = {isa = PBXBuildFile; fileRef = AB6534A56549DFA1F449F357 /* Sounds */; };
 		EC3598039BED03FF2D93838E /* REMY.usdz in Resources */ = {isa = PBXBuildFile; fileRef = B33E00280F531F45985C9478 /* REMY.usdz */; };
 		ED0C1E5A05E48C44805BA565 /* ChatModelChoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAA06A062E9665524A768902 /* ChatModelChoice.swift */; };
 		ED6975EFB9DCC205207C64CA /* PlayingCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC30E5EC6B6A1E518C872057 /* PlayingCards.swift */; };
@@ -557,6 +558,7 @@
 		A9F734741C87233B79689516 /* OfficeLiveScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeLiveScreen.swift; sourceTree = "<group>"; };
 		AAB762688CB92664884E380E /* OfficeAvatars.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeAvatars.swift; sourceTree = "<group>"; };
 		AAE25B4965A944604A09D714 /* CodeOSIcons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeOSIcons.swift; sourceTree = "<group>"; };
+		AB6534A56549DFA1F449F357 /* Sounds */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Sounds; path = Resources/CodeOS/Sounds; sourceTree = SOURCE_ROOT; };
 		AF1118CA07727753620BBFEB /* ProgressMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressMonitor.swift; sourceTree = "<group>"; };
 		B1D9F8E01DEDBA4586FAA1B0 /* OfficeRoom.usdz */ = {isa = PBXFileReference; lastKnownFileType = file.usdz; path = OfficeRoom.usdz; sourceTree = "<group>"; };
 		B1E7A7878DA866A5D263950D /* UpdateViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateViews.swift; sourceTree = "<group>"; };
@@ -902,9 +904,18 @@
 			children = (
 				32B0BA461A610CE350B86967 /* AppIcon.icon */,
 				C4E64BB6ED15B3A579DB97CE /* Assets.xcassets */,
+				AFE5CA6EBB357F3C2A648242 /* CodeOS */,
 				3925FE2021312667A11149F0 /* Office */,
 			);
 			path = Resources;
+			sourceTree = "<group>";
+		};
+		AFE5CA6EBB357F3C2A648242 /* CodeOS */ = {
+			isa = PBXGroup;
+			children = (
+				AB6534A56549DFA1F449F357 /* Sounds */,
+			);
+			path = CodeOS;
 			sourceTree = "<group>";
 		};
 		C5D3D4BD137E4DF868F9E03A /* Engine */ = {
@@ -1227,6 +1238,7 @@
 				EB4769F610D6F7890CBE5D6D /* OfficeProbe_sofa.exr in Resources */,
 				957BAD3B8F877B8C3FAFFA05 /* OfficeRoom.usdz in Resources */,
 				EC3598039BED03FF2D93838E /* REMY.usdz in Resources */,
+				EC2FDDB9F5C92E0F87CD45CC /* Sounds in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

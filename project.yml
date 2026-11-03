@@ -42,6 +42,11 @@ targets:
       # Card art (back, jack, queen, king, joker), prepared by scripts/office_cards_art.py.
       - path: Resources/Office/Cards
         buildPhase: resources
+      # CodeOS's interface sounds, if the folder has them (they are not in the repository: see Resources/CodeOS/Sounds/README.md).
+      - path: Resources/CodeOS/Sounds
+        type: folder
+        buildPhase: resources
+        optional: true
     dependencies:
       - target: JackCore
       - package: SwiftTerm

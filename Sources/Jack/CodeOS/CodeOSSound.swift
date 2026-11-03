@@ -1,8 +1,8 @@
 import AVFoundation
 
-/// The console's sounds. They are the real system sound files when they are in
-/// `~/Library/Application Support/Jack/CodeOS/Sounds` (one file per cue, named after it; they are not part of the repo).
-/// Without them it falls back to bell notes synthesised in code. Nothing plays on its own: every sound answers a key press.
+/// The console's sounds. They are the real system sound files when the app carries them (`Resources/CodeOS/Sounds`, bundled at build time)
+/// or the user has them in `~/Library/Application Support/Jack/CodeOS/Sounds`, one file per cue, named after it. They are not in the
+/// repository. Without them it falls back to bell notes synthesised in code. Nothing plays on its own: every sound answers a key press.
 @MainActor final class CodeOSSound {
     static let shared = CodeOSSound()
 
@@ -20,7 +20,11 @@ import AVFoundation
     private var step = 2
     private var running = false
     private var samples: [Cue: AVAudioPCMBuffer?] = [:]
-    private static let soundsDirectory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Jack/CodeOS/Sounds")
+    /// Inside the app first (Jack.app/Contents/Resources/Sounds), then the user's own folder.
+    private static let soundsDirectories = [
+        Bundle.main.resourceURL?.appendingPathComponent("Sounds"),
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Jack/CodeOS/Sounds")
+    ].compactMap { $0 }
 
     private init() {}
 
@@ -49,8 +53,8 @@ import AVFoundation
     }
 
     private static func load(_ cue: Cue, as format: AVAudioFormat) -> AVAudioPCMBuffer? {
-        for ext in ["flac", "wav", "mp3", "m4a", "aiff"] {
-            let url = soundsDirectory.appendingPathComponent("\(cue.rawValue).\(ext)")
+        for (directory, ext) in soundsDirectories.flatMap({ directory in ["flac", "wav", "mp3", "m4a", "aiff"].map { (directory, $0) } }) {
+            let url = directory.appendingPathComponent("\(cue.rawValue).\(ext)")
             guard let file = try? AVAudioFile(forReading: url),
                   let input = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length)),
                   (try? file.read(into: input)) != nil,
