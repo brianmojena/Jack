@@ -139,17 +139,13 @@ struct LightWindowView: View {
                     Button {
                         store.select(chat.id)
                     } label: {
-                        let attention = store.statuses[chat.id] == .waiting ? " · Necesita respuesta" : ""
-                        Text(chat.title + attention + (chat.hasUnread == true ? " · Nuevo" : ""))
+                        let waitingStatus = store.statuses[chat.id] == .waiting ? " · En espera" : ""
+                        Text(chat.title + waitingStatus + (chat.hasUnread == true ? " · Nuevo" : ""))
                     }
                 }
             } label: { Text(conversation?.title ?? "Conversaciones").lineLimit(1) }
             .disabled(chats.isEmpty)
             Spacer(minLength: 4)
-            if let waiting = chats.first(where: { $0.id != store.selectedID && store.statuses[$0.id] == .waiting }) {
-                Button("Atención", systemImage: "hand.raised") { store.select(waiting.id) }
-                    .help("\(waiting.title) necesita tu respuesta")
-            }
             Button("Nuevo", systemImage: "plus") { newAgent = true }.help("Nuevo agente (⌘N)")
             Menu {
                 Button("Opciones del agente…") { panel = .options }.disabled(conversation == nil)
@@ -352,7 +348,6 @@ struct LightWindowView: View {
     private var actions: JackActions {
         JackActions(newAgent: { newAgent = true }, resumeClaudeSession: { resumeSession = true }, move: move,
                     selectIndex: { index in if chats.indices.contains(index) { store.select(chats[index].id) } },
-                    nextAttention: { if let chat = chats.first(where: { store.statuses[$0.id] == .waiting }) { store.select(chat.id) } },
                     focusComposer: { focusRequest += 1 }, focusSearch: { panel = .conversations },
                     toggleUnread: { if let chat = conversation { store.setUnread(chat.id, chat.hasUnread != true) } },
                     toggleTerminal: { panel = .activity }, toggleBrowser: {}, toggleSimulator: {}, toggleGit: {},

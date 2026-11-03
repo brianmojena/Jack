@@ -643,7 +643,7 @@ struct TerminalInterfaceView: View {
         JackActions(newAgent: { if let path = workspace.selected?.projectPath { create(.claude, directory: path) } else { chooseFolder(.claude) } },
                     resumeClaudeSession: { importingClaude = true }, move: move,
                     selectIndex: { if entries.indices.contains($0) { workspace.select(entries[$0].id) } },
-                    nextAttention: focusTerminal, focusComposer: focusTerminal, focusSearch: { searchFocused = true },
+                    focusComposer: focusTerminal, focusSearch: { searchFocused = true },
                     toggleUnread: {}, toggleTerminal: { if let path = workspace.selected?.projectPath { create(.shell, directory: path) } else { chooseFolder(.shell) } },
                     toggleBrowser: {}, toggleSimulator: {}, toggleGit: {}, toggleExplorer: {},
                     toggleSidebar: { setSidebarVisible(!effectiveSidebarVisible) }, closeTab: { if let id = workspace.snapshot.selectedID { close(id) } },

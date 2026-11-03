@@ -21,11 +21,9 @@ struct SidebarRowModel: Identifiable, Equatable {
     var isRemote = false
     /// The agent that delegated this one, if any.
     var parentID: UUID? = nil
-    /// Shown when the row is listed away from its parent ("Necesita atención", another space).
+    /// Shown when the row is listed away from its parent in another space.
     var parentTitle: String? = nil
     var depth = 0
-
-    var needsAttention: Bool { status == .waiting }
 }
 
 enum SidebarProjectSort: String, CaseIterable, Identifiable, Hashable {
@@ -65,7 +63,6 @@ struct SidebarSections {
     typealias Space = (path: String, name: String, rows: [SidebarRowModel])
     /// Pinned chats, oldest pin first, shown above everything else.
     let pinned: [SidebarRowModel]
-    let attention: [SidebarRowModel]
     let projects: [Space]
 
     init(rows: [SidebarRowModel], projectPaths: [UUID: String], projectOrder: [String] = [], alphabetical: Bool = false,
@@ -74,8 +71,7 @@ struct SidebarSections {
             .prefix(ChatStore.maxPinned))
         let pinnedIDs = Set(pinned.map(\.id))
         let rest = rows.filter { !pinnedIDs.contains($0.id) }
-        attention = rest.filter(\.needsAttention)
-        let grouped = Dictionary(grouping: rest.filter { !$0.needsAttention }) { projectPaths[$0.id] ?? "" }
+        let grouped = Dictionary(grouping: rest) { projectPaths[$0.id] ?? "" }
         let groupedProjects = grouped.map { path, rows in
             (path: path, name: URL(fileURLWithPath: path).lastPathComponent, rows: Self.nested(rows))
         }
@@ -141,7 +137,7 @@ struct SidebarSections {
 
     /// Agents in on-screen order, skipping folded spaces.
     func visibleIDs(collapsed: Set<String>) -> [UUID] {
-        pinned.map(\.id) + attention.map(\.id) + projects.filter { !collapsed.contains($0.path) }.flatMap { $0.rows.map(\.id) }
+        pinned.map(\.id) + projects.filter { !collapsed.contains($0.path) }.flatMap { $0.rows.map(\.id) }
     }
 
     static func movingProject(_ source: String, before destination: String, in projects: [String]) -> [String]? {
@@ -314,19 +310,6 @@ struct JackSidebar: View {
                         }
                     }
                 }
-                if !sections.attention.isEmpty {
-                    Section {
-                        ForEach(sections.attention) { row in nativeRow(row, showProject: true, now: context.date) }
-                    } header: {
-                        HStack(spacing: 6) {
-                            Text("Necesita atención").foregroundStyle(JackPalette.amber)
-                            Text("\(sections.attention.count)").font(.system(size: 10, weight: .semibold).monospacedDigit())
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 5).padding(.vertical, 1)
-                                .background(JackPalette.amber, in: Capsule())
-                        }
-                    }
-                }
                 Section {
                     HStack {
                         Text("Proyectos").font(.system(size: 12, weight: .medium))
@@ -463,10 +446,6 @@ struct JackSidebar: View {
                 if !sections.pinned.isEmpty {
                     sectionLabel("Fijados", count: sections.pinned.count)
                     ForEach(sections.pinned) { row in rowView(row, showProject: true, now: now) }
-                }
-                if !sections.attention.isEmpty {
-                    sectionLabel("Necesita atención", count: sections.attention.count, tint: JackPalette.amber)
-                    ForEach(sections.attention) { row in rowView(row, showProject: true, now: now) }
                 }
                 HStack {
                     sectionLabel("Proyectos")
@@ -899,7 +878,7 @@ struct SidebarRow: View, Equatable {
                 StatusDot(status: row.status, unread: row.unread)
                 ProviderMark(provider: row.provider, size: 12)
                 Text(row.title)
-                    .font(.system(size: 12.5, weight: row.unread || row.needsAttention ? .semibold : .regular))
+                    .font(.system(size: 12.5, weight: row.unread ? .semibold : .regular))
                     .foregroundStyle(selected || row.unread ? Color.primary : JackPalette.secondaryText)
                     .lineLimit(1)
                 if row.provider.isBeta { BetaBadge() }

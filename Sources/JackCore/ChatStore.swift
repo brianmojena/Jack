@@ -59,8 +59,6 @@ private struct FinishedTurnCapture {
 @MainActor public final class ChatStore: ObservableObject {
     @Published public private(set) var conversations: [ChatConversation] = []
     @Published public var selectedID: UUID?
-    /// Set by the Normal inbox before selecting a transcript target.
-    @Published public private(set) var transcriptJump: ChatTranscriptJump?
     @Published public private(set) var statuses: [UUID: ChatStatus] = [:]
     @Published public private(set) var approvals: [UUID: [ChatApproval]] = [:]
     /// Messages written while the agent works, until it reads them.
@@ -169,13 +167,6 @@ private struct FinishedTurnCapture {
         guard customTerminalCommandRequest?.id == id else { return }
         customTerminalCommandRequest = nil
     }
-    public var attentionItems: [(conversation: ChatConversation, item: ChatAttentionItem)] {
-        guard !lightModeEnabled else { return [] }
-        return conversations.flatMap { conversation in
-            (conversation.attentionItems ?? []).filter { $0.state == .pending }.map { (conversation, $0) }
-        }.sorted { $0.item.createdAt > $1.item.createdAt }
-    }
-    public var unreviewedAttentionCount: Int { attentionItems.count }
     private let archive: ChatArchive
     private let preferences: UserDefaults?
     private let makeDriver: (ChatProvider) -> any ChatDriver
@@ -188,6 +179,8 @@ private struct FinishedTurnCapture {
     private var runs: [UUID: Task<Void, Never>] = [:]
     /// Events and cleanup belong to a specific turn, even when the driver is reused.
     private var runGenerations: [UUID: UUID] = [:]
+    /// Resolved Normal-mode permissions cannot be reopened by a duplicate event in the same turn.
+    private var resolvedApprovalIDs: [UUID: Set<String>] = [:]
     /// Transcript boundary captured before each turn so its closure cannot reuse an older reply.
     private var turnMessageStartIndices: [UUID: Int] = [:]
     /// Git status captured around Normal-mode turns. Missing snapshots remain explicitly unavailable.
@@ -327,7 +320,6 @@ private struct FinishedTurnCapture {
             conversations = try archive.loadIndex()
             for conversation in conversations { if let value = conversation.tokenUsage { tokenUsage[conversation.id] = value } }
         } catch { errorMessage = "No se pudo abrir el historial: \(error.localizedDescription)" }
-        if !lightMode { obsoleteRestoredApprovals() }
     }
     public func setConcurrency(_ count: Int) {
         maxConcurrent = max(0, min(64, count))
@@ -1011,7 +1003,6 @@ private struct FinishedTurnCapture {
             do { if let transcript = try archive.load(id) { conversations[index].messages = transcript.messages; conversations[index].turnClosures = transcript.turnClosures }; loaded.insert(id); settleBackground(id) }
             catch { errorMessage = "No se pudo leer esta conversación: \(error.localizedDescription)"; return }
         }
-        let reviewStateChanged = applyPersistedClosureReviews(at: index)
         readPendingClaudeHistory(id)
         selectedID = id
         var changed = false
@@ -1019,45 +1010,10 @@ private struct FinishedTurnCapture {
         if conversations[index].preview == nil, let last = conversations[index].messages.last(where: { $0.role == "assistant" && !$0.text.isEmpty }) {
             conversations[index].preview = Self.preview(of: last.text); changed = true
         }
-        if changed || reviewStateChanged { save(id) }
+        if changed { save(id) }
         evictInactiveTranscripts()
         if needsAntigravityModels { Task { [weak self] in await self?.refreshAntigravityModels() } }
         if needsQoderModels { Task { [weak self] in await self?.refreshQoderModels() } }
-    }
-    public func openAttention(_ item: ChatAttentionItem, in conversationID: UUID) {
-        guard !lightModeEnabled, conversations.contains(where: { $0.id == conversationID }) else { return }
-        select(conversationID)
-        if let messageID = item.messageID,
-           conversations.first(where: { $0.id == conversationID })?.messages.contains(where: { $0.id == messageID }) == true {
-            transcriptJump = ChatTranscriptJump(conversationID: conversationID, messageID: messageID)
-        }
-    }
-    public func clearTranscriptJump(token: UUID) {
-        guard transcriptJump?.token == token else { return }
-        transcriptJump = nil
-    }
-    public func markAttentionReviewed(_ itemID: String, in conversationID: UUID) {
-        guard !lightModeEnabled, let index = conversations.firstIndex(where: { $0.id == conversationID }),
-              var items = conversations[index].attentionItems,
-              let itemIndex = items.firstIndex(where: { $0.id == itemID }), items[itemIndex].state == .pending else { return }
-        if items[itemIndex].kind == .approval, let approvalID = items[itemIndex].approvalID,
-           (approvals[conversationID] ?? []).contains(where: { $0.id == approvalID }) { return }
-        items[itemIndex].state = .reviewed
-        conversations[index].attentionItems = items
-        if items[itemIndex].kind == .completed {
-            let generation = String(itemID.dropFirst("completed:".count))
-            let messageID = items[itemIndex].messageID
-            if var closures = conversations[index].turnClosures,
-               let closureIndex = closures.lastIndex(where: { $0.generationID == generation || (messageID != nil && $0.transcriptMessageID == messageID) }) {
-                closures[closureIndex].reviewedAt = Date()
-                conversations[index].turnClosures = closures
-            }
-        }
-        save(conversationID)
-    }
-    public func isAttentionApprovalActive(_ item: ChatAttentionItem, in conversationID: UUID) -> Bool {
-        guard item.kind == .approval, let approvalID = item.approvalID else { return false }
-        return (approvals[conversationID] ?? []).contains { $0.id == approvalID }
     }
     public func markTurnClosureReviewed(_ closureID: String, in conversationID: UUID) {
         guard !lightModeEnabled, let index = conversations.firstIndex(where: { $0.id == conversationID }),
@@ -1065,14 +1021,6 @@ private struct FinishedTurnCapture {
               let closureIndex = closures.firstIndex(where: { $0.id == closureID }) else { return }
         closures[closureIndex].reviewedAt = Date()
         conversations[index].turnClosures = closures
-        if var items = conversations[index].attentionItems {
-            for itemIndex in items.indices where items[itemIndex].kind == .completed && items[itemIndex].state == .pending
-                && (items[itemIndex].id == "completed:\(closures[closureIndex].generationID)"
-                    || (closures[closureIndex].transcriptMessageID != nil && items[itemIndex].messageID == closures[closureIndex].transcriptMessageID)) {
-                items[itemIndex].state = .reviewed
-            }
-            conversations[index].attentionItems = items
-        }
         save(conversationID)
     }
     private static func commandKey(_ provider: ChatProvider, _ projectPath: String) -> String { "\(provider.rawValue)|\(projectPath)" }
@@ -1355,7 +1303,7 @@ private struct FinishedTurnCapture {
             flush(id); settleActivities(id)
             statuses[id] = .idle
         } else if !driver.keepsAlive { runs[id]?.cancel() }
-        resolveAttentionApprovals(for: id, approvalIDs: (approvals[id] ?? []).map(\.id), generation: generation)
+        resolveApprovals(for: id, approvalIDs: (approvals[id] ?? []).map(\.id), generation: generation)
         approvals[id] = []
     }
     /// Takes a waiting message back, to edit or discard it. Nil when the agent already read it.
@@ -1493,30 +1441,8 @@ private struct FinishedTurnCapture {
         guard !loaded.contains(id), let index = conversations.firstIndex(where: { $0.id == id }) else { return }
         if let transcript = try? archive.load(id) { conversations[index].messages = transcript.messages; conversations[index].turnClosures = transcript.turnClosures }
         loaded.insert(id)
-        if applyPersistedClosureReviews(at: index) { save(id) }
         settleBackground(id)
         readPendingClaudeHistory(id)
-    }
-    @discardableResult private func applyPersistedClosureReviews(at index: Int) -> Bool {
-        guard var closures = conversations[index].turnClosures,
-              let items = conversations[index].attentionItems else { return false }
-        let reviewedGenerations = Set(items.compactMap { item -> String? in
-            guard item.kind == .completed, item.state == .reviewed, item.id.hasPrefix("completed:") else { return nil }
-            return String(item.id.dropFirst("completed:".count))
-        })
-        let reviewedMessages = Set(items.compactMap { item -> String? in
-            item.kind == .completed && item.state == .reviewed ? item.messageID : nil
-        })
-        var changed = false
-        for closureIndex in closures.indices where
-            (reviewedGenerations.contains(closures[closureIndex].generationID)
-                || closures[closureIndex].transcriptMessageID.map(reviewedMessages.contains) == true)
-                && closures[closureIndex].reviewedAt == nil {
-            closures[closureIndex].reviewedAt = Date()
-            changed = true
-        }
-        if changed { conversations[index].turnClosures = closures }
-        return changed
     }
     /// Background work cannot still be running once its agent's process is gone, e.g. after relaunching Jack.
     private func settleBackground(_ id: UUID) {
@@ -1559,7 +1485,7 @@ private struct FinishedTurnCapture {
             }
         }
         statuses[id] = .idle
-        resolveAttentionApprovals(for: id, approvalIDs: (approvals[id] ?? []).map(\.id), generation: generation)
+        resolveApprovals(for: id, approvalIDs: (approvals[id] ?? []).map(\.id), generation: generation)
         approvals[id] = []
         save(id)
     }
@@ -1575,7 +1501,7 @@ private struct FinishedTurnCapture {
                 guard let self, self.runGenerations[id] == generation,
                       self.approvals[id]?.contains(where: { $0.id == approvalID }) == true else { return }
                 self.approvals[id]?.removeAll { $0.id == approvalID }
-                self.resolveAttentionApprovals(for: id, approvalIDs: [approvalID], generation: generation)
+                self.resolveApprovals(for: id, approvalIDs: [approvalID], generation: generation)
                 self.restoreStatus(id)
             } catch {
                 guard let self, self.runGenerations[id] == generation, !self.stoppingRuns.contains(id),
@@ -1684,7 +1610,7 @@ private struct FinishedTurnCapture {
                 guard let self, self.runGenerations[id] == generation,
                       self.approvals[id]?.contains(where: { $0.id == approvalID }) == true else { return }
                 self.approvals[id]?.removeAll { $0.id == approvalID }
-                self.resolveAttentionApprovals(for: id, approvalIDs: [approvalID], generation: generation)
+                self.resolveApprovals(for: id, approvalIDs: [approvalID], generation: generation)
                 self.restoreStatus(id)
             } catch {
                 guard let self, self.runGenerations[id] == generation, !self.stoppingRuns.contains(id),
@@ -1728,7 +1654,7 @@ private struct FinishedTurnCapture {
         cancelLocating(id)
         flowDiagramStates.removeValue(forKey: id)?.cancel()
         liveDrivers.removeValue(forKey: id)?.close()
-        conversations.removeAll { $0.id == id }; loaded.remove(id); statuses.removeValue(forKey: id); approvals.removeValue(forKey: id)
+        conversations.removeAll { $0.id == id }; loaded.remove(id); statuses.removeValue(forKey: id); approvals.removeValue(forKey: id); resolvedApprovalIDs.removeValue(forKey: id)
         waiting.removeValue(forKey: id); recalled.removeValue(forKey: id)
         suggestions.removeValue(forKey: id); asides.dismiss(id)
         scheduleCenter?.discardMessages(of: id)
@@ -1953,6 +1879,7 @@ private struct FinishedTurnCapture {
         clearSuggestion(id)
         let generation = UUID()
         runGenerations[id] = generation
+        if !lightModeEnabled { resolvedApprovalIDs[id] = [] }
         turnMessageStartIndices[id] = conversations.first(where: { $0.id == id })?.messages.count ?? 0
         stoppingRuns.remove(id)
         drivers[id] = driver; statuses[id] = .running
@@ -2017,10 +1944,10 @@ private struct FinishedTurnCapture {
     private func finishRunNow(_ id: UUID, generation: UUID, cancelled: Bool) -> FinishedTurnCapture? {
         guard runGenerations[id] == generation else { return nil }
         runGenerations.removeValue(forKey: id)
+        resolvedApprovalIDs.removeValue(forKey: id)
         flush(id)
         settleActivities(id)
         if statuses[id] != .failed { statuses[id] = .idle }
-        resolveAttentionApprovals(for: id, approvalIDs: (approvals[id] ?? []).map(\.id), generation: generation)
         approvals[id] = []
         let capture = finishTurn(id, generation: generation, cancelled: cancelled)
         drivers.removeValue(forKey: id); runs.removeValue(forKey: id)
@@ -2095,12 +2022,6 @@ private struct FinishedTurnCapture {
         )
         let closure = capture.makeClosure(after: nil, diffs: [:])
         updateClosure(closure, for: id)
-        if ending == .completed {
-            appendAttention(ChatAttentionItem(id: "completed:\(generation.uuidString)", kind: .completed,
-                                              title: "Turno terminado",
-                                              detail: "El agente terminó este turno.",
-                                              messageID: message?.id), to: id)
-        }
         return capture.isRemote ? nil : capture
     }
 
@@ -2269,69 +2190,32 @@ private struct FinishedTurnCapture {
             if let existing = conversations[index].messages.firstIndex(where: { $0.id == messageID }) { conversations[index].messages[existing] = message }
             else { conversations[index].messages.append(message) }
         case .approval(let request):
-            let attentionID = approvalAttentionID(request.id, generation: runGenerations[id])
-            if !lightModeEnabled, conversations[index].attentionItems?.contains(where: { $0.id == attentionID && $0.state == .obsolete }) == true {
+            if !lightModeEnabled, resolvedApprovalIDs[id]?.contains(request.id) == true {
                 break
             }
             if !(approvals[id] ?? []).contains(where: { $0.id == request.id }) { approvals[id, default: []].append(request) }
             statuses[id] = .waiting
-            if !lightModeEnabled {
-                let messageID = conversations[index].messages.first(where: { $0.id == request.id })?.id
-                appendAttention(ChatAttentionItem(id: attentionID, kind: .approval, title: String(request.title.prefix(300)),
-                                                  detail: String(request.detail.prefix(8_000)), messageID: messageID, approvalID: request.id), to: id)
-                save(id)
-            }
         case .approvalResolved(let requestID):
             approvals[id]?.removeAll { $0.id == requestID }
-            resolveAttentionApprovals(for: id, approvalIDs: [requestID], generation: runGenerations[id])
+            resolveApprovals(for: id, approvalIDs: [requestID], generation: runGenerations[id])
             restoreStatus(id)
         case .mode(let mode):
             if conversations[index].mode != mode { conversations[index].mode = mode; save(id) }
         case let .delivered(messageID, text): receiveDelivered(messageID, text: text, at: index)
         case .failure(let message):
-            let messageID: String
-            if lightModeEnabled, conversations[index].messages.last?.text == message {
-                messageID = conversations[index].messages.last?.id ?? UUID().uuidString
-            } else {
-                let errorMessage = ChatMessage(role: "error", text: message)
-                conversations[index].messages.append(errorMessage)
-                messageID = errorMessage.id
-            }
-            if !lightModeEnabled {
-                appendAttention(ChatAttentionItem(id: "failure:\(runGenerations[id]?.uuidString ?? UUID().uuidString):\(messageID)", kind: .failure,
-                                                  title: "Falló el turno", detail: message, messageID: messageID), to: id)
-                save(id)
+            if !lightModeEnabled || conversations[index].messages.last?.text != message {
+                conversations[index].messages.append(ChatMessage(role: "error", text: message))
             }
             statuses[id] = .failed
+            if !lightModeEnabled { save(id) }
         case .completed: break
         case .text, .reasoning, .toolOutput: break
         }
         conversations[index].updatedAt = Date()
     }
-    private func appendAttention(_ item: ChatAttentionItem, to id: UUID) {
-        guard !lightModeEnabled, let index = conversations.firstIndex(where: { $0.id == id }) else { return }
-        var items = conversations[index].attentionItems ?? []
-        if !items.contains(where: { $0.id == item.id }) { items.append(item) }
-        conversations[index].attentionItems = items
-    }
-    private func approvalAttentionID(_ requestID: String, generation: UUID?) -> String {
-        "approval:\(generation?.uuidString ?? "idle"):\(requestID)"
-    }
-    private func resolveAttentionApprovals(for id: UUID, approvalIDs: [String], generation: UUID? = nil) {
-        guard !lightModeEnabled, !approvalIDs.isEmpty, let index = conversations.firstIndex(where: { $0.id == id }),
-              var items = conversations[index].attentionItems else { return }
-        let attentionIDs = generation.map { generation in
-            Set(approvalIDs.map { approvalAttentionID($0, generation: generation) })
-        }
-        var changed = false
-        for itemIndex in items.indices {
-            guard approvalIDs.contains(items[itemIndex].approvalID ?? ""),
-                  attentionIDs?.contains(items[itemIndex].id) ?? true,
-                  items[itemIndex].state == .pending else { continue }
-            items[itemIndex].state = .obsolete
-            changed = true
-        }
-        if changed { conversations[index].attentionItems = items; save(id) }
+    private func resolveApprovals(for id: UUID, approvalIDs: [String], generation: UUID?) {
+        guard !lightModeEnabled, !approvalIDs.isEmpty, runGenerations[id] == generation else { return }
+        resolvedApprovalIDs[id, default: []].formUnion(approvalIDs)
     }
     private func captureGitSnapshot(_ id: UUID) async -> ChatTurnGitSnapshot? {
         guard !lightModeEnabled, let conversation = conversations.first(where: { $0.id == id }), conversation.remote == nil else { return nil }
@@ -2387,18 +2271,6 @@ private struct FinishedTurnCapture {
             if !patch.isEmpty { result[path] = patch; remaining -= patch.utf8.count }
         }
         return result
-    }
-    private func obsoleteRestoredApprovals() {
-        var changed = false
-        for index in conversations.indices {
-            guard var items = conversations[index].attentionItems else { continue }
-            for itemIndex in items.indices where items[itemIndex].kind == .approval && items[itemIndex].state == .pending {
-                items[itemIndex].state = .obsolete
-                changed = true
-            }
-            conversations[index].attentionItems = items
-        }
-        if changed { archive.save(index: conversations) }
     }
     private func save(_ id: UUID) {
         let conversation = loaded.contains(id) ? conversations.first { $0.id == id } : nil

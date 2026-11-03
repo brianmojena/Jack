@@ -459,7 +459,6 @@ private struct ShortcutsSettings: View {
         ("Nuevo agente", "⌘N"),
         ("Agente anterior / siguiente", "⌥⌘↑  ⌥⌘↓"),
         ("Ir al agente 1–9 de la barra", "⌘1 … ⌘9"),
-        ("Siguiente que necesita atención", "⇧⌘A"),
         ("Escribir mensaje", "⌘L"),
         ("Enviar · nueva línea", "↩  ⇧↩"),
         ("Interrumpir y enviar", "⌘↩"),

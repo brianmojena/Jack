@@ -37,7 +37,6 @@ struct MainWindowView: View {
     @State private var newChatID = UUID()
     /// Automations mode replaces the chat area until an agent is chosen.
     @State private var showingAutomations = false
-    @State private var showingAttentionInbox = false
     @State private var showingArtifacts = false
     @State private var showingClaudeCloud = false
     @State private var showingClaudeChat = false
@@ -128,11 +127,6 @@ struct MainWindowView: View {
                 .focusedSceneValue(\.jackActions, actions)
             }
         }
-        .overlay(alignment: .topTrailing) {
-            if effectiveInterfaceStyle == .terminal && !store.lightModeEnabled {
-                attentionButton.padding(.top, 12).padding(.trailing, 16)
-            }
-        }
         .environment(\.interfaceStyle, effectiveInterfaceStyle)
         .environment(\.jackCustomizationRevision, CustomizationAppearance.shared.revision)
         .foregroundStyle(JackPalette.primaryText)
@@ -206,10 +200,6 @@ struct MainWindowView: View {
             workspaceVisible = true
         }
         .onChange(of: paneLayoutValue, initial: true) { _, _ in store.showInPanes(paneLayout.agents) }
-        .onChange(of: store.imageRequests.filter(\.isPending).count) { before, now in
-            // An agent is waiting for an image while the user is elsewhere: bounce the Dock icon once.
-            if now > before, !NSApp.isActive { NSApp.requestUserAttention(.informationalRequest) }
-        }
         .onAppear {
             workspace.attach = { id, paths in attach(paths, to: id) }
             workspace.sendToAgent = { id, text, files, now in sendToAgent(text, files: files, to: id, now: now) }
@@ -218,7 +208,6 @@ struct MainWindowView: View {
         }
         .onChange(of: store.lightModeEnabled) { _, light in
             if light {
-                showingAttentionInbox = false
                 workspace.cancelAutomaticGitCommits()
                 workspace.suspendTerminalInterface()
             }
@@ -253,18 +242,6 @@ struct MainWindowView: View {
                 if !title.isEmpty { store.rename(conversation.id, title: title) }
                 renamingConversation = nil
             } onCancel: { renamingConversation = nil }
-        }
-        .sheet(isPresented: $showingAttentionInbox) {
-            ChatAttentionInbox(store: store) { conversation, item in
-                showingOffice = false
-                showingAutomations = false
-                showingArtifacts = false
-                showingClaudeCloud = false
-                showingClaudeChat = false
-                showingAttentionInbox = false
-                interfaceStyle = .basic
-                store.openAttention(item, in: conversation.id)
-            }
         }
         .confirmationDialog(
             "¿Eliminar esta conversación?",
@@ -331,7 +308,6 @@ struct MainWindowView: View {
         .background(WindowChrome())
         .background(JackPalette.canvas)
         .ignoresSafeArea(.container, edges: .top)
-        .overlay(alignment: .topTrailing) { if !store.lightModeEnabled { attentionButton.padding(.top, 12).padding(.trailing, 16) } }
     }
 
     @ViewBuilder private var officeContent: some View {
@@ -387,7 +363,6 @@ struct MainWindowView: View {
                     Button("Nuevo agente", systemImage: "square.and.pencil") { openNewConversation() }
                         .help("Nuevo agente (⌘N)")
                 }
-                if !store.lightModeEnabled { ToolbarItem { attentionButton } }
             }
         }
         .background(IceWindowChrome())
@@ -539,7 +514,6 @@ struct MainWindowView: View {
                 .equatable()
                 .overlay(alignment: .trailing) {
                     HStack(spacing: 6) {
-                        if !store.lightModeEnabled { attentionButton }
                         WorkspaceToggles(sessions: workspace, conversationID: store.selectedID, paneVisible: workspaceVisible,
                                          explorerVisible: effectiveExplorerVisible, onToggle: toggleWorkspace, onToggleExplorer: toggleExplorer,
                                          gitSession: selectedGitSession, gitActionsAllowed: { !store.lightModeEnabled }, onShowGit: showGitPanel)
@@ -837,35 +811,10 @@ struct MainWindowView: View {
 
     private func messageHistory(_ conversation: ChatConversation) -> some View {
         ChatTranscript(conversation: conversation, active: isActive(conversation), monospaced: monospaced, ice: ice,
-                       jumpTarget: store.transcriptJump?.conversationID == conversation.id ? store.transcriptJump : nil,
-                       onJumpHandled: store.clearTranscriptJump(token:),
                        onOpenGit: { showGitDiff($0, in: conversation) },
                        onReviewClosure: { store.markTurnClosureReviewed($0, in: conversation.id) },
                        onPrompt: { send($0, in: conversation) })
             .equatable()
-    }
-
-    @ViewBuilder private var attentionButton: some View {
-        if !store.lightModeEnabled {
-            Button { showingAttentionInbox = true } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "bell.badge")
-                    Text("Necesita tu atención")
-                    if store.unreviewedAttentionCount > 0 {
-                        Text("\(store.unreviewedAttentionCount)")
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
-                            .padding(.horizontal, 5).padding(.vertical, 2)
-                            .background(JackPalette.accent.opacity(0.2), in: Capsule())
-                    }
-                }
-                .font(.system(size: 11, weight: .medium))
-                .padding(.horizontal, 9).padding(.vertical, 6)
-                .background(JackPalette.panel.opacity(0.92), in: Capsule())
-                .overlay { Capsule().strokeBorder(JackPalette.hairline) }
-            }
-            .buttonStyle(.plain)
-            .help("Permisos, fallos y turnos pendientes de revisar")
-        }
     }
 
     private func showGitDiff(_ path: String?, in conversation: ChatConversation) {
@@ -1618,7 +1567,6 @@ struct MainWindowView: View {
                 let ids = navigationOrder(includeFolded: false)
                 if ids.indices.contains(index) { store.select(ids[index]) }
             },
-            nextAttention: selectNextAttention,
             focusComposer: { focusedComposer = store.selectedID },
             focusSearch: { searchRequest += 1 },
             toggleUnread: {
@@ -1657,18 +1605,6 @@ struct MainWindowView: View {
             store.select(delta > 0 ? ids[0] : ids[ids.count - 1]); return
         }
         store.select(ids[min(max(index + delta, 0), ids.count - 1)])
-    }
-
-    /// Cycles through agents waiting for permission first, then unread ones, folded spaces included.
-    private func selectNextAttention() {
-        let ids = navigationOrder(includeFolded: true)
-        let unread = Set(store.conversations.filter { $0.hasUnread == true }.map(\.id))
-        let waiting = ids.filter { store.statuses[$0] == .waiting }
-        let candidates = waiting.isEmpty ? ids.filter { unread.contains($0) } : waiting
-        guard !candidates.isEmpty else { NSSound.beep(); return }
-        let currentIndex = store.selectedID.flatMap { ids.firstIndex(of: $0) } ?? -1
-        let next = candidates.first { (ids.firstIndex(of: $0) ?? 0) > currentIndex } ?? candidates[0]
-        store.select(next)
     }
 
     private func beginRename(_ conversation: ChatConversation) {

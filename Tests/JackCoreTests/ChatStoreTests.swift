@@ -971,33 +971,18 @@ final class ChatStoreTests: XCTestCase {
         XCTAssertEqual(store.statuses[id], .idle)
         XCTAssertEqual(try archive.load(id)?.messages.last?.text, "uno dos permiso final", "completion saves the last delta without waiting a second")
     }
-    @MainActor func testAttentionEventsSurviveSelectionAndArchiveAndJumpToFailureMessage() async throws {
+    @MainActor func testFailureRemainsInTranscriptAndArchive() async throws {
         let (store, archive, folder, drivers) = fixture()
         defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
         let first = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .codex))
-        let second = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .claude))
+        store.create(projectPath: NSTemporaryDirectory(), provider: .claude)
         store.send("trabajo", to: first); await settle()
         let driver = try XCTUnwrap(drivers().first)
         driver.callback?(.failure("No se pudo terminar la operación"))
-        await settle()
-        let failure = try XCTUnwrap(store.attentionItems.first { $0.conversation.id == first })
-        XCTAssertEqual(failure.item.kind, .failure)
-        XCTAssertEqual(store.conversations.first { $0.id == first }?.messages.first(where: { $0.id == failure.item.messageID })?.text,
-                       "No se pudo terminar la operación")
-
-        store.select(second)
-        XCTAssertTrue(store.attentionItems.contains { $0.item.id == failure.item.id }, "Selecting another chat must not consume the inbox event")
-        archive.flush()
-        XCTAssertEqual(try XCTUnwrap(archive.loadIndex().first { $0.id == first }?.attentionItems?.first?.id), failure.item.id)
-
-        store.openAttention(failure.item, in: first)
-        XCTAssertEqual(store.transcriptJump?.conversationID, first)
-        XCTAssertEqual(store.transcriptJump?.messageID, failure.item.messageID)
-        store.markAttentionReviewed(failure.item.id, in: first)
-        XCTAssertFalse(store.attentionItems.contains { $0.item.id == failure.item.id })
-        archive.flush()
-        XCTAssertEqual(try archive.loadIndex().first { $0.id == first }?.attentionItems?.first?.state, .reviewed)
-        driver.finish(); await settle()
+        driver.finish(); await settle(); archive.flush()
+        XCTAssertEqual(store.statuses[first], .failed)
+        XCTAssertEqual(store.conversations.first { $0.id == first }?.hasUnread, true)
+        XCTAssertEqual(try archive.load(first)?.messages.last?.text, "No se pudo terminar la operación")
     }
     @MainActor func testLightFailureKeepsExistingConsecutiveMessageDeduplication() async throws {
         let (store, _, folder, drivers) = fixture(lightMode: true)
@@ -1010,7 +995,6 @@ final class ChatStoreTests: XCTestCase {
         driver.callback?(.failure("fallo repetido"))
 
         XCTAssertEqual(store.conversations.first { $0.id == id }?.messages.filter { $0.role == "error" }.map(\.text), ["fallo repetido"])
-        XCTAssertTrue(store.attentionItems.isEmpty)
         driver.finish(); await settle()
     }
     @MainActor func testTurnClosureEnrichmentPersistsAfterUnselectedTranscriptIsEvicted() async throws {
@@ -1079,7 +1063,7 @@ final class ChatStoreTests: XCTestCase {
         XCTAssertNil(secondClosure.transcriptMessageID)
         XCTAssertNotEqual(secondClosure.generationID, store.conversations.first { $0.id == id }?.turnClosures?.first?.generationID)
     }
-    @MainActor func testStaleApprovalFromFinishedGenerationDoesNotReappearAndLightAddsNoInboxOrClosure() async throws {
+    @MainActor func testStaleApprovalFromFinishedGenerationDoesNotReappearAndLightAddsNoClosure() async throws {
         let (store, archive, folder, drivers) = fixture()
         defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
         let id = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .codex))
@@ -1091,8 +1075,7 @@ final class ChatStoreTests: XCTestCase {
         driver.finish(); await settle()
         for _ in 0..<100 where store.activeCount > 0 { try await Task.sleep(for: .milliseconds(10)) }
         driver.callback?(.approval(ChatApproval(id: "obsolete", title: "Permiso tardío", detail: "tool")))
-        XCTAssertFalse(store.attentionItems.contains { $0.item.approvalID == "obsolete" })
-        XCTAssertEqual(store.conversations.first { $0.id == id }?.attentionItems?.filter { $0.kind == .completed }.count, 1)
+        XCTAssertTrue(store.approvals[id]?.isEmpty != false)
         let closure = try XCTUnwrap(store.conversations.first { $0.id == id }?.turnClosures?.last)
         XCTAssertEqual(closure.gitComparison.status, .unavailable)
         XCTAssertTrue(closure.checks.isEmpty, "Command text and a generic tool status must not be promoted to a verified check")
@@ -1110,28 +1093,24 @@ final class ChatStoreTests: XCTestCase {
         let lightDriver = try XCTUnwrap(lightDrivers().first)
         lightDriver.callback?(.approval(ChatApproval(id: "light-approval", title: "Permiso", detail: "tool")))
         lightDriver.finish(); await settle(); lightArchive.flush()
-        XCTAssertTrue(light.attentionItems.isEmpty)
         XCTAssertNil(light.conversations.first { $0.id == lightID }?.turnClosures)
         XCTAssertNil(try lightArchive.load(lightID)?.turnClosures)
         archive.flush()
     }
-    @MainActor func testResolvedApprovalIsKeptAsObsoleteAndIgnoresLateDuplicate() async throws {
+    @MainActor func testResolvedApprovalIgnoresLateDuplicateInSameTurn() async throws {
         let (store, _, folder, drivers) = fixture()
         defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
         let id = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .claude))
         store.send("necesito permiso", to: id); await settle()
         let driver = try XCTUnwrap(drivers().first)
         driver.callback?(.approval(ChatApproval(id: "permission-1", title: "Ejecutar operación", detail: "detalle")))
-        let event = try XCTUnwrap(store.attentionItems.first)
-        XCTAssertTrue(store.isAttentionApprovalActive(event.item, in: id))
-        store.markAttentionReviewed(event.item.id, in: id)
-        XCTAssertEqual(store.conversations.first { $0.id == id }?.attentionItems?.first?.state, .pending,
-                       "An active approval cannot be hidden by marking it reviewed")
+        XCTAssertEqual(store.approvals[id]?.first?.id, "permission-1")
         driver.callback?(.approvalResolved("permission-1"))
-        XCTAssertTrue(store.attentionItems.isEmpty)
+        XCTAssertTrue(store.approvals[id]?.isEmpty != false)
+        XCTAssertEqual(store.statuses[id], .running)
         driver.callback?(.approval(ChatApproval(id: "permission-1", title: "Evento viejo", detail: "detalle")))
         XCTAssertTrue(store.approvals[id]?.isEmpty != false)
-        XCTAssertEqual(store.conversations.first { $0.id == id }?.attentionItems?.first(where: { $0.id == event.item.id })?.state, .obsolete)
+        XCTAssertEqual(store.statuses[id], .running, "A duplicate resolved permission must not put the turn back into waiting")
         driver.finish(); await settle()
     }
     @MainActor func testClosuresKeepGenerationAndReviewStateAcrossFollowingTurn() async throws {
@@ -1159,26 +1138,42 @@ final class ChatStoreTests: XCTestCase {
         XCTAssertNotEqual(closures.first?.generationID, closures.last?.generationID)
         archive.flush()
         XCTAssertEqual(try archive.load(id)?.turnClosures, closures)
+        XCTAssertNotNil(try archive.load(id)?.turnClosures?.first?.reviewedAt,
+                        "Review state is persisted in the transcript independently of inbox events")
         XCTAssertNil(try archive.loadIndex().first { $0.id == id }?.turnClosures,
                      "The small index must not duplicate unbounded agent summaries")
     }
-    @MainActor func testRestoredApprovalWithoutActiveRequestBecomesObsolete() async throws {
-        let (initial, archive, folder, _) = fixture()
-        defer { initial.shutdown(); try? FileManager.default.removeItem(at: folder) }
-        let id = try XCTUnwrap(initial.create(projectPath: folder.path, provider: .codex))
-        var saved = try XCTUnwrap(initial.conversations.first { $0.id == id })
-        saved.attentionItems = [ChatAttentionItem(id: "approval:orphan", kind: .approval, title: "Permiso", approvalID: "orphan")]
-        archive.save(index: [saved], conversation: saved)
-        archive.flush()
-        initial.shutdown()
+    @MainActor func testLegacyInboxFieldsAreIgnoredWhenLoadingConversationAndIndex() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("jack-legacy-inbox-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let id = UUID()
+        let conversation = ChatConversation(id: id, title: "Legacy", projectPath: folder.path, messages: [ChatMessage(role: "user", text: "saved")])
+        func legacyObject(_ value: ChatConversation) throws -> [String: Any] {
+            var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(value)) as? [String: Any])
+            object["attentionItems"] = [["id": "approval:orphan", "kind": "approval", "state": "pending", "approvalID": "orphan"]]
+            object["unreviewedAttentionCount"] = 1
+            return object
+        }
+        var summary = conversation
+        summary.messages = []
+        try JSONSerialization.data(withJSONObject: [legacyObject(summary)]).write(to: folder.appendingPathComponent("index.json"))
+        try JSONSerialization.data(withJSONObject: legacyObject(conversation)).write(to: folder.appendingPathComponent("\(id.uuidString).json"))
 
+        let archive = ChatArchive(directory: folder)
         let restored = ChatStore(archive: archive, preferences: nil, driverFactory: { _ in ControlledDriver() })
         defer { restored.shutdown() }
-        XCTAssertTrue(restored.approvals[id]?.isEmpty != false)
-        XCTAssertEqual(restored.conversations.first { $0.id == id }?.attentionItems?.first?.state, .obsolete)
-        XCTAssertTrue(restored.attentionItems.isEmpty)
+        XCTAssertEqual(restored.conversations.first?.title, "Legacy")
+        XCTAssertTrue(restored.approvals[id]?.isEmpty != false, "Legacy inbox permissions are never restored as live approvals")
+        restored.select(id)
+        XCTAssertEqual(restored.selectedConversation?.messages.map(\.text), ["saved"])
+
+        restored.rename(id, title: "Re-saved")
         archive.flush()
-        XCTAssertEqual(try archive.loadIndex().first { $0.id == id }?.attentionItems?.first?.state, .obsolete)
+        let index = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: folder.appendingPathComponent("index.json"))) as? [[String: Any]])
+        XCTAssertNil(index.first?["attentionItems"], "Legacy inbox data is discarded when the index is next saved")
+        let transcript = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: folder.appendingPathComponent("\(id.uuidString).json"))) as? [String: Any])
+        XCTAssertNil(transcript["attentionItems"], "Legacy inbox data is discarded when the transcript is next saved")
     }
     @MainActor private func settle() async { for _ in 0..<8 { await Task.yield() }; try? await Task.sleep(nanoseconds: 10_000_000) }
     @MainActor func testIncreasingParallelismDrainsQueueAndUnlimitedDoesNotCancelActiveRuns() async throws {

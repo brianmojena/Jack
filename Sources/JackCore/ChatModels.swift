@@ -92,8 +92,6 @@ public struct ChatConversation: Identifiable, Codable, Equatable {
     public var preview: String? = nil
     /// The last turn finished while the conversation was not selected.
     public var hasUnread: Bool? = nil
-    /// Durable Normal-mode inbox events. Selecting a conversation does not clear these records.
-    public var attentionItems: [ChatAttentionItem]? = nil
     /// Structured evidence and agent-declared follow-up from the last completed turn.
     public var turnClosures: [ChatTurnClosure]? = nil
     /// When the user pinned it to the top of the sidebar; at most `ChatStore.maxPinned` chats are pinned.
@@ -113,33 +111,6 @@ public struct ChatConversation: Identifiable, Codable, Equatable {
     }
 }
 
-/// An event that needs explicit review in Jack's Normal-mode inbox.
-public struct ChatAttentionItem: Identifiable, Codable, Equatable {
-    public enum Kind: String, Codable, Equatable { case approval, failure, completed }
-    public enum State: String, Codable, Equatable { case pending, reviewed, obsolete }
-    public var id: String
-    public var kind: Kind
-    public var title: String
-    public var detail: String
-    public var createdAt: Date
-    public var messageID: String?
-    public var approvalID: String?
-    public var state: State
-    public init(id: String, kind: Kind, title: String, detail: String = "", createdAt: Date = Date(), messageID: String? = nil, approvalID: String? = nil, state: State = .pending) {
-        self.id = id; self.kind = kind; self.title = title; self.detail = detail
-        self.createdAt = createdAt; self.messageID = messageID; self.approvalID = approvalID; self.state = state
-    }
-}
-
-/// Request to open a conversation at a specific transcript message.
-public struct ChatTranscriptJump: Equatable {
-    public var conversationID: UUID
-    public var messageID: String
-    public var token: UUID
-    public init(conversationID: UUID, messageID: String, token: UUID = UUID()) {
-        self.conversationID = conversationID; self.messageID = messageID; self.token = token
-    }
-}
 public extension ChatConversation {
     /// Extra folders, without the project itself or duplicates.
     var additionalDirectories: [String] {

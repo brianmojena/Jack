@@ -117,7 +117,6 @@
 		8CFA9AFD04527815E8EC6FC0 /* ClaudeSessionPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3789D85F443A38492640A492 /* ClaudeSessionPicker.swift */; };
 		8D901B967A33198662F4A94B /* ChatMessageRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504E39FB7DA22A1B9933C4A5 /* ChatMessageRow.swift */; };
 		8E59269511DCE8F7162A3A1C /* ClaudeArtifacts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2702CDD68A82EB830DC6D786 /* ClaudeArtifacts.swift */; };
-		8FF9F2FECB6D0079A28FD56A /* ChatAttentionInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E26E138A391135FBE24B745 /* ChatAttentionInbox.swift */; };
 		91C52FBBAF6A2CF0F25297D8 /* OfficeAvatars.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAB762688CB92664884E380E /* OfficeAvatars.swift */; };
 		945101B1264E34154DC79876 /* WorkspacePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6164E34644769C64B3E867B1 /* WorkspacePanel.swift */; };
 		957BAD3B8F877B8C3FAFFA05 /* OfficeRoom.usdz in Resources */ = {isa = PBXBuildFile; fileRef = B1D9F8E01DEDBA4586FAA1B0 /* OfficeRoom.usdz */; };
@@ -142,6 +141,7 @@
 		B2A527A5463EF325C05D72A0 /* SSHKeySetup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21FADA6FCE0D89345442C744 /* SSHKeySetup.swift */; };
 		B2B738782CA7D19B82A2B3DA /* ChatModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8E5B74C47ED76F7F4E3175D /* ChatModels.swift */; };
 		B3D592FF705AF382D9633262 /* VoiceTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = B28C9861FC67C38346F78797 /* VoiceTranscriber.swift */; };
+		B4DA2D937B1A59C7BD16A54B /* ChatTurnClosureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0BA39C4C416D88E29FB2AA4 /* ChatTurnClosureView.swift */; };
 		B9766774E9F9FDA9D637016F /* AgentActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC1BBE9D45CBEC403EA22C82 /* AgentActivityView.swift */; };
 		BF0828C79F9347C25D63A7E2 /* Avatar_LAMINE.png in Resources */ = {isa = PBXBuildFile; fileRef = 2C4091408F121190C72E76A9 /* Avatar_LAMINE.png */; };
 		BF38477F58288B2D1279DF30 /* ChatModelPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D8A6CBC10C08DC5BE8F996 /* ChatModelPicker.swift */; };
@@ -260,7 +260,6 @@
 		0D507CBFB46C0D8CC4191A10 /* Simulators.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Simulators.swift; sourceTree = "<group>"; };
 		0D6B7F996310DFC0D7965C38 /* CH31.usdz */ = {isa = PBXFileReference; lastKnownFileType = file.usdz; path = CH31.usdz; sourceTree = "<group>"; };
 		0E0312F9EF3FDF19D86B6340 /* ApprovalViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalViews.swift; sourceTree = "<group>"; };
-		0E26E138A391135FBE24B745 /* ChatAttentionInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatAttentionInbox.swift; sourceTree = "<group>"; };
 		0E4018B4B7C088D5468D722D /* VoiceKey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceKey.swift; sourceTree = "<group>"; };
 		0E8F79C0D4ADDF32C1AA5996 /* ClaudeCloudPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeCloudPanel.swift; sourceTree = "<group>"; };
 		112E9D6E62140F40A3F29A21 /* AgentBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentBridge.swift; sourceTree = "<group>"; };
@@ -414,6 +413,7 @@
 		DE3A75020C7431F6D64BC1E1 /* ChatTurnClosure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTurnClosure.swift; sourceTree = "<group>"; };
 		DE478C8255BAFA828A7913CE /* jack-progress */ = {isa = PBXFileReference; includeInIndex = 0; path = "jack-progress"; sourceTree = BUILT_PRODUCTS_DIR; };
 		E0B96659DFE2D6C91137CF16 /* Poker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Poker.swift; sourceTree = "<group>"; };
+		E0BA39C4C416D88E29FB2AA4 /* ChatTurnClosureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTurnClosureView.swift; sourceTree = "<group>"; };
 		E1DA779938E07CE10645928A /* ChatCommandViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatCommandViews.swift; sourceTree = "<group>"; };
 		E229CF3EA3E5C8331E30BF2D /* ChatProcess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatProcess.swift; sourceTree = "<group>"; };
 		E2E1B2F8CCC4DBA9277E4269 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -650,11 +650,11 @@
 				CCFCEC6A2BE443EE8AB64111 /* AutomationsView.swift */,
 				EE20CBCE09336DFA3CA28709 /* BatterySaver.swift */,
 				5019EA3818C709E8D20043A4 /* BrowserPicker.swift */,
-				0E26E138A391135FBE24B745 /* ChatAttentionInbox.swift */,
 				E1DA779938E07CE10645928A /* ChatCommandViews.swift */,
 				504E39FB7DA22A1B9933C4A5 /* ChatMessageRow.swift */,
 				C3D8A6CBC10C08DC5BE8F996 /* ChatModelPicker.swift */,
 				41D9B14CA52330C9B3508766 /* ChatTranscript.swift */,
+				E0BA39C4C416D88E29FB2AA4 /* ChatTurnClosureView.swift */,
 				84A5AF320597FA5C3D4BEE01 /* ClaudeArtifactImportSheet.swift */,
 				0E8F79C0D4ADDF32C1AA5996 /* ClaudeCloudPanel.swift */,
 				3789D85F443A38492640A492 /* ClaudeSessionPicker.swift */,
@@ -900,11 +900,11 @@
 				4554A60DE0E5512B0E29B1B4 /* AutomationsView.swift in Sources */,
 				5D953693E66E01A72D9DB935 /* BatterySaver.swift in Sources */,
 				FDA0C86DE21F32B305B5F8F8 /* BrowserPicker.swift in Sources */,
-				8FF9F2FECB6D0079A28FD56A /* ChatAttentionInbox.swift in Sources */,
 				D9BC01980D4186E943774370 /* ChatCommandViews.swift in Sources */,
 				8D901B967A33198662F4A94B /* ChatMessageRow.swift in Sources */,
 				BF38477F58288B2D1279DF30 /* ChatModelPicker.swift in Sources */,
 				0D341C6641105DD295680C11 /* ChatTranscript.swift in Sources */,
+				B4DA2D937B1A59C7BD16A54B /* ChatTurnClosureView.swift in Sources */,
 				38BDF783DE0F3545ED96A4A6 /* ClaudeArtifactImportSheet.swift in Sources */,
 				3621471A9E8A3D283111D4E5 /* ClaudeCloudPanel.swift in Sources */,
 				8CFA9AFD04527815E8EC6FC0 /* ClaudeSessionPicker.swift in Sources */,

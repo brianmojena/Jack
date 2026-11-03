@@ -3,9 +3,17 @@ import JackCore
 @testable import Jack
 
 final class SidebarFolderOrderTests: XCTestCase {
-    private func row(_ path: String, time: TimeInterval) -> SidebarRowModel {
+    private func row(_ path: String, time: TimeInterval, status: ChatStatus = .idle) -> SidebarRowModel {
         SidebarRowModel(id: UUID(), title: path, projectName: path, provider: .claude, model: "default",
-                        status: .idle, activity: "", unread: false, updatedAt: Date(timeIntervalSince1970: time), canEdit: true)
+                        status: status, activity: "", unread: false, updatedAt: Date(timeIntervalSince1970: time), canEdit: true)
+    }
+
+    func testWaitingAgentRemainsWithinItsProject() {
+        let waiting = row("Needs permission", time: 10, status: .waiting)
+        let sections = SidebarSections(rows: [waiting], projectPaths: [waiting.id: "/Project"])
+
+        XCTAssertEqual(sections.projects.flatMap(\.rows).map(\.id), [waiting.id])
+        XCTAssertEqual(sections.visibleIDs(collapsed: []), [waiting.id])
     }
 
     func testManualOrderIgnoresDuplicatesAndMissingProjects() {

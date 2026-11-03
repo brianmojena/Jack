@@ -4,7 +4,7 @@ Chat nativo y compacto para gestionar varios agentes de desarrollo en macOS. Int
 
 ## Versionado
 
-La versión actual es **0.3.63**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
+La versión actual es **0.3.64**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
 
 ## Construir
 
@@ -51,7 +51,7 @@ En modo Normal, los permisos adicionales de Codex muestran el acceso solicitado 
 
 El panel **Git** (⇧⌘G) muestra el estado del proyecto, los cambios preparados y pendientes, sus diffs y el historial. Permite preparar archivos, hacer commits, gestionar ramas y sincronizar con el remoto; también puedes pedir al agente que revise los cambios y haga el commit desde el propio panel.
 
-En modo Normal, la bandeja reúne los mensajes pendientes y los cierres del turno distinguen sus fuentes; el panel Git da acceso al estado y al historial del proyecto. Desde **Carpetas** puedes crear un agente aislado en una rama y worktree nuevos, basados en el HEAD confirmado. Los cambios locales sin confirmar del proyecto original no se copian. Revisa la rama y su diff antes de integrar: la acción disponible solo hace fast-forward del commit revisado y requiere que la carpeta base esté limpia. Light no incorpora estas funciones nuevas.
+En modo Normal, los cierres del turno distinguen sus fuentes; el panel Git da acceso al estado y al historial del proyecto. Desde **Carpetas** puedes crear un agente aislado en una rama y worktree nuevos, basados en el HEAD confirmado. Los cambios locales sin confirmar del proyecto original no se copian. Revisa la rama y su diff antes de integrar: la acción disponible solo hace fast-forward del commit revisado y requiere que la carpeta base esté limpia. Light no incorpora estas funciones nuevas.
 
 Las pestañas de agentes aprovechan el ancho de la barra superior en Basic e Ice y se comprimen juntas al abrir más chats o estrechar la ventana. Cuando no caben, puedes desplazarlas horizontalmente o elegir cualquiera desde **Todas las pestañas** (⌄). La pestaña seleccionada se mantiene visible al cambiar de agente, abrir o cerrar pestañas y redimensionar.
 

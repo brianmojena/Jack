@@ -8,7 +8,6 @@ struct JackActions {
     var resumeClaudeSession: () -> Void
     var move: (Int) -> Void
     var selectIndex: (Int) -> Void
-    var nextAttention: () -> Void
     var focusComposer: () -> Void
     var focusSearch: () -> Void
     var toggleUnread: () -> Void
@@ -101,9 +100,6 @@ struct JackCommands: Commands {
             Button("Agente siguiente") { actions?.move(1) }
                 .keyboardShortcut(.downArrow, modifiers: [.command, .option])
                 .disabled((actions?.agentCount ?? 0) == 0)
-            Button("Siguiente que necesita atención") { actions?.nextAttention() }
-                .keyboardShortcut("a", modifiers: [.command, .shift])
-                .disabled((actions?.agentCount ?? 0) == 0 || actions?.terminalOnly == true)
             Divider()
             ForEach(1...9, id: \.self) { index in
                 Button("Agente \(index)") { actions?.selectIndex(index - 1) }

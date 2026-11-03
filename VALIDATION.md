@@ -1,3 +1,10 @@
+## Release 0.3.64 — 3 de noviembre de 2026
+
+- La suite completa terminó con código 0: **513 pruebas XCTest y 5 pruebas Swift Testing, sin fallos**. Registro: `/private/tmp/jack-0.3.64-tests.log`.
+- Se revisó `/private/tmp/jack-sidebar-drag-preview.png`: la barra lateral no muestra una sección de atención. La búsqueda en `Sources/Jack` y `Jack.xcodeproj/project.pbxproj` no encontró referencias a la bandeja ni a su navegación; el cierre del turno se conserva en `ChatTurnClosureView.swift`.
+- La compilación Release terminó con `BUILD SUCCEEDED`. `codesign --verify --deep --strict` y `/private/tmp/jack-check-release-credentials.py` pasaron.
+- ZIP íntegro: `build/release/Jack-0.3.64.zip`. SHA-256: `697bdb3fe1ac8a22a07b4f0a85a98bf4cf6a5fcbe9e5754ff5f34795189981e7`.
+
 ## Release 0.3.63 — 3 de noviembre de 2026
 
 - La suite final terminó con código 0: **512 pruebas XCTest y 5 pruebas Swift Testing, sin fallos**. Registro: `/private/tmp/jack-0.3.63-tests-publish.log`.
