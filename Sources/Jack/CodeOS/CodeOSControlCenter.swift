@@ -53,7 +53,18 @@ struct CodeOSControlCenter: View {
                 .contentShape(Rectangle())
                 .onTapGesture { model.selectControl(row: 0, col: index) }
             }
-            let exitFocused = model.ccRow == 0 && model.ccCol == CodeOSAgent.allCases.count
+            let glassFocused = model.ccRow == 0 && model.ccCol == CodeOSAgent.allCases.count
+            VStack(spacing: 12 * u) {
+                Image(systemName: model.neutralGlass ? "circle.lefthalf.filled" : "paintpalette.fill").font(.system(size: 34 * u, weight: .medium))
+                    .frame(width: 92 * u, height: 92 * u)
+                    .background(Circle().fill(.white.opacity(0.16)))
+                    .overlay(Circle().strokeBorder(.white, lineWidth: glassFocused ? 4 * u : 0).padding(-6 * u))
+                    .scaleEffect(glassFocused ? 1.12 : 1)
+                Text(model.neutralGlass ? "Cristal: neutro" : "Cristal: color").font(.system(size: 16 * u, weight: .semibold)).foregroundStyle(.white.opacity(glassFocused ? 1 : 0.55))
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { model.selectControl(row: 0, col: CodeOSAgent.allCases.count) }
+            let exitFocused = model.ccRow == 0 && model.ccCol == CodeOSAgent.allCases.count + 1
             VStack(spacing: 12 * u) {
                 Image(systemName: "power").font(.system(size: 34 * u, weight: .medium))
                     .frame(width: 92 * u, height: 92 * u)
@@ -63,7 +74,7 @@ struct CodeOSControlCenter: View {
                 Text("Salir de CodeOS").font(.system(size: 16 * u, weight: .semibold)).foregroundStyle(.white.opacity(exitFocused ? 1 : 0.55))
             }
             .contentShape(Rectangle())
-            .onTapGesture { model.selectControl(row: 0, col: CodeOSAgent.allCases.count) }
+            .onTapGesture { model.selectControl(row: 0, col: CodeOSAgent.allCases.count + 1) }
         }
         .foregroundStyle(.white)
         .animation(.spring(response: 0.3, dampingFraction: 0.75), value: model.ccCol)

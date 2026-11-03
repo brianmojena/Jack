@@ -337,7 +337,7 @@ struct JackSidebar: View {
             }
             .listStyle(.sidebar)
         }
-        .searchable(text: $query, placement: .sidebar, prompt: "Buscar")
+        .modifier(SidebarSearch(query: $query))
         .searchFocused($searchFocused)
         .overlay {
             if rows.isEmpty {
@@ -931,4 +931,14 @@ struct SidebarRow: View, Equatable {
 enum JackMetrics {
     /// Height of the sidebar header and the tab strips, aligned with the traffic lights.
     static let stripHeight: CGFloat = 38
+}
+
+/// The sidebar's search field in the window toolbar, unless the host (CodeOS) shows the list on its own.
+private struct SidebarSearch: ViewModifier {
+    @Binding var query: String
+    @Environment(\.jackHidesSidebarSearch) private var hidden
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if hidden { content } else { content.searchable(text: $query, placement: .sidebar, prompt: "Buscar") }
+    }
 }

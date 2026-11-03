@@ -61,6 +61,8 @@ extension EnvironmentValues {
     @Entry var interfaceStyle: InterfaceStyle = .basic
     /// Colour the Ice glass is tinted with, when a host (CodeOS) wants the chat to take on its project's colour.
     @Entry var jackTint: Color? = nil
+    /// CodeOS lists a project's chats in its own pane: no search field in the window toolbar.
+    @Entry var jackHidesSidebarSearch = false
 }
 
 /// The window's layers. Basic paints each one; Ice leaves them to the system, so the glass

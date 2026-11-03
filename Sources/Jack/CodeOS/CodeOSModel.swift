@@ -126,8 +126,8 @@ struct CodeOSLine: Identifiable {
     private let store: ChatStore
     private let sound = CodeOSSound.shared
     private static let samples = ["Jack", "BuildCloud", "Financia", "Revolico", "Portfolio", "Sandbox"].map { CodeOSProject(path: "/Users/demo/\($0)") }
-    /// Row 0 of the control center: the three agents and "leave CodeOS".
-    static let controlItems = CodeOSAgent.allCases.count + 1
+    /// Row 0 of the control center: the three agents, the glass mode and "leave CodeOS".
+    static let controlItems = CodeOSAgent.allCases.count + 2
 
     /// Shared-account profiles and quota. Its changes also refresh the views that watch the model.
     let quota: CodeOSQuotaCoordinator
@@ -370,6 +370,8 @@ struct CodeOSLine: Identifiable {
         } else if ccCol < CodeOSAgent.allCases.count {
             agent = CodeOSAgent.allCases[ccCol]
             sound.play(.select)
+        } else if ccCol == CodeOSAgent.allCases.count {
+            toggleGlassMode()
         } else {
             exit()
         }
@@ -463,6 +465,20 @@ struct CodeOSLine: Identifiable {
         quota.leave()
         hidden = []
         sound.play(.back)
+    }
+
+    /// Liquid Glass in the project's colour, or neutral: a tint almost the same as the background. Remembered between runs.
+    @Published private(set) var neutralGlass = UserDefaults.standard.bool(forKey: "codeOSNeutralGlass")
+
+    /// The tint the glass takes inside a project.
+    func glassTint(_ project: CodeOSProject) -> Color {
+        neutralGlass ? Color(red: 0.07, green: 0.08, blue: 0.12) : tint(project)
+    }
+
+    func toggleGlassMode() {
+        neutralGlass.toggle()
+        UserDefaults.standard.set(neutralGlass, forKey: "codeOSNeutralGlass")
+        sound.play(.tab)
     }
 
     /// Leaves CodeOS for the style Jack had before: the window goes back to normal.

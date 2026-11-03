@@ -16,6 +16,8 @@ struct CodeOSSessionView: View {
     @State private var progress = 0.0
 
     private var tint: Color { model.tint(project) }
+    /// What the glass is tinted with: the project's colour, or neutral.
+    private var glass: Color { model.glassTint(project) }
     private var art: CodeOSModel.Art? { model.art[project.id] }
 
     var body: some View {
@@ -54,10 +56,10 @@ struct CodeOSSessionView: View {
         return HStack(spacing: 16) {
             // The glass is a layer behind the sidebar: a list inside a glass view would paint over it.
             ZStack {
-                Color.clear.codeOSGlass(tint: tint.opacity(0.24), in: pane)
+                Color.clear.codeOSGlass(tint: glass.opacity(model.neutralGlass ? 0.5 : 0.24), in: pane)
                 MainWindowView(store: store, workspace: workspace, memory: memory, batterySaver: batterySaver, updateChecker: updateChecker, embedded: .sidebar,
                                embeddedProjectPath: project.id, onNewChat: { _ = model.conversation(for: project) })
-                    .environment(\.jackTint, tint)
+                    .environment(\.jackTint, glass)
                     .scrollContentBackground(.hidden)
                     .background(.clear)
                     // The pane's rounded corners clip whatever touches the edge: keep the list inside them.
@@ -68,8 +70,8 @@ struct CodeOSSessionView: View {
             .overlay(pane.strokeBorder(.white.opacity(0.14), lineWidth: 1))
             // Header, tools bar, chat and panes are one view: the tools act on the panes beside the chat.
             MainWindowView(store: store, workspace: workspace, memory: memory, batterySaver: batterySaver, updateChecker: updateChecker, embedded: .chat,
-                           embeddedHeader: AnyView(header))
-                .environment(\.jackTint, tint)
+                           embeddedProjectPath: project.id, embeddedHeader: AnyView(header))
+                .environment(\.jackTint, glass)
         }
         .padding(.horizontal, 48)
         .padding(.top, 38)
@@ -81,7 +83,7 @@ struct CodeOSSessionView: View {
             Button { model.goHome() } label: {
                 Label("Inicio", systemImage: "chevron.left").font(.system(size: 14, weight: .semibold))
                     .padding(.horizontal, 14).padding(.vertical, 8)
-                    .codeOSGlass(tint: tint.opacity(0.3), in: Capsule())
+                    .codeOSGlass(tint: glass.opacity(model.neutralGlass ? 0.55 : 0.3), in: Capsule())
             }
             .buttonStyle(.plain)
             .help("Volver al inicio (⌘⇧H). Centro de control: ⌘K · Cuota: ⌘U")
@@ -101,15 +103,9 @@ struct CodeOSSessionView: View {
                 }
                 .font(.system(size: 13, weight: .semibold))
                 .padding(.horizontal, 14).padding(.vertical, 9)
-                .codeOSGlass(tint: tint.opacity(0.3), in: Capsule())
+                .codeOSGlass(tint: glass.opacity(model.neutralGlass ? 0.55 : 0.3), in: Capsule())
                 .onTapGesture { model.toggleQuotaPanel() }
             }
-            HStack(spacing: 8) {
-                CodeOSAgentGlyph(agent: model.agent).frame(width: 16, height: 16)
-                Text(model.agent.rawValue).font(.system(size: 13, weight: .semibold))
-            }
-            .padding(.horizontal, 16).padding(.vertical, 9)
-            .codeOSGlass(tint: tint.opacity(0.3), in: Capsule())
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 6).padding(.vertical, 2)

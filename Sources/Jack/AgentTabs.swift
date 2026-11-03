@@ -332,6 +332,12 @@ struct WorkspaceSideRail: View {
 
     private var horizontal: Bool { axis == .horizontal }
 
+    /// The lit tool: the project's colour, or white when the glass is a dark neutral and a dark highlight would vanish.
+    private var highlight: Color {
+        guard let tint, let brightness = NSColor(tint).usingColorSpace(.sRGB)?.brightnessComponent, brightness > 0.4 else { return .white }
+        return tint
+    }
+
     var body: some View {
         let current = paneVisible ? conversationID.flatMap { sessions.selectedTab(for: $0)?.kind } : nil
         let layout = horizontal ? AnyLayout(HStackLayout(spacing: 2)) : AnyLayout(VStackLayout(spacing: 4))
@@ -382,7 +388,7 @@ struct WorkspaceSideRail: View {
                 .frame(width: horizontal ? 28 : 40, height: horizontal ? 28 : 40)
                 .background {
                     if on {
-                        Circle().fill((tint ?? .white).opacity(0.6)).shadow(color: (tint ?? .white).opacity(0.55), radius: 8)
+                        Circle().fill(highlight.opacity(0.6)).shadow(color: highlight.opacity(0.55), radius: 8)
                     } else if hovered == title {
                         Circle().fill(.white.opacity(0.14))
                     }

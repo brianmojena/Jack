@@ -131,6 +131,7 @@ struct MainWindowView: View {
             }
         }
         .environment(\.interfaceStyle, embedded != nil ? .ice : interfaceStyle)
+        .environment(\.jackHidesSidebarSearch, embedded != nil)
         // The style CodeOS goes back to when it is left.
         .onChange(of: interfaceStyle, initial: true) { _, style in
             if style != .codeos { UserDefaults.standard.set(style.rawValue, forKey: "interfaceStyleBeforeCodeOS") }
@@ -403,14 +404,15 @@ struct MainWindowView: View {
 
     /// Ice shows the open agents as glass tabs over the top of the chat, once there is more than one.
     @ViewBuilder private var iceTabs: some View {
-        if interfaceStyle == .ice, tabModels.count > 1 {
+        if interfaceStyle == .ice || embedded != nil, tabModels.count > 1 {
             IceAgentTabs(tabs: tabModels, selectedID: store.selectedID, onSelect: store.select, onClose: closeTab)
                 .equatable()
         }
     }
 
     @ViewBuilder private var centerColumn: some View {
-        if interfaceStyle == .ice {
+        // CodeOS (embedded) has its tools in its own header: no tab strip with the workspace switches.
+        if interfaceStyle == .ice || embedded != nil {
             chatWithPanes
                 .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
         } else {
@@ -603,7 +605,8 @@ struct MainWindowView: View {
     private var tabModels: [AgentTabModel] {
         let byID = Dictionary(uniqueKeysWithValues: store.conversations.map { ($0.id, $0) })
         return openTabIDs.compactMap { id in
-            byID[id].map { AgentTabModel(id: id, title: $0.title, provider: $0.provider, status: store.statuses[id] ?? .idle, unread: $0.hasUnread == true) }
+            // CodeOS shows the chats of its project only.
+            byID[id].flatMap { embeddedProjectPath == nil || $0.projectPath == embeddedProjectPath ? $0 : nil }.map { AgentTabModel(id: id, title: $0.title, provider: $0.provider, status: store.statuses[id] ?? .idle, unread: $0.hasUnread == true) }
         }
     }
 
