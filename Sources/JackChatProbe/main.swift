@@ -30,6 +30,30 @@ import JackCore
             print("NOTA: \(usage.note) cached=\(usage.isCached)")
             return
         }
+        if args.count >= 2, args[1] == "qoder" {
+            // qoder [model] [prompt…]: a Qoder turn in Manual mode, approving each request, in a throwaway project.
+            let folder = FileManager.default.temporaryDirectory.appendingPathComponent("jack-qoder-probe-" + UUID().uuidString)
+            let project = folder.appendingPathComponent("project")
+            try? FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+            let store = ChatStore(archive: ChatArchive(directory: folder.appendingPathComponent("chats")), preferences: nil)
+            defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+            await store.refreshQoderModels()
+            print("MODELS: " + store.qoderModels.map(\.id).joined(separator: ", ") + (store.qoderModelsError.map { " ERROR \($0)" } ?? ""))
+            guard let id = store.create(projectPath: project.path, provider: .qoder, model: args.count > 2 && args[2] != "-" ? args[2] : nil) else { exit(1) }
+            store.updateMode(id: id, mode: "manual", supported: ChatRunMode.choices(for: .qoder))
+            store.send(args.count > 3 ? args[3...].joined(separator: " ") : "Crea notas.txt con una línea que diga listo y luego dime qué contiene.", to: id)
+            let started = Date()
+            while store.statuses[id] != .idle && store.statuses[id] != .failed || Date().timeIntervalSince(started) < 1, Date().timeIntervalSince(started) < 120 {
+                if let approval = store.approvals[id]?.first {
+                    print("APPROVAL \(approval.title) [\(approval.choices.map(\.title).joined(separator: " | "))]"); store.respond(conversationID: id, approvalID: approval.id, allow: true)
+                }
+                try? await Task.sleep(for: .milliseconds(300))
+            }
+            for message in store.conversations.first(where: { $0.id == id })?.messages ?? [] { print("[\(message.role) \(message.status)] \(message.text.prefix(300))") }
+            print("STATUS \(store.statuses[id].map { "\($0)" } ?? "-") session=\(store.conversations.first { $0.id == id }?.sessionID ?? "-")")
+            print("notas.txt: " + ((try? String(contentsOf: project.appendingPathComponent("notas.txt"), encoding: .utf8)) ?? "-"))
+            return
+        }
         if args.count >= 2, args[1] == "stellar" {
             // stellar [model] [prompt…]: a Stellar Code turn through the store, in a throwaway project, in Auto mode.
             let folder = FileManager.default.temporaryDirectory.appendingPathComponent("jack-stellar-probe-" + UUID().uuidString)
@@ -186,7 +210,7 @@ import JackCore
                         print("APPROVAL received; rejecting smoke-test tools")
                         Task { try? await driver.respond(approvalID: approval.id, allow: false) }
                     case .tool: print("TOOL event")
-                    case .approvalResolved, .reasoning, .toolOutput, .usage, .tokens, .context, .commands, .mode, .delivered: break
+                    case .approvalResolved, .reasoning, .toolOutput, .commandResult, .usage, .tokens, .context, .commands, .mode, .delivered: break
                     }
                 }
                 print("REPLY: \(String(output.prefix(300)))")

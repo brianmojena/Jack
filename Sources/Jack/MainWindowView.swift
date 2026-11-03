@@ -24,6 +24,9 @@ struct MainWindowView: View {
     /// The chat shaded under a drag. Held, not observed: only the shades redraw while dragging.
     @State private var paneDrops = PaneDropState()
     @State private var workspaceVisible = false
+    @State private var forceBasicForCustomCommand = false
+    @State private var customSidebarVisible: Bool?
+    @State private var customExplorerVisible: Bool?
     /// Plans of the selected agent that already had their flowchart shown, or were there when it was selected.
     @State private var seenPlans: Set<String> = []
     @AppStorage("explorerVisible") private var explorerVisible = false
@@ -34,6 +37,7 @@ struct MainWindowView: View {
     @State private var newChatID = UUID()
     /// Automations mode replaces the chat area until an agent is chosen.
     @State private var showingAutomations = false
+    @State private var showingAttentionInbox = false
     @State private var showingArtifacts = false
     @State private var showingClaudeCloud = false
     @State private var showingClaudeChat = false
@@ -62,6 +66,28 @@ struct MainWindowView: View {
     @State private var playgroundRequest: ChatImageRequest?
 
     private var selectedConversation: ChatConversation? { store.selectedConversation }
+    private var customizationLayout: CustomizationLayout? {
+        guard !store.lightModeEnabled else { return nil }
+        return store.customization.effectiveLayout
+    }
+    private var effectiveInterfaceStyle: InterfaceStyle {
+        guard !forceBasicForCustomCommand, let interface = customizationLayout?.interface else { return forceBasicForCustomCommand ? .basic : interfaceStyle }
+        return switch interface {
+        case .basic: .basic
+        case .ice: .ice
+        case .terminal: .terminal
+        case .office: .office
+        case .office2D: .office2D
+        }
+    }
+    private var effectiveSidebarVisible: Bool { customSidebarVisible ?? customizationLayout?.sidebarVisible ?? sidebarVisible }
+    private var effectiveExplorerVisible: Bool { customExplorerVisible ?? customizationLayout?.explorerVisible ?? explorerVisible }
+    private var sidebarWidthOverride: CGFloat? { customizationLayout?.sidebarWidth.map(CGFloat.init) }
+    private var sidebarOnLeft: Bool { customizationLayout?.sidebarPosition != .right }
+    private var statusBarShown: Bool { customizationLayout?.statusBarVisible ?? true }
+    private var workspaceOnBottom: Bool { customizationLayout?.workspacePosition == .bottom }
+    private var workspaceWidthOverride: CGFloat? { customizationLayout?.workspaceWidth.map(CGFloat.init) }
+    private var workspaceHeightOverride: CGFloat { CGFloat(customizationLayout?.workspaceHeight ?? 280) }
     private var importedClaudeSessions: Set<String> { Set(store.conversations.compactMap { $0.provider == .claude ? $0.sessionID : nil }) }
     private var selectedGitSession: GitSession? {
         guard !store.lightModeEnabled, let conversation = selectedConversation, conversation.remote == nil else { return nil }
@@ -72,9 +98,9 @@ struct MainWindowView: View {
         workspace.reveal(.git, for: id)
         workspaceVisible = true
     }
-    private var ice: Bool { interfaceStyle == .ice }
+    private var ice: Bool { effectiveInterfaceStyle == .ice }
     private var officeVisible: Bool {
-        !store.lightModeEnabled && (showingOffice || interfaceStyle.isOffice)
+        !store.lightModeEnabled && (showingOffice || effectiveInterfaceStyle.isOffice)
             && !showingArtifacts && !showingClaudeCloud && !showingClaudeChat && !showingAutomations
     }
     private var sidebarProjectSort: SidebarProjectSort {
@@ -88,18 +114,30 @@ struct MainWindowView: View {
 
     var body: some View {
         Group {
-            if interfaceStyle == .terminal, !store.lightModeEnabled {
+            if effectiveInterfaceStyle == .terminal, !store.lightModeEnabled {
                 TerminalInterfaceView(workspace: workspace.terminalInterface(), store: store,
                                       enterBatterySaver: enterBatterySaver)
             } else if officeVisible {
                 officeLayout
                     .focusedSceneValue(\.jackActions, actions)
             } else {
-                Group { if interfaceStyle == .ice { iceLayout } else { basicLayout } }
-                    .focusedSceneValue(\.jackActions, actions)
+                Group {
+                    if effectiveInterfaceStyle == .ice && sidebarOnLeft { iceLayout }
+                    else { basicLayout }
+                }
+                .focusedSceneValue(\.jackActions, actions)
             }
         }
-        .environment(\.interfaceStyle, interfaceStyle)
+        .overlay(alignment: .topTrailing) {
+            if effectiveInterfaceStyle == .terminal && !store.lightModeEnabled {
+                attentionButton.padding(.top, 12).padding(.trailing, 16)
+            }
+        }
+        .environment(\.interfaceStyle, effectiveInterfaceStyle)
+        .environment(\.jackCustomizationRevision, CustomizationAppearance.shared.revision)
+        .foregroundStyle(JackPalette.primaryText)
+        .tint(JackPalette.accent)
+        .preferredColorScheme(CustomizationAppearance.shared.colorScheme)
         .frame(minWidth: 900, minHeight: 600)
         .onChange(of: store.conversations.map(\.id)) { previous, ids in
             workspace.prune(keeping: Set(ids))
@@ -129,6 +167,29 @@ struct MainWindowView: View {
             let layout = PaneLayout(encoded: paneLayoutValue)
             if layout.contains(id) { setLayout(layout.removing(id)) }
         }
+        .onChange(of: store.customTerminalCommandRequest, initial: true) { _, request in
+            guard let request else { return }
+            guard !store.lightModeEnabled else { store.consumeCustomTerminalCommand(id: request.id); return }
+            store.consumeCustomTerminalCommand(id: request.id)
+            guard let conversation = store.conversations.first(where: { $0.id == request.conversationID }),
+                  conversation.remote == nil, conversation.projectPath == request.projectPath else { return }
+            forceBasicForCustomCommand = true
+            showingArtifacts = false; showingClaudeCloud = false; showingClaudeChat = false
+            showingAutomations = false; showingOffice = false
+            store.select(conversation.id)
+            do {
+                _ = try workspace.runCustomCommand(request)
+                workspaceVisible = true
+            } catch {
+                store.errorMessage = error.localizedDescription
+            }
+        }
+        .onChange(of: customizationLayout) { _, _ in
+            resetCustomizationOverrides()
+        }
+        .onChange(of: interfaceStyle) { _, _ in
+            resetCustomizationOverrides()
+        }
         // A plan put forward by the agent in the main chat draws its flowchart in the right pane.
         .onChange(of: planKey) { _, key in
             guard let key, seenPlans.insert(key).inserted, let id = store.selectedID else { return }
@@ -156,7 +217,11 @@ struct MainWindowView: View {
             if attachments.isEmpty { attachments = memory.attachments }
         }
         .onChange(of: store.lightModeEnabled) { _, light in
-            if light { workspace.cancelAutomaticGitCommits(); workspace.suspendTerminalInterface() }
+            if light {
+                showingAttentionInbox = false
+                workspace.cancelAutomaticGitCommits()
+                workspace.suspendTerminalInterface()
+            }
         }
         .onDisappear {
             workspace.cancelAutomaticGitCommits()
@@ -164,9 +229,9 @@ struct MainWindowView: View {
             memory.attachments = attachments
         }
         // Stellar Code's local models, so its cards and pickers know what is available.
-        .task { if interfaceStyle != .terminal { await store.refreshLocalModels() } }
+        .task { if effectiveInterfaceStyle != .terminal { await store.refreshLocalModels() } }
         .task {
-            guard interfaceStyle != .terminal, !claudeImportOffered else { return }
+            guard effectiveInterfaceStyle != .terminal, !claudeImportOffered else { return }
             let found = await ClaudeImportSheet.find(.quarter, excluding: importedClaudeSessions)
             if found.isEmpty { claudeImportOffered = true } else { firstImport = found }
         }
@@ -189,6 +254,18 @@ struct MainWindowView: View {
                 renamingConversation = nil
             } onCancel: { renamingConversation = nil }
         }
+        .sheet(isPresented: $showingAttentionInbox) {
+            ChatAttentionInbox(store: store) { conversation, item in
+                showingOffice = false
+                showingAutomations = false
+                showingArtifacts = false
+                showingClaudeCloud = false
+                showingClaudeChat = false
+                showingAttentionInbox = false
+                interfaceStyle = .basic
+                store.openAttention(item, in: conversation.id)
+            }
+        }
         .confirmationDialog(
             "¿Eliminar esta conversación?",
             isPresented: Binding(get: { deletingConversation != nil }, set: { if !$0 { deletingConversation = nil } }),
@@ -209,12 +286,22 @@ struct MainWindowView: View {
     /// Jack's own dense workspace: hidden title bar, custom strips and panes.
     private var basicLayout: some View {
         VStack(spacing: 0) {
-            PaneSplit(.leading, visible: sidebarVisible, widthKey: "sidebarWidth", defaultWidth: 264, range: 210...400, flexibleMinimum: 440) {
-                sidebar
-            } trailing: {
-                detailPanes
+            if sidebarOnLeft {
+                PaneSplit(.leading, visible: effectiveSidebarVisible, widthKey: "sidebarWidth", defaultWidth: 264, range: 210...400, flexibleMinimum: 440,
+                          widthOverride: sidebarWidthOverride, persistWidth: sidebarWidthOverride == nil) {
+                    sidebar
+                } trailing: {
+                    detailPanes
+                }
+            } else {
+                PaneSplit(.trailing, visible: effectiveSidebarVisible, widthKey: "sidebarWidth", defaultWidth: 264, range: 210...400, flexibleMinimum: 440,
+                          widthOverride: sidebarWidthOverride, persistWidth: sidebarWidthOverride == nil) {
+                    detailPanes
+                } trailing: {
+                    sidebar
+                }
             }
-            statusBar
+            if statusBarShown { statusBar }
         }
         .background(WindowChrome())
         .background(JackPalette.canvas)
@@ -224,21 +311,32 @@ struct MainWindowView: View {
     /// The 3D office: the agents as characters; a desk's screen shows the agent's chat.
     private var officeLayout: some View {
         VStack(spacing: 0) {
-            PaneSplit(.leading, visible: sidebarVisible, widthKey: "sidebarWidth", defaultWidth: 264, range: 210...400, flexibleMinimum: 440) {
-                sidebar
-            } trailing: {
-                officeContent
+            if sidebarOnLeft {
+                PaneSplit(.leading, visible: effectiveSidebarVisible, widthKey: "sidebarWidth", defaultWidth: 264, range: 210...400, flexibleMinimum: 440,
+                          widthOverride: sidebarWidthOverride, persistWidth: sidebarWidthOverride == nil) {
+                    sidebar
+                } trailing: {
+                    officeContent
+                }
+            } else {
+                PaneSplit(.trailing, visible: effectiveSidebarVisible, widthKey: "sidebarWidth", defaultWidth: 264, range: 210...400, flexibleMinimum: 440,
+                          widthOverride: sidebarWidthOverride, persistWidth: sidebarWidthOverride == nil) {
+                    officeContent
+                } trailing: {
+                    sidebar
+                }
             }
-            statusBar
+            if statusBarShown { statusBar }
         }
         .background(WindowChrome())
         .background(JackPalette.canvas)
         .ignoresSafeArea(.container, edges: .top)
+        .overlay(alignment: .topTrailing) { if !store.lightModeEnabled { attentionButton.padding(.top, 12).padding(.trailing, 16) } }
     }
 
     @ViewBuilder private var officeContent: some View {
-        if interfaceStyle == .office2D {
-            Office2DInterfaceView(store: store, batterySaver: batterySaver, sidebarVisible: sidebarVisible,
+        if effectiveInterfaceStyle == .office2D {
+            Office2DInterfaceView(store: store, batterySaver: batterySaver, sidebarVisible: effectiveSidebarVisible,
                                   onShowSidebar: toggleSidebar) { target in officeScreen(target) }
         } else {
             office3DContent
@@ -246,11 +344,11 @@ struct MainWindowView: View {
     }
 
     private var office3DContent: some View {
-        OfficeInterfaceView(store: store, sidebarVisible: sidebarVisible, onShowSidebar: toggleSidebar) { target in
+        OfficeInterfaceView(store: store, sidebarVisible: effectiveSidebarVisible, onShowSidebar: toggleSidebar) { target in
             officeScreen(target)
         }
         .overlay(alignment: .topLeading) {
-            OfficePresentationPicker().padding(.leading, sidebarVisible ? 18 : 122).padding(.top, 12)
+            OfficePresentationPicker().padding(.leading, effectiveSidebarVisible ? 18 : 122).padding(.top, 12)
         }
     }
 
@@ -268,13 +366,13 @@ struct MainWindowView: View {
     /// floating over the transcript, which scrolls beneath it.
     private var iceLayout: some View {
         let conversation = selectedConversation
-        return NavigationSplitView(columnVisibility: Binding(get: { sidebarVisible ? .all : .detailOnly },
-                                                             set: { sidebarVisible = $0 != .detailOnly })) {
-            sidebar.navigationSplitViewColumnWidth(min: 210, ideal: 264, max: 400)
+        return NavigationSplitView(columnVisibility: Binding(get: { effectiveSidebarVisible ? .all : .detailOnly },
+                                                             set: { setSidebarVisible($0 != .detailOnly) })) {
+            sidebar.navigationSplitViewColumnWidth(min: 210, ideal: sidebarWidthOverride ?? 264, max: 400)
         } detail: {
             VStack(spacing: 0) {
                 detailPanes
-                statusBar
+                if statusBarShown { statusBar }
             }
             .navigationTitle(conversation?.title ?? "Jack")
             .navigationSubtitle(conversation.map { URL(fileURLWithPath: $0.projectPath).lastPathComponent } ?? "")
@@ -282,13 +380,14 @@ struct MainWindowView: View {
                 if #available(macOS 26, *) { ToolbarSpacer(.flexible) }
                 ToolbarItem {
                     WorkspaceToolbarButtons(sessions: workspace, conversationID: store.selectedID, paneVisible: workspaceVisible,
-                                            explorerVisible: explorerVisible, onToggle: toggleWorkspace, onToggleExplorer: toggleExplorer,
+                                            explorerVisible: effectiveExplorerVisible, onToggle: toggleWorkspace, onToggleExplorer: toggleExplorer,
                                             gitSession: selectedGitSession, gitActionsAllowed: { !store.lightModeEnabled }, onShowGit: showGitPanel)
                 }
                 ToolbarItem {
                     Button("Nuevo agente", systemImage: "square.and.pencil") { openNewConversation() }
                         .help("Nuevo agente (⌘N)")
                 }
+                if !store.lightModeEnabled { ToolbarItem { attentionButton } }
             }
         }
         .background(IceWindowChrome())
@@ -365,26 +464,46 @@ struct MainWindowView: View {
 
     private var chatPanes: some View {
         let conversation = selectedConversation
-        return PaneSplit(.trailing, visible: explorerVisible && conversation != nil, widthKey: "explorerWidth", defaultWidth: 250,
+        return PaneSplit(.trailing, visible: effectiveExplorerVisible && conversation != nil, widthKey: "explorerWidth", defaultWidth: 250,
                          range: 180...440, flexibleMinimum: 380) {
-            PaneSplit(.trailing, visible: workspaceVisible && conversation != nil, widthKey: "workspaceWidth", defaultWidth: 500,
-                      range: 300...1200, flexibleMinimum: 340) {
-                centerColumn
-            } trailing: {
-                if let conversation {
-                    WorkspacePane(sessions: workspace, store: store, conversationID: conversation.id, projectPath: conversation.projectPath, remote: conversation.remote,
-                                  onClose: { withoutAnimation { workspaceVisible = false }; focusedComposer = store.selectedID })
-                        .equatable()
-                }
-            }
+            workspaceAndChat(conversation)
         } trailing: {
             if let conversation {
                 FileExplorer(model: workspace.explorer(for: conversation.projectPath),
                              onAttach: { attach([$0], to: conversation.id) },
-                             onClose: { withoutAnimation { explorerVisible = false } })
+                             onClose: { setExplorerVisible(false) })
                     .equatable()
             }
         }
+    }
+
+    @ViewBuilder private func workspaceAndChat(_ conversation: ChatConversation?) -> some View {
+        let visible = workspaceVisible && conversation != nil
+        if workspaceOnBottom {
+            if let conversation, visible {
+                VSplitView {
+                    centerColumn
+                    workspacePane(conversation)
+                        .frame(minHeight: 180, idealHeight: workspaceHeightOverride, maxHeight: .infinity)
+                }
+            } else {
+                centerColumn
+            }
+        } else {
+            PaneSplit(.trailing, visible: visible, widthKey: "workspaceWidth", defaultWidth: 500,
+                      range: 300...1200, flexibleMinimum: 340, widthOverride: workspaceWidthOverride,
+                      persistWidth: workspaceWidthOverride == nil) {
+                centerColumn
+            } trailing: {
+                if let conversation { workspacePane(conversation) }
+            }
+        }
+    }
+
+    private func workspacePane(_ conversation: ChatConversation) -> some View {
+        WorkspacePane(sessions: workspace, store: store, conversationID: conversation.id, projectPath: conversation.projectPath, remote: conversation.remote,
+                      onClose: { withoutAnimation { workspaceVisible = false }; focusedComposer = store.selectedID })
+            .equatable()
     }
 
     private var statusBar: some View {
@@ -397,14 +516,14 @@ struct MainWindowView: View {
 
     /// Ice shows the open agents as glass tabs over the top of the chat, once there is more than one.
     @ViewBuilder private var iceTabs: some View {
-        if interfaceStyle == .ice, tabModels.count > 1 {
+        if effectiveInterfaceStyle == .ice, tabModels.count > 1 {
             IceAgentTabs(tabs: tabModels, selectedID: store.selectedID, onSelect: store.select, onClose: closeTab)
                 .equatable()
         }
     }
 
     @ViewBuilder private var centerColumn: some View {
-        if interfaceStyle == .ice {
+        if effectiveInterfaceStyle == .ice {
             chatWithPanes
                 .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
         } else {
@@ -414,15 +533,18 @@ struct MainWindowView: View {
 
     private var basicCenterColumn: some View {
         VStack(spacing: 0) {
-            AgentTabStrip(tabs: tabModels, selectedID: store.selectedID, sidebarVisible: sidebarVisible,
+            AgentTabStrip(tabs: tabModels, selectedID: store.selectedID, sidebarVisible: effectiveSidebarVisible,
                           onSelect: store.select, onClose: closeTab, onNew: { openNewConversation() }, onShowSidebar: toggleSidebar,
                           onCloseAll: store.lightModeEnabled ? nil : closeAllTabs)
                 .equatable()
                 .overlay(alignment: .trailing) {
-                    WorkspaceToggles(sessions: workspace, conversationID: store.selectedID, paneVisible: workspaceVisible,
-                                     explorerVisible: explorerVisible, onToggle: toggleWorkspace, onToggleExplorer: toggleExplorer,
-                                     gitSession: selectedGitSession, gitActionsAllowed: { !store.lightModeEnabled }, onShowGit: showGitPanel)
-                        .equatable()
+                    HStack(spacing: 6) {
+                        if !store.lightModeEnabled { attentionButton }
+                        WorkspaceToggles(sessions: workspace, conversationID: store.selectedID, paneVisible: workspaceVisible,
+                                         explorerVisible: effectiveExplorerVisible, onToggle: toggleWorkspace, onToggleExplorer: toggleExplorer,
+                                         gitSession: selectedGitSession, gitActionsAllowed: { !store.lightModeEnabled }, onShowGit: showGitPanel)
+                            .equatable()
+                    }
                 }
             chatWithPanes
                 .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
@@ -666,7 +788,7 @@ struct MainWindowView: View {
         }
         .onChange(of: status.isActive) { wasActive, active in
             // The agent may have changed files: refresh the tree once its turn ends.
-            if wasActive, !active, explorerVisible { workspace.explorer(for: conversation.projectPath).refresh() }
+            if wasActive, !active, effectiveExplorerVisible { workspace.explorer(for: conversation.projectPath).refresh() }
         }
     }
 
@@ -715,8 +837,50 @@ struct MainWindowView: View {
 
     private func messageHistory(_ conversation: ChatConversation) -> some View {
         ChatTranscript(conversation: conversation, active: isActive(conversation), monospaced: monospaced, ice: ice,
+                       jumpTarget: store.transcriptJump?.conversationID == conversation.id ? store.transcriptJump : nil,
+                       onJumpHandled: store.clearTranscriptJump(token:),
+                       onOpenGit: { showGitDiff($0, in: conversation) },
+                       onReviewClosure: { store.markTurnClosureReviewed($0, in: conversation.id) },
                        onPrompt: { send($0, in: conversation) })
             .equatable()
+    }
+
+    @ViewBuilder private var attentionButton: some View {
+        if !store.lightModeEnabled {
+            Button { showingAttentionInbox = true } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "bell.badge")
+                    Text("Necesita tu atención")
+                    if store.unreviewedAttentionCount > 0 {
+                        Text("\(store.unreviewedAttentionCount)")
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .padding(.horizontal, 5).padding(.vertical, 2)
+                            .background(JackPalette.accent.opacity(0.2), in: Capsule())
+                    }
+                }
+                .font(.system(size: 11, weight: .medium))
+                .padding(.horizontal, 9).padding(.vertical, 6)
+                .background(JackPalette.panel.opacity(0.92), in: Capsule())
+                .overlay { Capsule().strokeBorder(JackPalette.hairline) }
+            }
+            .buttonStyle(.plain)
+            .help("Permisos, fallos y turnos pendientes de revisar")
+        }
+    }
+
+    private func showGitDiff(_ path: String?, in conversation: ChatConversation) {
+        guard !store.lightModeEnabled, conversation.remote == nil else { return }
+        store.select(conversation.id)
+        workspace.reveal(.git, for: conversation.id)
+        workspaceVisible = true
+        guard let path else { return }
+        let session = workspace.git(for: conversation.projectPath)
+        Task {
+            await session.refresh()
+            guard let file = session.status?.files.first(where: { $0.path == path }) else { return }
+            session.closeDiff()
+            session.select(file, staged: file.staged != nil)
+        }
     }
 
     /// Widest line of the transcript and composer; wider lines are hard to read.
@@ -1286,11 +1450,27 @@ struct MainWindowView: View {
     }
 
     private func toggleExplorer() {
-        withoutAnimation { explorerVisible.toggle() }
+        withoutAnimation { setExplorerVisible(!effectiveExplorerVisible) }
+    }
+
+    private func resetCustomizationOverrides() {
+        customSidebarVisible = nil
+        customExplorerVisible = nil
+        forceBasicForCustomCommand = false
     }
 
     private func toggleSidebar() {
-        withoutAnimation { sidebarVisible.toggle() }
+        withoutAnimation { setSidebarVisible(!effectiveSidebarVisible) }
+    }
+
+    private func setSidebarVisible(_ visible: Bool) {
+        if customizationLayout?.sidebarVisible != nil { customSidebarVisible = visible }
+        else { sidebarVisible = visible }
+    }
+
+    private func setExplorerVisible(_ visible: Bool) {
+        if customizationLayout?.explorerVisible != nil { customExplorerVisible = visible }
+        else { explorerVisible = visible }
     }
 
     private func withoutAnimation(_ change: () -> Void) {

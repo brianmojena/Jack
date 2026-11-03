@@ -72,9 +72,64 @@ final class ChatRunConfigurationTests: XCTestCase {
         XCTAssertEqual(ChatModelChoice.claudeEfforts(for: "sonnet"), ["low", "medium", "high", "xhigh", "max"])
         XCTAssertEqual(ChatModelChoice.claudeEfforts(for: "claude-fable-5-1"), ["low", "medium", "high", "xhigh", "max"])
         XCTAssertEqual(ChatModelChoice.claudeEfforts(for: "claude-haiku-4-5"), [])
+        XCTAssertEqual(ChatModelChoice.claudeEfforts(for: "claude-haiku-5-5"), ["low", "medium", "high", "xhigh", "max"])
+        XCTAssertEqual(ChatModelChoice.claudeEfforts(for: "haiku"), [])
         XCTAssertEqual(ChatModelChoice.claudeEfforts(for: "claude-sonnet-4-5"), [])
         XCTAssertEqual(ChatModelChoice.claudeEfforts(for: "claude-opus-4-5"), ["low", "medium", "high"])
         XCTAssertEqual(ChatModelChoice.claudeEfforts(for: "claude-sonnet-4-6"), ["low", "medium", "high", "max"])
+    }
+    func testClaudeCatalogIncludesVersionsAndSubtitles() {
+        let catalog = ChatModelChoice.claudeCatalog
+        XCTAssertEqual(catalog.count, 4)
+
+        XCTAssertEqual(catalog[0].id, "fable")
+        XCTAssertEqual(catalog[0].title, "Fable 5.1")
+        XCTAssertEqual(catalog[0].subtitle, "El más capaz")
+
+        XCTAssertEqual(catalog[1].id, "opus")
+        XCTAssertEqual(catalog[1].title, "Opus 5.5")
+        XCTAssertEqual(catalog[1].subtitle, "Muy capaz")
+
+        XCTAssertEqual(catalog[2].id, "sonnet")
+        XCTAssertEqual(catalog[2].title, "Sonnet 5.5")
+        XCTAssertEqual(catalog[2].subtitle, "Equilibrado")
+
+        XCTAssertEqual(catalog[3].id, "haiku")
+        XCTAssertEqual(catalog[3].title, "Haiku 4.5")
+        XCTAssertEqual(catalog[3].subtitle, "Rápido y económico")
+    }
+    func testClaudeTitleMapsFullModelIDsToReadableTitles() {
+        // Test aliases
+        XCTAssertEqual(ChatModelChoice.claudeTitle(for: "fable"), "Fable 5.1")
+        XCTAssertEqual(ChatModelChoice.claudeTitle(for: "opus"), "Opus 5.5")
+        XCTAssertEqual(ChatModelChoice.claudeTitle(for: "sonnet"), "Sonnet 5.5")
+        XCTAssertEqual(ChatModelChoice.claudeTitle(for: "haiku"), "Haiku 4.5")
+
+        // Test full IDs
+        XCTAssertEqual(ChatModelChoice.claudeTitle(for: "claude-fable-5-1"), "Fable 5.1")
+        XCTAssertEqual(ChatModelChoice.claudeTitle(for: "claude-opus-5-5"), "Opus 5.5")
+        XCTAssertEqual(ChatModelChoice.claudeTitle(for: "claude-sonnet-5-5"), "Sonnet 5.5")
+        XCTAssertEqual(ChatModelChoice.claudeTitle(for: "claude-haiku-4-5-20251001"), "Haiku 4.5")
+
+        // Test other versions
+        XCTAssertEqual(ChatModelChoice.claudeTitle(for: "claude-opus-4-6"), "Opus 4.6")
+        XCTAssertEqual(ChatModelChoice.claudeTitle(for: "opus-4-6"), "Opus 4.6")
+        XCTAssertEqual(ChatModelChoice.claudeTitle(for: "claude-sonnet-4-6"), "Sonnet 4.6")
+        XCTAssertEqual(ChatModelChoice.claudeTitle(for: "claude-opus-4-5"), "Opus 4.5")
+
+        // Test fallback for unrecognized IDs
+        XCTAssertEqual(ChatModelChoice.claudeTitle(for: "unknown-model"), "unknown-model")
+    }
+    func testChatModelChoiceSubtitleIsOptional() {
+        let withSubtitle = ChatModelChoice(id: "test", title: "Test", subtitle: "A test model")
+        XCTAssertEqual(withSubtitle.subtitle, "A test model")
+
+        let withoutSubtitle = ChatModelChoice(id: "test", title: "Test")
+        XCTAssertNil(withoutSubtitle.subtitle)
+
+        // Verify backward compatibility with existing init calls
+        let defaultInit = ChatModelChoice(id: "test", title: "Test", efforts: ["low", "medium"])
+        XCTAssertNil(defaultInit.subtitle)
     }
     func testCodexPlanningQuestionsAreSurfacedAndRetainRPCID() throws {
         var session: String?

@@ -165,7 +165,7 @@ final class Office2DChoreographer: ObservableObject {
     private static func pose(for state: Office2DAgentState) -> Office2DPose {
         switch state {
         case .working: .seatedTyping
-        case .thinking: .seatedThinking
+        case .thinking, .queued: .seatedThinking
         case .waiting, .blocked: .raisedHand
         case .failed: .slumped
         case .idle: .standingCoffee
@@ -205,8 +205,11 @@ struct Office2DCharacterView: View {
         return (match.0, Color(hex: match.2))
     }
     private var shortActivity: String {
+        if agent.state == .queued { return "En cola" }
         let value = agent.activity?.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let value, !value.isEmpty else { return agent.state == .idle ? "De descanso" : "Trabajando" }
+        guard let value, !value.isEmpty else {
+            return agent.state == .idle ? "De descanso" : "Trabajando"
+        }
         return value.count > 24 ? String(value.prefix(23)) + "…" : value
     }
 
@@ -399,7 +402,7 @@ struct Office2DCharacterView: View {
     private var bubble: some View {
         let blocked = isBlocked
         let label = blocked ? (needsDeskRowAvoidance ? "Te necesita" : "Necesita tu respuesta") : placement.pose == .celebrating ? "Done" : shortActivity
-        let color = blocked ? Color(hex: "ff5d6c") : agent.state == .idle ? Color(hex: "94a3b8") : Color(hex: "34d399")
+        let color = blocked ? Color(hex: "ff5d6c") : agent.state == .idle ? Color(hex: "94a3b8") : agent.state == .queued ? Color(hex: "fbbf24") : Color(hex: "34d399")
         return HStack(spacing: 7) {
             Circle().fill(color).frame(width: 7, height: 7)
             Text(label).font(.system(size: 11, weight: .semibold)).foregroundStyle(Color(hex: "e8ebff")).lineLimit(1).fixedSize(horizontal: true, vertical: false)

@@ -54,7 +54,8 @@ struct Office2DTests {
         #expect(Office2DStateMapper.state(for: ChatStatus.running, lastMessageRole: "tool") == .working)
         #expect(Office2DStateMapper.state(for: ChatStatus.waiting) == .waiting)
         #expect(Office2DStateMapper.state(for: ChatStatus.failed) == .failed)
-        #expect(Office2DStateMapper.state(for: ChatStatus.queued) == .waiting)
+        #expect(Office2DStateMapper.state(for: ChatStatus.queued) == .queued)
+        #expect(Office2DStateMapper.state(for: ChatStatus.queued) != Office2DStateMapper.state(for: ChatStatus.waiting))
     }
 
     @Test func seedIsStable() {

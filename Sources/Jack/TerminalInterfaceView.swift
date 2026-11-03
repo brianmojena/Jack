@@ -13,15 +13,18 @@ import SwiftUI
     private var writable = true
     private var firstVisit = false
     private weak var chatStore: ChatStore?
-    private var exitObservers: [UUID: AnyCancellable] = [:]
     private var launchGeneration = UUID()
     private var retiredSessions: [UUID: TerminalSession] = [:]
 
-    init() {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        archive = TerminalWorkspaceArchive(url: support.appendingPathComponent("Jack/terminal-workspace.json"))
-        firstVisit = !FileManager.default.fileExists(atPath: archive.url.path)
-        do { snapshot = try archive.load() }
+    init(archive: TerminalWorkspaceArchive? = nil) {
+        if let archive {
+            self.archive = archive
+        } else {
+            let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            self.archive = TerminalWorkspaceArchive(url: support.appendingPathComponent("Jack/terminal-workspace.json"))
+        }
+        firstVisit = !FileManager.default.fileExists(atPath: self.archive.url.path)
+        do { snapshot = try self.archive.load() }
         catch { writable = false; self.error = "No se pudieron leer las terminales guardadas: \(error.localizedDescription)" }
     }
     func attach(_ store: ChatStore) {
@@ -56,6 +59,23 @@ import SwiftUI
         save()
         start(entry.id, allowed: allowed)
     }
+    func runCustomCommand(_ command: CustomizationCommand, directory: String, allowed: Bool) {
+        guard allowed, writable, command.kind == .terminal,
+              chatStore?.lightModeEnabled == false else { return }
+        var isDirectory: ObjCBool = false
+        guard directory.hasPrefix("/"), FileManager.default.fileExists(atPath: directory, isDirectory: &isDirectory), isDirectory.boolValue else {
+            error = "La carpeta del proyecto ya no existe o no es local."; return
+        }
+        guard !command.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            error = "El comando de terminal está vacío."; return
+        }
+        let entry = TerminalWorkspaceEntry(title: String(command.title.prefix(120)), projectPath: directory, kind: .shell)
+        snapshot.entries.append(entry); snapshot.selectedID = entry.id
+        save()
+        let launch = TerminalProcessLaunch(executable: "/bin/zsh", arguments: ["-lc", command.content])
+        let session = TerminalSession(directory: directory, directLaunch: launch) { url in NSWorkspace.shared.open(url) }
+        sessions[entry.id] = session
+    }
     func start(_ id: UUID, allowed: Bool) {
         guard allowed, let entry = snapshot.entries.first(where: { $0.id == id }), sessions[id]?.running != true else { return }
         if entry.kind == .antigravity {
@@ -85,17 +105,15 @@ import SwiftUI
                 error = "Esta sesión sigue activa o tiene trabajo pendiente en el chat. Detén ese agente antes de abrirla en la terminal."; return
             }
         }
-        exitObservers[id] = nil
         sessions.removeValue(forKey: id)?.terminate()
         let session = TerminalSession(directory: entry.projectPath, directLaunch: launch) { url in NSWorkspace.shared.open(url) }
         sessions[id] = session
+        observeOwnershipRelease(for: session, entry: entry)
         if entry.kind == .claude {
-            exitObservers[id] = session.$running.dropFirst().sink { [weak self, weak session] running in
-                guard !running else { return }
-                Task { @MainActor [weak self, weak session] in
-                    guard let self, let session, self.sessions[id] === session else { return }
-                    self.chatStore?.releaseClaudeSessionFromTerminal(entry.claudeSessionID)
-                }
+            if session.view.process.shellPid == 0 {
+                session.onProcessExit?(); session.onProcessExit = nil
+                sessions[id] = nil
+                error = "No se pudo iniciar Claude Code. Comprueba su ejecutable e inténtalo de nuevo."
             }
         }
     }
@@ -175,15 +193,11 @@ import SwiftUI
             save()
             let arguments = TerminalWorkspaceEntry.antigravityArguments(conversation: current)
             guard arguments.contains("--conversation") else { throw TerminalWorkspaceError.missingSession }
-            exitObservers[entryID] = nil
             sessions.removeValue(forKey: entryID)?.terminate()
             let launch = TerminalProcessLaunch(executable: executable, arguments: arguments, environment: environment)
             let session = TerminalSession(directory: current.projectPath, directLaunch: launch) { url in NSWorkspace.shared.open(url) }
             sessions[entryID] = session
-            session.onProcessExit = { [weak self, weak store] in
-                store?.releaseAntigravitySessionFromTerminal(conversationID)
-                self?.retiredSessions[entryID] = nil
-            }
+            observeOwnershipRelease(for: session, entry: snapshot.entries[index])
             if session.view.process.shellPid == 0 {
                 session.onProcessExit?(); session.onProcessExit = nil
                 sessions[entryID] = nil
@@ -210,7 +224,6 @@ import SwiftUI
     }
     func stopAll() {
         launchGeneration = UUID()
-        exitObservers.removeAll()
         for entry in snapshot.entries {
             if let session = sessions.removeValue(forKey: entry.id) {
                 retire(session, entry: entry)
@@ -219,7 +232,6 @@ import SwiftUI
     }
     func remove(_ id: UUID) {
         launchGeneration = UUID()
-        exitObservers[id] = nil
         let entry = snapshot.entries.first(where: { $0.id == id })
         if let session = sessions.removeValue(forKey: id), let entry { retire(session, entry: entry) }
         snapshot.entries.removeAll { $0.id == id }
@@ -232,17 +244,17 @@ import SwiftUI
         snapshot.entries[i].title = String(text.prefix(120)); save()
     }
     private func release(_ entry: TerminalWorkspaceEntry) {
-        switch entry.kind {
-        case .claude: chatStore?.releaseClaudeSessionFromTerminal(entry.claudeSessionID)
-        case .antigravity:
-            if let conversationID = entry.antigravityConversationID {
-                chatStore?.releaseAntigravitySessionFromTerminal(conversationID)
-            }
-        case .shell: break
+        Self.release(entry, from: chatStore)
+    }
+    private func observeOwnershipRelease(for session: TerminalSession, entry: TerminalWorkspaceEntry) {
+        guard entry.kind != .shell else { return }
+        session.onProcessExit = { [weak self, weak store = chatStore] in
+            Self.release(entry, from: store)
+            self?.retiredSessions[entry.id] = nil
         }
     }
     private func retire(_ session: TerminalSession, entry: TerminalWorkspaceEntry) {
-        if entry.kind == .antigravity, !session.hasExited {
+        if (entry.kind == .antigravity || entry.kind == .claude), !session.hasExited {
             // Keep SwiftTerm's process monitor alive until its real exit callback releases ownership.
             retiredSessions[entry.id] = session
             session.terminateAfterAcknowledgement()
@@ -255,6 +267,16 @@ import SwiftUI
         guard writable else { return }
         do { try archive.save(snapshot) }
         catch { self.error = "No se pudieron guardar las terminales: \(error.localizedDescription)" }
+    }
+    private static func release(_ entry: TerminalWorkspaceEntry, from store: ChatStore?) {
+        switch entry.kind {
+        case .claude: store?.releaseClaudeSessionFromTerminal(entry.claudeSessionID)
+        case .antigravity:
+            if let conversationID = entry.antigravityConversationID {
+                store?.releaseAntigravitySessionFromTerminal(conversationID)
+            }
+        case .shell: break
+        }
     }
 }
 
@@ -285,6 +307,7 @@ struct TerminalInterfaceView: View {
     @ObservedObject var store: ChatStore
     let enterBatterySaver: () -> Void
     @AppStorage("terminalSidebarVisible") private var sidebarVisible = true
+    @State private var customSidebarVisible: Bool?
     @State private var query = ""
     @State private var splitID: UUID?
     @State private var closing: UUID?
@@ -296,42 +319,51 @@ struct TerminalInterfaceView: View {
     @FocusState private var searchFocused: Bool
 
     private var normal: Bool { !store.lightModeEnabled }
+    private var effectiveLayout: CustomizationLayout? {
+        guard normal else { return nil }
+        return store.customization.effectiveLayout
+    }
+    private var effectiveSidebarVisible: Bool {
+        customSidebarVisible ?? effectiveLayout?.sidebarVisible ?? sidebarVisible
+    }
+    private var sidebarWidthOverride: CGFloat? { effectiveLayout?.sidebarWidth.map(CGFloat.init) }
+    private var sidebarOnLeft: Bool { effectiveLayout?.sidebarPosition != .right }
+    private var statusBarShown: Bool { effectiveLayout?.statusBarVisible ?? true }
     private var entries: [TerminalWorkspaceEntry] { workspace.snapshot.entries }
     private var projects: [String] { Array(Set(entries.map(\.projectPath))).sorted() }
     private var visible: [TerminalWorkspaceEntry] {
         entries.filter { query.isEmpty || ($0.title + " " + $0.projectPath).localizedCaseInsensitiveContains(query) }
     }
+    private var terminalCommands: [CustomizationCommand] {
+        normal ? store.customization.commands.filter { $0.kind == .terminal } : []
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            PaneSplit(.leading, visible: sidebarVisible, widthKey: "terminalSidebarWidth", defaultWidth: 260,
-                      range: 210...400, flexibleMinimum: 440) {
-                sidebar
-            } trailing: {
-                VStack(spacing: 0) {
-                    toolbar
-                    tabBar
-                    if let entry = workspace.selected {
-                        if let second = entries.first(where: { $0.id == splitID }), second.id != entry.id {
-                            HSplitView { pane(entry); pane(second) }
-                        } else { pane(entry) }
-                    } else { welcome }
+            if sidebarOnLeft {
+                PaneSplit(.leading, visible: effectiveSidebarVisible, widthKey: "terminalSidebarWidth", defaultWidth: 260,
+                          range: 210...400, flexibleMinimum: 440, widthOverride: sidebarWidthOverride,
+                          persistWidth: sidebarWidthOverride == nil) {
+                    sidebar
+                } trailing: {
+                    terminalContent
+                }
+            } else {
+                PaneSplit(.trailing, visible: effectiveSidebarVisible, widthKey: "terminalSidebarWidth", defaultWidth: 260,
+                          range: 210...400, flexibleMinimum: 440, widthOverride: sidebarWidthOverride,
+                          persistWidth: sidebarWidthOverride == nil) {
+                    terminalContent
+                } trailing: {
+                    sidebar
                 }
             }
-            HStack(spacing: 12) {
-                Label("Terminal nativa", systemImage: "terminal")
-                Text("\(entries.count) terminales")
-                Spacer()
-                Text("Normal").foregroundStyle(JackPalette.muted)
-                LightModeToggle()
-            }
-            .font(.system(size: 11)).padding(.horizontal, 14).frame(height: 30)
-            .background(JackPalette.chrome)
+            if statusBarShown { statusBar }
         }
         .background(WindowChrome()).background(JackPalette.canvas)
         .ignoresSafeArea(.container, edges: .top)
         .focusedSceneValue(\.jackActions, actions)
         .onAppear { workspace.attach(store) }
+        .onChange(of: effectiveLayout) { _, _ in customSidebarVisible = nil }
         .onChange(of: workspace.snapshot.selectedID) { _, id in if splitID == id { splitID = nil } }
         .alert("Terminal", isPresented: Binding(get: { workspace.error != nil }, set: { if !$0 { workspace.error = nil } })) {
             Button("Aceptar") { workspace.error = nil }
@@ -365,6 +397,30 @@ struct TerminalInterfaceView: View {
         }
     }
 
+    private var terminalContent: some View {
+        VStack(spacing: 0) {
+            toolbar
+            tabBar
+            if let entry = workspace.selected {
+                if let second = entries.first(where: { $0.id == splitID }), second.id != entry.id {
+                    HSplitView { pane(entry); pane(second) }
+                } else { pane(entry) }
+            } else { welcome }
+        }
+    }
+
+    private var statusBar: some View {
+        HStack(spacing: 12) {
+            Label("Terminal nativa", systemImage: "terminal")
+            Text("\(entries.count) terminales")
+            Spacer()
+            Text("Normal").foregroundStyle(JackPalette.muted)
+            LightModeToggle()
+        }
+        .font(.system(size: 11)).padding(.horizontal, 14).frame(height: 30)
+        .background(JackPalette.chrome)
+    }
+
     private var sidebar: some View {
         VStack(spacing: 0) {
             HStack {
@@ -387,6 +443,7 @@ struct TerminalInterfaceView: View {
                                     Menu {
                                         Button("Claude Code") { create(.claude, directory: path) }
                                         Button("Terminal libre") { create(.shell, directory: path) }
+                                        customCommandsMenu(for: path)
                                     } label: { Image(systemName: "plus") }.menuStyle(.borderlessButton).fixedSize()
                                 }.padding(.horizontal, 8).help(path)
                                 ForEach(rows) { row in
@@ -416,7 +473,7 @@ struct TerminalInterfaceView: View {
 
     private var toolbar: some View {
         HStack(spacing: 12) {
-            Button { sidebarVisible.toggle() } label: { Image(systemName: "sidebar.left") }
+            Button { setSidebarVisible(!effectiveSidebarVisible) } label: { Image(systemName: "sidebar.left") }
                 .help("Mostrar u ocultar barra lateral")
             if let selected = workspace.selected {
                 Text((selected.projectPath as NSString).abbreviatingWithTildeInPath)
@@ -442,6 +499,7 @@ struct TerminalInterfaceView: View {
                 Button("Terminal libre en este proyecto") { create(.shell, directory: directory) }
                 Divider()
             }
+            customCommandsMenu(for: workspace.selected?.projectPath)
             Button("Claude Code en otra carpeta…") { chooseFolder(.claude) }
             Button("Terminal libre en otra carpeta…") { chooseFolder(.shell) }
             Button("Claude Code Cloud…") {
@@ -453,18 +511,40 @@ struct TerminalInterfaceView: View {
         } label: { Image(systemName: "plus") }.menuStyle(.borderlessButton).fixedSize().help("Nueva terminal")
     }
 
-    private var tabBar: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 2) {
-                ForEach(entries) { entry in
-                    HStack(spacing: 8) {
-                        Button(entry.title) { workspace.select(entry.id) }.buttonStyle(.plain)
-                        Button { close(entry.id) } label: { Image(systemName: "xmark").font(.system(size: 9)) }
-                            .buttonStyle(.plain).help("Cerrar terminal")
+    @ViewBuilder private func customCommandsMenu(for directory: String?) -> some View {
+        let commands = terminalCommands
+        if !commands.isEmpty {
+            Menu("Mis comandos") {
+                ForEach(commands) { command in
+                    Button(command.title) {
+                        guard let directory else { return }
+                        workspace.runCustomCommand(command, directory: directory, allowed: normal)
                     }
-                    .font(.system(size: 12)).padding(.horizontal, 12).padding(.vertical, 9)
-                    .background(entry.id == workspace.snapshot.selectedID ? JackPalette.canvas : .clear)
                 }
+            }
+            .disabled(directory == nil)
+        }
+    }
+
+    private var tabBar: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal) {
+                HStack(spacing: 2) {
+                    ForEach(entries) { entry in
+                        HStack(spacing: 8) {
+                            Button(entry.title) { workspace.select(entry.id) }.buttonStyle(.plain)
+                            Button { close(entry.id) } label: { Image(systemName: "xmark").font(.system(size: 9)) }
+                                .buttonStyle(.plain).help("Cerrar terminal")
+                        }
+                        .font(.system(size: 12)).padding(.horizontal, 12).padding(.vertical, 9)
+                        .background(entry.id == workspace.snapshot.selectedID ? JackPalette.canvas : .clear)
+                        .id(entry.id)
+                    }
+                }
+            }
+            .onChange(of: workspace.snapshot.selectedID, initial: true) { _, id in
+                guard let id else { return }
+                withAnimation(.easeInOut(duration: 0.15)) { proxy.scrollTo(id, anchor: .center) }
             }
         }.scrollIndicators(.hidden).background(JackPalette.chrome)
     }
@@ -530,6 +610,10 @@ struct TerminalInterfaceView: View {
     private func create(_ kind: TerminalWorkspaceEntry.Kind, directory: String) {
         workspace.create(kind: kind, directory: directory, allowed: normal)
     }
+    private func setSidebarVisible(_ visible: Bool) {
+        if effectiveLayout?.sidebarVisible != nil { customSidebarVisible = visible }
+        else { sidebarVisible = visible }
+    }
     private func chooseFolder(_ kind: TerminalWorkspaceEntry.Kind) {
         guard normal else { return }
         let panel = NSOpenPanel()
@@ -562,7 +646,7 @@ struct TerminalInterfaceView: View {
                     nextAttention: focusTerminal, focusComposer: focusTerminal, focusSearch: { searchFocused = true },
                     toggleUnread: {}, toggleTerminal: { if let path = workspace.selected?.projectPath { create(.shell, directory: path) } else { chooseFolder(.shell) } },
                     toggleBrowser: {}, toggleSimulator: {}, toggleGit: {}, toggleExplorer: {},
-                    toggleSidebar: { sidebarVisible.toggle() }, closeTab: { if let id = workspace.snapshot.selectedID { close(id) } },
+                    toggleSidebar: { setSidebarVisible(!effectiveSidebarVisible) }, closeTab: { if let id = workspace.snapshot.selectedID { close(id) } },
                     cyclePane: { _ in if let id = splitID, let session = workspace.sessions[id] { session.view.window?.makeFirstResponder(session.view) } else { focusTerminal() } },
                     closePanes: { splitID = nil }, paneCount: splitID == nil ? 0 : 1,
                     enterBatterySaver: enterBatterySaver, hasSelection: workspace.selected != nil, agentCount: entries.count, terminalOnly: true)

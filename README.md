@@ -4,7 +4,7 @@ Chat nativo y compacto para gestionar varios agentes de desarrollo en macOS. Int
 
 ## Versionado
 
-La versión actual es **0.3.58**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
+La versión actual es **0.3.63**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
 
 ## Construir
 
@@ -33,6 +33,8 @@ Para publicar una versión: sube `CFBundleShortVersionString` y `CFBundleVersion
 
 En modo Normal, **Ajustes → Apariencia → Oficina 2D** ofrece el estudio animado como alternativa a la oficina 3D. El selector **2D / 3D** permite cambiar entre las dos vistas. Los agentes muestran su actividad real, caminan hasta su puesto y celebran al terminar antes de descansar. Pulsa un personaje o su mesa para ver sus datos y abrir su conversación; los agentes que descansan pueden saludar, ir a por café o sentarse en el sofá. También puedes preparar café y regar la planta de la sala. La cabecera permite pausar las animaciones, que respetan Reducir movimiento y se detienen al ocultar la ventana o abrir un chat de la oficina. Light no incorpora estas vistas.
 
+**Mods de personalización (modo Normal).** En **Ajustes → Personalización** puedes crear e importar mods con temas, distribuciones y comandos. Consulta la [guía de personalización](Documentation/Customization.md) y el [ejemplo Neon Workspace](Examples/Mods/neon-workspace.json).
+
 En modo Normal, el menú de **Proyectos** permite ordenar manualmente, por nombre ascendente o descendente, por actividad reciente o por cantidad de agentes. En orden manual y sin una búsqueda activa, arrastra el tirador de puntos junto al nombre de la carpeta; el cursor muestra la carpeta y la línea marca dónde quedará. El orden se guarda al soltar y cancelar no lo cambia. Los atajos de navegación siguen el orden mostrado.
 
 En modo Normal, Ajustes > Agentes muestra la versión instalada de Codex, Claude Code y OpenCode y un botón **Actualizar** en cada uno. Jack detecta cómo se instaló (Homebrew cask o fórmula, npm global o el actualizador del propio agente) y ejecuta el comando correspondiente solo cuando lo pulsas; al terminar indica la versión anterior y la nueva. Si no sabe actualizar esa instalación, el botón queda desactivado. El modo Light no muestra versiones ni el botón.
@@ -48,6 +50,8 @@ Cambia de modelo desde el selector en la esquina inferior izquierda del cuadro d
 En modo Normal, los permisos adicionales de Codex muestran el acceso solicitado a red y archivos. Puedes rechazarlos, permitirlos para el turno o permitirlos durante la sesión. Si Codex retira una solicitud, Jack quita el permiso pendiente. **Detener** pide a Codex que interrumpa el turno y espera su confirmación antes de enviar otro mensaje; si no responde en cinco segundos, fuerza el cierre del proceso. Light conserva sus permisos y cancelación anteriores.
 
 El panel **Git** (⇧⌘G) muestra el estado del proyecto, los cambios preparados y pendientes, sus diffs y el historial. Permite preparar archivos, hacer commits, gestionar ramas y sincronizar con el remoto; también puedes pedir al agente que revise los cambios y haga el commit desde el propio panel.
+
+En modo Normal, la bandeja reúne los mensajes pendientes y los cierres del turno distinguen sus fuentes; el panel Git da acceso al estado y al historial del proyecto. Desde **Carpetas** puedes crear un agente aislado en una rama y worktree nuevos, basados en el HEAD confirmado. Los cambios locales sin confirmar del proyecto original no se copian. Revisa la rama y su diff antes de integrar: la acción disponible solo hace fast-forward del commit revisado y requiere que la carpeta base esté limpia. Light no incorpora estas funciones nuevas.
 
 Las pestañas de agentes aprovechan el ancho de la barra superior en Basic e Ice y se comprimen juntas al abrir más chats o estrechar la ventana. Cuando no caben, puedes desplazarlas horizontalmente o elegir cualquiera desde **Todas las pestañas** (⌄). La pestaña seleccionada se mantiene visible al cambiar de agente, abrir o cerrar pestañas y redimensionar.
 

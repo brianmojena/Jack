@@ -12,6 +12,10 @@ public struct ScheduledMessage: Identifiable, Codable, Equatable {
     }
 }
 
+public enum ScheduledMessageDelivery {
+    case accepted, retry, discard
+}
+
 public enum AutomationFrequency: String, Codable, CaseIterable, Identifiable {
     case once, interval, daily, weekdays, weekly
     public var id: String { rawValue }
@@ -83,14 +87,15 @@ public struct Automation: Identifiable, Codable, Equatable {
 @MainActor public final class ScheduleCenter: ObservableObject {
     @Published public private(set) var messages: [ScheduledMessage] = []
     @Published public private(set) var automations: [Automation] = []
-    /// Sends a scheduled message; false when its conversation is gone.
-    public var deliver: (ScheduledMessage) -> Bool = { _ in false }
+    /// Accept into the conversation, retry a temporary rejection, or discard a deleted conversation.
+    public var deliver: (ScheduledMessage) -> ScheduledMessageDelivery = { _ in .retry }
     /// Starts an automation's agent and returns it, or throws why it could not start.
     public var launch: (Automation) -> Result<UUID, ScheduleError> = { _ in .failure(.init("Sin agente")) }
     public var onError: (String) -> Void = { _ in }
     private let url: URL
     private var ticker: Task<Void, Never>?
     private let writer = DispatchQueue(label: "dev.jack.schedules.persistence", qos: .utility)
+    private var retryAfter: [UUID: Date] = [:]
 
     public struct ScheduleError: Error { public let message: String; public init(_ message: String) { self.message = message } }
     private struct Saved: Codable { var messages: [ScheduledMessage]; var automations: [Automation] }
@@ -109,9 +114,10 @@ public struct Automation: Identifiable, Codable, Equatable {
         messages.append(ScheduledMessage(conversationID: conversation, text: text, attachments: attachments, fireAt: date))
         save()
     }
-    public func cancelMessage(_ id: UUID) { messages.removeAll { $0.id == id }; save() }
+    public func cancelMessage(_ id: UUID) { messages.removeAll { $0.id == id }; retryAfter[id] = nil; save() }
     public func discardMessages(of conversation: UUID) {
         guard messages.contains(where: { $0.conversationID == conversation }) else { return }
+        for message in messages where message.conversationID == conversation { retryAfter[message.id] = nil }
         messages.removeAll { $0.conversationID == conversation }; save()
     }
 
@@ -147,9 +153,15 @@ public struct Automation: Identifiable, Codable, Equatable {
     public func stop() { ticker?.cancel(); ticker = nil }
 
     func fireDue(now: Date = Date()) {
-        for message in messages.filter({ $0.fireAt <= now }) {
-            messages.removeAll { $0.id == message.id }
-            if !deliver(message) { onError("No se pudo enviar el mensaje programado: la conversación ya no existe.") }
+        for message in messages where message.fireAt <= now && (retryAfter[message.id] ?? .distantPast) <= now {
+            switch deliver(message) {
+            case .accepted, .discard:
+                messages.removeAll { $0.id == message.id }
+                retryAfter[message.id] = nil
+            case .retry:
+                if retryAfter[message.id] == nil { onError("El mensaje programado no se pudo enviar todavía; Jack volverá a intentarlo.") }
+                retryAfter[message.id] = now.addingTimeInterval(60)
+            }
         }
         for index in automations.indices {
             guard let next = automations[index].nextRun(now: now), next <= now else { continue }

@@ -67,7 +67,7 @@ struct ArtifactPanel: View {
     @State private var title = ""
     @State private var kind = ArtifactKind.html
     @State private var importSession = false
-    @State private var importClaudeDesktop = false
+    @State private var importClaudeAI = false
     @State private var candidates: [URL] = []
     @State private var candidateSource = ""
     private var items: [JackArtifact] { library.items.filter { $0.projectPath == conversation.projectPath } }
@@ -78,7 +78,7 @@ struct ArtifactPanel: View {
         VStack(spacing: 8) {
             HStack {
                 Menu("Importar", systemImage: "square.and.arrow.down") {
-                    Button("Desde Claude Desktop…") { importClaudeDesktop = true }
+                    Button("Desde Claude.ai…") { importClaudeAI = true }
                     Button("Archivo…", action: chooseFile)
                     Button("Enlace de Claude…") { importLink = true }
                     Button("Desde una sesión de Claude Code…") { importSession = true }
@@ -203,7 +203,7 @@ struct ArtifactPanel: View {
                 }
             } cancel: { importSession = false }
         }
-        .sheet(isPresented: $importClaudeDesktop) {
+        .sheet(isPresented: $importClaudeAI) {
             ClaudeArtifactImportSheet(library: library, conversation: conversation)
         }
         .sheet(isPresented: Binding(get: { !candidates.isEmpty }, set: { if !$0 { candidates = [] } })) {

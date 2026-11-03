@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "id": "neon-workspace",
+  "name": "Neon Workspace",
+  "author": "Jack example",
+  "theme": {
+    "appearance": "dark",
+    "canvas": "#10131C",
+    "chrome": "#191E2B",
+    "panel": "#20283A",
+    "selection": "#344467",
+    "accent": "#55E6C1",
+    "text": "#F2F5FF",
+    "muted": "#A1ABC0"
+  },
+  "layout": {
+    "interface": "basic",
+    "sidebarPosition": "left",
+    "sidebarWidth": 270,
+    "sidebarVisible": true,
+    "statusBarVisible": true,
+    "workspacePosition": "bottom",
+    "workspaceWidth": 440,
+    "workspaceHeight": 300,
+    "explorerVisible": true
+  },
+  "commands": [
+    {
+      "name": "neon_review",
+      "title": "Review with context",
+      "kind": "prompt",
+      "content": "Review the current changes, focusing on correctness and regressions. {{args}}"
+    },
+    {
+      "name": "repo_status",
+      "title": "Repository status",
+      "kind": "terminal",
+      "content": "git status"
+    }
+  ]
+}

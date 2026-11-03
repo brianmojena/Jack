@@ -10,6 +10,8 @@ struct PaneSplit<Leading: View, Trailing: View>: View {
     let side: Side
     let visible: Bool
     let range: ClosedRange<CGFloat>
+    let widthOverride: CGFloat?
+    let persistWidth: Bool
     /// Space always left to the flexible pane.
     let flexibleMinimum: CGFloat
     let leading: Leading
@@ -17,12 +19,16 @@ struct PaneSplit<Leading: View, Trailing: View>: View {
     @AppStorage private var storedWidth: Double
     @State private var dragStart: CGFloat?
     @State private var liveWidth: CGFloat?
+    @State private var sessionWidth: CGFloat?
 
     init(_ side: Side, visible: Bool = true, widthKey: String, defaultWidth: CGFloat, range: ClosedRange<CGFloat>,
-         flexibleMinimum: CGFloat = 360, @ViewBuilder leading: () -> Leading, @ViewBuilder trailing: () -> Trailing) {
+         flexibleMinimum: CGFloat = 360, widthOverride: CGFloat? = nil, persistWidth: Bool = true,
+         @ViewBuilder leading: () -> Leading, @ViewBuilder trailing: () -> Trailing) {
         self.side = side
         self.visible = visible
         self.range = range
+        self.widthOverride = widthOverride
+        self.persistWidth = persistWidth
         self.flexibleMinimum = flexibleMinimum
         self.leading = leading()
         self.trailing = trailing()
@@ -32,7 +38,7 @@ struct PaneSplit<Leading: View, Trailing: View>: View {
     var body: some View {
         // A single-pass layout instead of a GeometryReader: measuring first and placing later left
         // the chat's bottom-anchored lazy list without rows until the user scrolled.
-        SplitLayout(paneOnLeading: side == .leading, paneWidth: liveWidth ?? CGFloat(storedWidth), range: range, flexibleMinimum: flexibleMinimum) {
+        SplitLayout(paneOnLeading: side == .leading, paneWidth: liveWidth ?? sessionWidth ?? widthOverride ?? CGFloat(storedWidth), range: range, flexibleMinimum: flexibleMinimum) {
             if side == .leading {
                 if visible { leading; divider }
                 trailing
@@ -41,6 +47,16 @@ struct PaneSplit<Leading: View, Trailing: View>: View {
                 if visible { divider; trailing }
             }
         }
+        .onChange(of: widthOverride) { _, _ in resetTransientWidth() }
+        .onChange(of: persistWidth) { oldValue, newValue in
+            if !oldValue && newValue { resetTransientWidth() }
+        }
+    }
+
+    private func resetTransientWidth() {
+        sessionWidth = nil
+        liveWidth = nil
+        dragStart = nil
     }
 
     private var divider: some View {
@@ -52,7 +68,7 @@ struct PaneSplit<Leading: View, Trailing: View>: View {
                     .gesture(
                         DragGesture(minimumDistance: 1, coordinateSpace: .global)
                             .onChanged { value in
-                                let start = dragStart ?? min(max(CGFloat(storedWidth), range.lowerBound), range.upperBound)
+                                let start = dragStart ?? min(max(sessionWidth ?? widthOverride ?? CGFloat(storedWidth), range.lowerBound), range.upperBound)
                                 if dragStart == nil { dragStart = start }
                                 let delta = side == .leading ? value.translation.width : -value.translation.width
                                 var transaction = Transaction()
@@ -60,7 +76,10 @@ struct PaneSplit<Leading: View, Trailing: View>: View {
                                 withTransaction(transaction) { liveWidth = (start + delta).rounded() }
                             }
                             .onEnded { _ in
-                                if let liveWidth { storedWidth = Double(min(max(liveWidth, range.lowerBound), range.upperBound)) }
+                                if let liveWidth {
+                                    let value = Double(min(max(liveWidth, range.lowerBound), range.upperBound))
+                                    if persistWidth { storedWidth = value } else { sessionWidth = CGFloat(value) }
+                                }
                                 liveWidth = nil
                                 dragStart = nil
                             }

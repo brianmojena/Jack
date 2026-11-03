@@ -14,8 +14,12 @@ struct SettingsView: View {
                 .tabItem { Label("Agentes", systemImage: "terminal") }
             ShortcutsSettings()
                 .tabItem { Label("Atajos", systemImage: "keyboard") }
+            if !store.lightModeEnabled {
+                CustomizationSettingsView(center: store.customization)
+                    .tabItem { Label("Personalización", systemImage: "paintpalette") }
+            }
         }
-        .frame(width: 520)
+        .frame(width: store.lightModeEnabled ? 520 : 720)
     }
 }
 
@@ -192,6 +196,7 @@ private struct AgentExecutablesSettings: View {
     @AppStorage("providerExecutablePath.claude") private var claudePath = ""
     @AppStorage("providerExecutablePath.opencode") private var opencodePath = ""
     @AppStorage("providerExecutablePath.antigravity") private var antigravityPath = ""
+    @AppStorage("providerExecutablePath.qoder") private var qoderPath = ""
     @AppStorage(ChatDriverFactory.claudeKeepAliveKey) private var claudeKeepAlive = 5
     @AppStorage(StellarServer.contextLengthKey) private var stellarContext = StellarServer.defaultContextLength
     @AppStorage(StellarServer.customServerURLKey) private var stellarServer = ""
@@ -223,6 +228,7 @@ private struct AgentExecutablesSettings: View {
                 ProviderExecutableRow(provider: .opencode, path: $opencodePath, allowsScan: !store.lightModeEnabled, allowsUpdate: !store.lightModeEnabled)
                 if !store.lightModeEnabled {
                     ProviderExecutableRow(provider: .antigravity, path: $antigravityPath, allowsScan: true, allowsUpdate: true)
+                    ProviderExecutableRow(provider: .qoder, path: $qoderPath, allowsScan: true, allowsUpdate: true)
                 }
             } header: {
                 Text("Ejecutables")

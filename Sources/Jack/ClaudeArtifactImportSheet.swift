@@ -8,7 +8,7 @@ import WebKit
     let webView: WKWebView
     @Published var artifacts: [ClaudeArtifact] = []
     @Published var busy = false
-    @Published var status = "Inicia sesión con la misma cuenta que usas en Claude Desktop y pulsa Cargar artefactos."
+    @Published var status = "Inicia sesión en Claude.ai y pulsa Cargar artefactos. El contenido disponible se copiará a Jack; el resto quedará como enlace."
     @Published var error: String?
     private var job: Task<Void, Never>?
 
@@ -183,12 +183,12 @@ struct ClaudeArtifactImportSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Importar desde Claude Desktop").font(.headline)
+                Text("Importar desde Claude.ai").font(.headline)
                 Spacer()
                 Button(showLogin ? "Ocultar sesión" : "Mostrar sesión") { showLogin.toggle() }
                 Button("Desconectar") { selection = []; connection.disconnect(); showLogin = true }.disabled(connection.busy)
             }
-            Text("Conecta la misma cuenta de Claude Desktop. Se copiará el contenido disponible; los demás artefactos se conservarán como enlaces a su conversación en Claude.")
+            Text("Inicia sesión en Claude.ai. Jack copiará el contenido disponible de cada artefacto; si Claude no entrega el contenido completo, guardará un enlace a la conversación.")
                 .font(.caption).foregroundStyle(.secondary)
             if showLogin { ClaudeLoginView(webView: connection.webView).frame(minHeight: 280) }
             HStack {

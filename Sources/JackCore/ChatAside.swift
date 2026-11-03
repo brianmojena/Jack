@@ -149,6 +149,8 @@ enum ChatAsideService {
             return try await StellarAside.ask(question, prompt: prompt, about: conversation, allowCloud: allowCloud,
                                               cloudAllowed: cloudAllowed, cloudModelResolved: cloudModelResolved, partial: partial)
         }
+        // shortcut: Qoder asides need text output (not JSON lines) and `--tools ""`, untested, upgrade when a real run confirms it
+        if provider == .qoder { throw AsideError.failure("Qoder todavía no admite preguntas al margen.") }
         guard let executable = ExecutableResolver.resolve(provider.executableName, override: UserDefaults.standard.string(forKey: "providerExecutablePath.\(provider.rawValue)")) else {
             throw AsideError.failure("No se encontró \(provider.executableName). Instálalo o indica su ruta en Ajustes.")
         }
@@ -233,7 +235,7 @@ enum ChatAsideService {
             if let variant = conversation.variant, !variant.isEmpty { args += ["--variant", variant] }
             if let session { args += ["--session", session, "--fork"] }
             return args + [prompt]
-        case .stellar:
+        case .stellar, .qoder:
             return []
         case .antigravity:
             // A fresh, plan-mode run from the bounded prompt: resuming could pollute the main session.
@@ -315,7 +317,7 @@ enum ChatAsideService {
                     }
                 }
                 return false
-            case .opencode, .stellar:
+            case .opencode, .stellar, .qoder:
                 if let session = object["sessionID"] as? String { sessions.insert(session) }
                 if type == "text", let part = object["part"] as? [String: Any], let text = part["text"] as? String {
                     return set(text, for: part["id"] as? String ?? UUID().uuidString)

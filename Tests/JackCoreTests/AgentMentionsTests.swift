@@ -76,6 +76,7 @@ final class AgentMentionsTests: XCTestCase {
         var drivers: [MentionTestDriver] = []
         let store = ChatStore(archive: ChatArchive(directory: folder), preferences: nil,
                               driverFactory: { _ in let driver = MentionTestDriver(); drivers.append(driver); return driver })
+        store.gitSnapshotCaptureOverride = { _ in nil }
         defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
         store.setConcurrency(2)
         let root = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .codex))
@@ -110,6 +111,7 @@ final class AgentMentionsTests: XCTestCase {
         for conversation in [root, first, second] { archive.save(index: [root, first, second], conversation: conversation) }
         archive.flush()
         let store = ChatStore(archive: archive, preferences: nil, driverFactory: { _ in MentionTestDriver() })
+        store.gitSnapshotCaptureOverride = { _ in nil }
         defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
 
         let result = try XCTUnwrap(store.routeMention("@abcdef12-0 Inspect", from: root.id))
@@ -122,6 +124,7 @@ final class AgentMentionsTests: XCTestCase {
     @MainActor func testMentionCannotCrossProjectOrAgentBoundaryAndIsDisabledInLight() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("jack-mention-scope-" + UUID().uuidString)
         let store = ChatStore(archive: ChatArchive(directory: folder), preferences: nil, driverFactory: { _ in MentionTestDriver() })
+        store.gitSnapshotCaptureOverride = { _ in nil }
         defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
         let root = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .codex))
         let otherProjectPath = folder.appendingPathComponent("other", isDirectory: true).path
@@ -155,6 +158,7 @@ final class AgentMentionsTests: XCTestCase {
         var drivers: [MentionTestDriver] = []
         let store = ChatStore(archive: ChatArchive(directory: folder), preferences: nil,
                               driverFactory: { _ in let driver = MentionTestDriver(); driver.supportsInjection = true; drivers.append(driver); return driver })
+        store.gitSnapshotCaptureOverride = { _ in nil }
         defer { store.shutdown(); store.bridge.stop(); try? FileManager.default.removeItem(at: folder) }
         store.setConcurrency(2)
         let project = NSTemporaryDirectory()
@@ -198,6 +202,7 @@ final class AgentMentionsTests: XCTestCase {
         archive.save(index: [root, terminalAgent], conversation: terminalAgent)
         archive.flush()
         let store = ChatStore(archive: archive, preferences: nil, driverFactory: { _ in MentionTestDriver() })
+        store.gitSnapshotCaptureOverride = { _ in nil }
         defer { store.shutdown(); store.bridge.stop(); try? FileManager.default.removeItem(at: folder) }
         let delegation = try await store.bridge.delegation(for: root.id)
         XCTAssertTrue(store.claimClaudeSessionForTerminal(sessionID))
@@ -227,6 +232,7 @@ final class AgentMentionsTests: XCTestCase {
                                   let driver = MentionTestDriver(); driver.supportsInjection = true; drivers.append(driver)
                                   return driver
                               })
+        store.gitSnapshotCaptureOverride = { _ in nil }
         defer { drivers.forEach { $0.finish() }; store.shutdown(); store.bridge.stop(); try? FileManager.default.removeItem(at: folder) }
         store.setConcurrency(2)
         let project = NSTemporaryDirectory()
@@ -251,6 +257,7 @@ final class AgentMentionsTests: XCTestCase {
         var drivers: [MentionTestDriver] = []
         let store = ChatStore(archive: ChatArchive(directory: folder), preferences: nil,
                               driverFactory: { _ in let driver = MentionTestDriver(); drivers.append(driver); return driver })
+        store.gitSnapshotCaptureOverride = { _ in nil }
         defer { drivers.forEach { $0.finish() }; store.shutdown(); store.bridge.stop(); try? FileManager.default.removeItem(at: folder) }
         store.setConcurrency(1)
         let project = NSTemporaryDirectory()
@@ -278,6 +285,7 @@ final class AgentMentionsTests: XCTestCase {
         var drivers: [MentionTestDriver] = []
         let store = ChatStore(archive: ChatArchive(directory: folder), preferences: nil,
                               driverFactory: { _ in let driver = MentionTestDriver(); driver.supportsInjection = true; drivers.append(driver); return driver })
+        store.gitSnapshotCaptureOverride = { _ in nil }
         defer { drivers.forEach { $0.finish() }; store.shutdown(); try? FileManager.default.removeItem(at: folder) }
         store.setConcurrency(2)
         let root = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .codex))
@@ -301,6 +309,7 @@ final class AgentMentionsTests: XCTestCase {
                                   let created = MentionTestDriver(); created.supportsInjection = true; driver = created
                                   return created
                               })
+        store.gitSnapshotCaptureOverride = { _ in nil }
         defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
         let root = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .codex))
         let child = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .claude, parentID: root, select: false))

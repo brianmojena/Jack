@@ -78,14 +78,14 @@ struct StartView: View {
                     providerValue = presetProvider.rawValue
                 }
             }
-            loadAntigravityModelsIfNeeded()
+            loadCatalogModelsIfNeeded()
         }
         .onChange(of: providerValue) { _, _ in
             model = pendingPresetModel ?? ""
             pendingPresetModel = nil
             effort = store.defaultEffort(for: provider)
             focused = true
-            loadAntigravityModelsIfNeeded()
+            loadCatalogModelsIfNeeded()
         }
         .onChange(of: selectedModel) { _, _ in
             if !efforts.isEmpty && !efforts.contains(effort) { effort = efforts.contains("high") ? "high" : efforts.last! }
@@ -237,7 +237,8 @@ struct StartView: View {
         focused = true
     }
 
-    private func loadAntigravityModelsIfNeeded() {
+    private func loadCatalogModelsIfNeeded() {
+        if provider == .qoder, store.qoderModels.isEmpty, !store.loadingQoderModels { Task { await store.refreshQoderModels() } }
         guard provider == .antigravity, store.antigravityModels.isEmpty, !store.loadingAntigravityModels else { return }
         Task { await store.refreshAntigravityModels() }
     }
@@ -265,6 +266,16 @@ struct StartView: View {
                 }
                 Button("Actualizar modelos de Antigravity") { Task { await store.refreshAntigravityModels() } }
                     .disabled(store.loadingAntigravityModels)
+            }
+            if provider == .qoder {
+                Divider()
+                if store.loadingQoderModels { Text("Cargando modelos de Qoder…") }
+                if let error = store.qoderModelsError { Text(error) }
+                if !store.loadingQoderModels, store.qoderModelsError == nil, store.qoderModels.isEmpty {
+                    Text("Aún no hay modelos: actualiza el catálogo")
+                }
+                Button("Actualizar modelos de Qoder") { Task { await store.refreshQoderModels() } }
+                    .disabled(store.loadingQoderModels)
             }
             Divider()
             Button("Otro modelo…") { linkingCloud = false; customModel = selectedModel; showingCustomModel = true }

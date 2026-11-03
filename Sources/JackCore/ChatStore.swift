@@ -1,6 +1,19 @@
 import Combine
 import Foundation
 
+public struct CustomTerminalCommandRequest: Equatable, Identifiable {
+    public let id: UUID
+    public let conversationID: UUID
+    public let title: String
+    public let content: String
+    public let projectPath: String
+
+    public init(id: UUID = UUID(), conversationID: UUID, title: String, content: String, projectPath: String) {
+        self.id = id; self.conversationID = conversationID; self.title = title
+        self.content = content; self.projectPath = projectPath
+    }
+}
+
 enum AntigravityTerminalError: LocalizedError {
     case unavailable, notClaimed, invalidated
     var errorDescription: String? {
@@ -12,9 +25,42 @@ enum AntigravityTerminalError: LocalizedError {
     }
 }
 
+/// Immutable inputs captured synchronously when a provider turn ends. The asynchronous
+/// Git comparison can finish later without consulting transcript or state from a newer turn.
+private struct FinishedTurnCapture {
+    let conversationID: UUID
+    let generationID: String
+    let completedAt: Date
+    let ending: ChatTurnEnding
+    let transcriptMessageID: String?
+    let capturedEvents: [ChatTurnCapturedEvent]
+    let gitBefore: ChatTurnGitSnapshot?
+    let agentSummary: String?
+    let agentPendingItems: [String]
+    let projectPath: String
+    let isRemote: Bool
+
+    func makeClosure(after: ChatTurnGitSnapshot?, diffs: [String: String]) -> ChatTurnClosure {
+        var closure = ChatTurnClosureEvaluator.evaluate(
+            conversationID: conversationID, completedAt: completedAt, ending: ending,
+            events: capturedEvents, gitBefore: gitBefore, gitAfter: after,
+            agentSummary: agentSummary, agentPendingItems: agentPendingItems,
+            transcriptMessageID: transcriptMessageID
+        )
+        closure.generationID = generationID
+        closure.id = generationID
+        for index in closure.observedFileChanges.indices {
+            closure.observedFileChanges[index].diff = diffs[closure.observedFileChanges[index].path]
+        }
+        return closure
+    }
+}
+
 @MainActor public final class ChatStore: ObservableObject {
     @Published public private(set) var conversations: [ChatConversation] = []
     @Published public var selectedID: UUID?
+    /// Set by the Normal inbox before selecting a transcript target.
+    @Published public private(set) var transcriptJump: ChatTranscriptJump?
     @Published public private(set) var statuses: [UUID: ChatStatus] = [:]
     @Published public private(set) var approvals: [UUID: [ChatApproval]] = [:]
     /// Messages written while the agent works, until it reads them.
@@ -57,6 +103,9 @@ enum AntigravityTerminalError: LocalizedError {
     /// Why a provider's commands could not be read, until the next attempt.
     @Published public private(set) var commandErrors: [String: String] = [:]
     @Published public private(set) var jackTemplates: [JackCommandTemplate] = JackCommandCatalog.defaults
+    @Published public private(set) var customTerminalCommandRequest: CustomTerminalCommandRequest?
+    private var customizationCenter: CustomizationCenter?
+    private var customizationChanges: AnyCancellable?
     private var seededJackTurns = Set<UUID>()
     private var cancelledJackTurns = Set<UUID>()
     private var compactions: [UUID: (target: Int, firstMessage: Int)] = [:]
@@ -66,6 +115,8 @@ enum AntigravityTerminalError: LocalizedError {
     private var budgetTurnUsage: [UUID: Int] = [:]
     private let loadCommandList: (ChatProvider, String) async throws -> [ChatCommand]
     private let codexModels = ChatModelCatalog.cachedCodex()
+    /// Detected Claude models from recent sessions, merged with fallback catalog.
+    private var detectedClaudeModels: [ChatModelChoice]?
     /// Filled from `agy models` on first use. It starts empty so the CLI's own default applies until answered.
     @Published public private(set) var antigravityModels: [ChatModelChoice] = []
     @Published public private(set) var loadingAntigravityModels = false
@@ -77,11 +128,59 @@ enum AntigravityTerminalError: LocalizedError {
     var loadAntigravityModels: (String?) async -> [ChatModelChoice] = { override in
         await ChatModelCatalog.antigravityModels(executable: ChatProvider.antigravity.executableName, override: override)
     }
+    /// Filled from `qodercli --list-models`; empty until answered, so the CLI's own default applies.
+    @Published public private(set) var qoderModels: [ChatModelChoice] = []
+    @Published public private(set) var loadingQoderModels = false
+    @Published public private(set) var qoderModelsError: String?
+    private var qoderModelsTask: Task<Void, Never>?
+    private var qoderModelsRequest: UUID?
+    var loadQoderModels: (String?) async -> [ChatModelChoice] = { override in
+        await ChatModelCatalog.qoderModels(executable: ChatProvider.qoder.executableName, override: override)
+    }
     public var activeCount: Int { runs.count }
     public var selectedConversation: ChatConversation? { conversations.first { $0.id == selectedID } }
+    public var customization: CustomizationCenter {
+        if let customizationCenter {
+            if !lightModeEnabled { observeCustomization(customizationCenter) }
+            return customizationCenter
+        }
+        let center = CustomizationCenter(directory: archive.directory.appendingPathComponent("Customization", isDirectory: true))
+        customizationCenter = center
+        if !lightModeEnabled { observeCustomization(center) }
+        return center
+    }
+    public func applyCustomization() {
+        guard !lightModeEnabled else {
+            customizationChanges = nil
+            customizationCenter?.setEnabled(false)
+            return
+        }
+        let center = customization
+        observeCustomization(center)
+        center.setEnabled(true)
+    }
+    private func observeCustomization(_ center: CustomizationCenter) {
+        guard !lightModeEnabled, customizationChanges == nil else { return }
+        customizationChanges = center.$revision.sink { [weak self] _ in
+            Task { @MainActor in self?.objectWillChange.send() }
+        }
+    }
+    public func consumeCustomTerminalCommand(id: UUID) {
+        guard customTerminalCommandRequest?.id == id else { return }
+        customTerminalCommandRequest = nil
+    }
+    public var attentionItems: [(conversation: ChatConversation, item: ChatAttentionItem)] {
+        guard !lightModeEnabled else { return [] }
+        return conversations.flatMap { conversation in
+            (conversation.attentionItems ?? []).filter { $0.state == .pending }.map { (conversation, $0) }
+        }.sorted { $0.item.createdAt > $1.item.createdAt }
+    }
+    public var unreviewedAttentionCount: Int { attentionItems.count }
     private let archive: ChatArchive
     private let preferences: UserDefaults?
     private let makeDriver: (ChatProvider) -> any ChatDriver
+    /// Optional test seam; nil keeps the production Git snapshot capture enabled.
+    var gitSnapshotCaptureOverride: (@MainActor (String) async -> ChatTurnGitSnapshot?)?
     private var loaded = Set<UUID>()
     /// Agents shown in panes beside the selected one: their transcripts stay loaded.
     private var paned = Set<UUID>()
@@ -89,6 +188,12 @@ enum AntigravityTerminalError: LocalizedError {
     private var runs: [UUID: Task<Void, Never>] = [:]
     /// Events and cleanup belong to a specific turn, even when the driver is reused.
     private var runGenerations: [UUID: UUID] = [:]
+    /// Transcript boundary captured before each turn so its closure cannot reuse an older reply.
+    private var turnMessageStartIndices: [UUID: Int] = [:]
+    /// Git status captured around Normal-mode turns. Missing snapshots remain explicitly unavailable.
+    private var turnGitBefore: [UUID: ChatTurnGitSnapshot] = [:]
+    /// Latest structured tool state per provider event ID, captured only while Normal is active.
+    private var turnCapturedEvents: [UUID: [String: ChatTurnCapturedEvent]] = [:]
     private var stoppingRuns = Set<UUID>()
     private var drivers: [UUID: any ChatDriver] = [:]
     /// Drivers whose agent stays open between turns, reused for the conversation's next message.
@@ -125,9 +230,11 @@ enum AntigravityTerminalError: LocalizedError {
         if let scheduleCenter { return scheduleCenter }
         let center = ScheduleCenter(directory: archive.directory)
         center.deliver = { [weak self] message in
-            guard let self, self.conversations.contains(where: { $0.id == message.conversationID }) else { return false }
-            self.send(message.text, attachments: message.attachments, to: message.conversationID)
-            return true
+            guard let self else { return .retry }
+            guard self.conversations.contains(where: { $0.id == message.conversationID }) else { return .discard }
+            let text = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty || !message.attachments.isEmpty else { return .discard }
+            return self.sendIfAccepted(message.text, attachments: message.attachments, to: message.conversationID) ? .accepted : .retry
         }
         center.launch = { [weak self] automation in
             guard let self else { return .failure(.init("Jack se está cerrando")) }
@@ -209,6 +316,8 @@ enum AntigravityTerminalError: LocalizedError {
             antigravityModels = ChatModelCatalog.decodeAntigravityModels(
                 preferences?.stringArray(forKey: ChatModelCatalog.antigravityModelsCacheKey) ?? [])
             antigravityDefaultTitle = ChatModelCatalog.antigravityDefaultTitle()
+            qoderModels = ChatModelCatalog.decodeQoderModels(
+                preferences?.stringArray(forKey: ChatModelCatalog.qoderModelsCacheKey) ?? [])
         }
         knownCloudModelIDs = Set(preferences?.stringArray(forKey: "stellar.cloudModelIDs") ?? [])
         linkedCloudModelIDs = Set(preferences?.stringArray(forKey: "stellar.linkedCloudModelIDs") ?? [])
@@ -218,6 +327,7 @@ enum AntigravityTerminalError: LocalizedError {
             conversations = try archive.loadIndex()
             for conversation in conversations { if let value = conversation.tokenUsage { tokenUsage[conversation.id] = value } }
         } catch { errorMessage = "No se pudo abrir el historial: \(error.localizedDescription)" }
+        if !lightMode { obsoleteRestoredApprovals() }
     }
     public func setConcurrency(_ count: Int) {
         maxConcurrent = max(0, min(64, count))
@@ -234,10 +344,17 @@ enum AntigravityTerminalError: LocalizedError {
         flushTask?.cancel(); flushTask = nil
         for id in Array(pending.keys) { flush(id) }
         lightModeEnabled = enabled
+        if enabled {
+            customizationChanges = nil
+            customizationCenter?.setEnabled(false)
+            customTerminalCommandRequest = nil
+        }
         modelDiscoveryGeneration += 1
         modeGeneration += 1
         antigravityModelsTask?.cancel(); antigravityModelsTask = nil; antigravityModelsRequest = nil
         loadingAntigravityModels = false
+        qoderModelsTask?.cancel(); qoderModelsTask = nil; qoderModelsRequest = nil
+        loadingQoderModels = false
         if enabled {
             if let selectedID, conversations.first(where: { $0.id == selectedID })?.provider.isNormalOnly == true {
                 self.selectedID = nil
@@ -258,6 +375,10 @@ enum AntigravityTerminalError: LocalizedError {
                     preferences?.stringArray(forKey: ChatModelCatalog.antigravityModelsCacheKey) ?? [])
             }
             antigravityDefaultTitle = antigravityDefaultTitle ?? ChatModelCatalog.antigravityDefaultTitle()
+            if qoderModels.isEmpty {
+                qoderModels = ChatModelCatalog.decodeQoderModels(
+                    preferences?.stringArray(forKey: ChatModelCatalog.qoderModelsCacheKey) ?? [])
+            }
         }
         notebookWorkspace?.setEnabled(!enabled)
         lightWindowVisible = true
@@ -329,6 +450,36 @@ enum AntigravityTerminalError: LocalizedError {
                                   forKey: ChatModelCatalog.antigravityModelsCacheKey)
         }
         antigravityModelsTask = task
+        await task.value
+    }
+    /// Reads the model list from `qodercli --list-models`. It starts no inference and never runs in Light.
+    /// Only the latest request may publish, and Light or shutdown cancels it.
+    public func refreshQoderModels() async {
+        guard !lightModeEnabled, !stopped else { return }
+        qoderModelsTask?.cancel()
+        let request = UUID()
+        qoderModelsRequest = request
+        let mode = modeGeneration
+        let override = preferences?.string(forKey: "providerExecutablePath.\(ChatProvider.qoder.rawValue)")
+        loadingQoderModels = true
+        qoderModelsError = nil
+        let task = Task { [weak self] in
+            guard let self else { return }
+            let models = await self.loadQoderModels(override?.isEmpty == false ? override : nil)
+            // A newer request owns the loading state; a cancelled one leaves it untouched.
+            guard self.qoderModelsRequest == request else { return }
+            self.loadingQoderModels = false
+            self.qoderModelsTask = nil
+            self.qoderModelsRequest = nil
+            guard !Task.isCancelled, !self.stopped, !self.lightModeEnabled, self.modeGeneration == mode else { return }
+            if models.isEmpty {
+                self.qoderModelsError = "No se pudieron cargar los modelos. Comprueba que qodercli esté instalado y con sesión iniciada."
+                return
+            }
+            self.qoderModels = models
+            self.preferences?.set(ChatModelCatalog.encodeQoderModels(models), forKey: ChatModelCatalog.qoderModelsCacheKey)
+        }
+        qoderModelsTask = task
         await task.value
     }
     public func refreshUsage(_ providers: [ChatProvider] = ChatProvider.allCases) async {
@@ -432,6 +583,7 @@ enum AntigravityTerminalError: LocalizedError {
         save(conversation.id)
         if select { evictInactiveTranscripts() }
         if provider == .antigravity { Task { [weak self] in await self?.refreshAntigravityModels() } }
+        if provider == .qoder { Task { [weak self] in await self?.refreshQoderModels() } }
         return conversation.id
     }
     /// Creates an agent for `message` without a folder: Jack resolves known projects, then its model
@@ -854,10 +1006,12 @@ enum AntigravityTerminalError: LocalizedError {
         guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
         guard !(lightModeEnabled && conversations[index].provider.isNormalOnly) else { return }
         let needsAntigravityModels = conversations[index].provider == .antigravity && antigravityModels.isEmpty
+        let needsQoderModels = conversations[index].provider == .qoder && qoderModels.isEmpty
         if !loaded.contains(id) {
-            do { if let transcript = try archive.load(id) { conversations[index].messages = transcript.messages }; loaded.insert(id); settleBackground(id) }
+            do { if let transcript = try archive.load(id) { conversations[index].messages = transcript.messages; conversations[index].turnClosures = transcript.turnClosures }; loaded.insert(id); settleBackground(id) }
             catch { errorMessage = "No se pudo leer esta conversación: \(error.localizedDescription)"; return }
         }
+        let reviewStateChanged = applyPersistedClosureReviews(at: index)
         readPendingClaudeHistory(id)
         selectedID = id
         var changed = false
@@ -865,9 +1019,61 @@ enum AntigravityTerminalError: LocalizedError {
         if conversations[index].preview == nil, let last = conversations[index].messages.last(where: { $0.role == "assistant" && !$0.text.isEmpty }) {
             conversations[index].preview = Self.preview(of: last.text); changed = true
         }
-        if changed { save(id) }
+        if changed || reviewStateChanged { save(id) }
         evictInactiveTranscripts()
         if needsAntigravityModels { Task { [weak self] in await self?.refreshAntigravityModels() } }
+        if needsQoderModels { Task { [weak self] in await self?.refreshQoderModels() } }
+    }
+    public func openAttention(_ item: ChatAttentionItem, in conversationID: UUID) {
+        guard !lightModeEnabled, conversations.contains(where: { $0.id == conversationID }) else { return }
+        select(conversationID)
+        if let messageID = item.messageID,
+           conversations.first(where: { $0.id == conversationID })?.messages.contains(where: { $0.id == messageID }) == true {
+            transcriptJump = ChatTranscriptJump(conversationID: conversationID, messageID: messageID)
+        }
+    }
+    public func clearTranscriptJump(token: UUID) {
+        guard transcriptJump?.token == token else { return }
+        transcriptJump = nil
+    }
+    public func markAttentionReviewed(_ itemID: String, in conversationID: UUID) {
+        guard !lightModeEnabled, let index = conversations.firstIndex(where: { $0.id == conversationID }),
+              var items = conversations[index].attentionItems,
+              let itemIndex = items.firstIndex(where: { $0.id == itemID }), items[itemIndex].state == .pending else { return }
+        if items[itemIndex].kind == .approval, let approvalID = items[itemIndex].approvalID,
+           (approvals[conversationID] ?? []).contains(where: { $0.id == approvalID }) { return }
+        items[itemIndex].state = .reviewed
+        conversations[index].attentionItems = items
+        if items[itemIndex].kind == .completed {
+            let generation = String(itemID.dropFirst("completed:".count))
+            let messageID = items[itemIndex].messageID
+            if var closures = conversations[index].turnClosures,
+               let closureIndex = closures.lastIndex(where: { $0.generationID == generation || (messageID != nil && $0.transcriptMessageID == messageID) }) {
+                closures[closureIndex].reviewedAt = Date()
+                conversations[index].turnClosures = closures
+            }
+        }
+        save(conversationID)
+    }
+    public func isAttentionApprovalActive(_ item: ChatAttentionItem, in conversationID: UUID) -> Bool {
+        guard item.kind == .approval, let approvalID = item.approvalID else { return false }
+        return (approvals[conversationID] ?? []).contains { $0.id == approvalID }
+    }
+    public func markTurnClosureReviewed(_ closureID: String, in conversationID: UUID) {
+        guard !lightModeEnabled, let index = conversations.firstIndex(where: { $0.id == conversationID }),
+              var closures = conversations[index].turnClosures,
+              let closureIndex = closures.firstIndex(where: { $0.id == closureID }) else { return }
+        closures[closureIndex].reviewedAt = Date()
+        conversations[index].turnClosures = closures
+        if var items = conversations[index].attentionItems {
+            for itemIndex in items.indices where items[itemIndex].kind == .completed && items[itemIndex].state == .pending
+                && (items[itemIndex].id == "completed:\(closures[closureIndex].generationID)"
+                    || (closures[closureIndex].transcriptMessageID != nil && items[itemIndex].messageID == closures[closureIndex].transcriptMessageID)) {
+                items[itemIndex].state = .reviewed
+            }
+            conversations[index].attentionItems = items
+        }
+        save(conversationID)
     }
     private static func commandKey(_ provider: ChatProvider, _ projectPath: String) -> String { "\(provider.rawValue)|\(projectPath)" }
     public func commands(for conversation: ChatConversation) -> [ChatCommand]? {
@@ -980,47 +1186,50 @@ enum AntigravityTerminalError: LocalizedError {
     public func readsWhileWorking(_ id: UUID) -> Bool { drivers[id]?.keepsAlive == true || liveDrivers[id] != nil }
     /// `interrupting` stops the turn so the agent reads the message right away, like Ctrl+Enter.
     public func send(_ prompt: String, attachments: [String] = [], to id: UUID, interrupting: Bool = false, preservingApproval: Bool = false) {
+        _ = sendIfAccepted(prompt, attachments: attachments, to: id, interrupting: interrupting, preservingApproval: preservingApproval)
+    }
+    private func sendIfAccepted(_ prompt: String, attachments: [String] = [], to id: UUID, interrupting: Bool = false, preservingApproval: Bool = false) -> Bool {
         if !lightModeEnabled, let c = conversations.first(where: { $0.id == id }), c.provider == .claude,
            let session = c.sessionID.flatMap(UUID.init(uuidString:)), terminalClaudeSessions.contains(session) {
             errorMessage = "Esta sesión está abierta en la interfaz Terminal. Cierra su proceso antes de usar el chat."
-            return
+            return false
         }
         if !lightModeEnabled, antigravitySessionIsInTerminal(id) {
             errorMessage = "Esta sesión de Antigravity está abierta en la interfaz Terminal. Cierra su proceso antes de usar el chat."
-            return
+            return false
         }
 
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty || !attachments.isEmpty, conversations.contains(where: { $0.id == id }), !stopped else { return }
+        guard !text.isEmpty || !attachments.isEmpty, conversations.contains(where: { $0.id == id }), !stopped else { return false }
         if lightModeEnabled, conversations.first(where: { $0.id == id })?.provider.isNormalOnly == true {
             errorMessage = "Este agente solo está disponible en el modo Normal."
-            return
+            return false
         }
         clearSuggestion(id)
         if isUnplaced(id), JackCommandCatalog.parse(text) == nil {
             // Without a folder yet, the message helps the model choose it.
             loadTranscript(id)
-            guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
+            guard let index = conversations.firstIndex(where: { $0.id == id }) else { return false }
             conversations[index].messages.append(ChatMessage(role: "user", text: text, attachments: attachments.isEmpty ? nil : attachments))
             save(id)
             place(id)
-            return
+            return true
         }
         if isBusy(id), JackCommandCatalog.parse(text) == nil {
             wait(text.hasPrefix("!!") ? String(text.dropFirst()) : text, attachments: attachments, to: id, preservingApproval: preservingApproval)
             if interrupting { sendWaitingNow(id) }
-            return
+            return true
         }
         if let command = JackCommandCatalog.parse(text) {
-            guard attachments.isEmpty else { errorMessage = "Los comandos ! no admiten archivos adjuntos."; return }
+            guard attachments.isEmpty else { errorMessage = "Los comandos ! no admiten archivos adjuntos."; return false }
             executeJack(command.name, arguments: command.arguments, to: id)
-            return
+            return true
         }
         if !lightModeEnabled, attachments.isEmpty, let conversation = conversations.first(where: { $0.id == id }), conversation.provider == .stellar,
            text.split(whereSeparator: \.isWhitespace).first?.lowercased() == "/compact" {
-            guard let target = Self.stellarCompactTarget(text) else { errorMessage = "Uso: /compact [objetivo en tokens, 1–2000000]."; return }
+            guard let target = Self.stellarCompactTarget(text) else { errorMessage = "Uso: /compact [objetivo en tokens, 1–2000000]."; return false }
             beginCompaction(id, target: target)
-            return
+            return true
         }
         let ordinaryText = text.hasPrefix("!!") ? String(text.dropFirst()) : text
         if runs[id] == nil, compactions[id] == nil, handoffs[id] == nil, let c = conversations.first(where: { $0.id == id }),
@@ -1033,10 +1242,10 @@ enum AntigravityTerminalError: LocalizedError {
                 save(id)
             }
             beginCompaction(id, target: target)
-            return
+            return true
         }
         loadTranscript(id)
-        guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
+        guard let index = conversations.firstIndex(where: { $0.id == id }) else { return false }
         conversations[index].messages.append(ChatMessage(role: "user", text: ordinaryText, attachments: attachments.isEmpty ? nil : attachments))
         let firstMessageForOllamaAgent = !lightModeEnabled && !ordinaryText.isEmpty
             && conversations[index].title == "Nuevo agente" && conversations[index].provider == .stellar
@@ -1051,6 +1260,7 @@ enum AntigravityTerminalError: LocalizedError {
         statuses[id] = .queued
         queue.append((id, ordinaryText))
         drainQueue()
+        return true
     }
 
     /// Routes an explicit leading @mention from a top-level Normal chat. Provider mentions create a
@@ -1137,6 +1347,7 @@ enum AntigravityTerminalError: LocalizedError {
             if runs[id] == nil, !queue.contains(where: { $0.0 == id }) { deliverWaiting(id) }
             return
         }
+        let generation = runGenerations[id]
         // A kept-alive agent reads its queued messages right after the interruption; the rest are sent when the turn ends.
         driver.stop(keepingQueued: true)
         if driver.awaitsStopAcknowledgement {
@@ -1144,6 +1355,7 @@ enum AntigravityTerminalError: LocalizedError {
             flush(id); settleActivities(id)
             statuses[id] = .idle
         } else if !driver.keepsAlive { runs[id]?.cancel() }
+        resolveAttentionApprovals(for: id, approvalIDs: (approvals[id] ?? []).map(\.id), generation: generation)
         approvals[id] = []
     }
     /// Takes a waiting message back, to edit or discard it. Nil when the agent already read it.
@@ -1279,10 +1491,32 @@ enum AntigravityTerminalError: LocalizedError {
     }
     private func loadTranscript(_ id: UUID) {
         guard !loaded.contains(id), let index = conversations.firstIndex(where: { $0.id == id }) else { return }
-        if let transcript = try? archive.load(id) { conversations[index].messages = transcript.messages }
+        if let transcript = try? archive.load(id) { conversations[index].messages = transcript.messages; conversations[index].turnClosures = transcript.turnClosures }
         loaded.insert(id)
+        if applyPersistedClosureReviews(at: index) { save(id) }
         settleBackground(id)
         readPendingClaudeHistory(id)
+    }
+    @discardableResult private func applyPersistedClosureReviews(at index: Int) -> Bool {
+        guard var closures = conversations[index].turnClosures,
+              let items = conversations[index].attentionItems else { return false }
+        let reviewedGenerations = Set(items.compactMap { item -> String? in
+            guard item.kind == .completed, item.state == .reviewed, item.id.hasPrefix("completed:") else { return nil }
+            return String(item.id.dropFirst("completed:".count))
+        })
+        let reviewedMessages = Set(items.compactMap { item -> String? in
+            item.kind == .completed && item.state == .reviewed ? item.messageID : nil
+        })
+        var changed = false
+        for closureIndex in closures.indices where
+            (reviewedGenerations.contains(closures[closureIndex].generationID)
+                || closures[closureIndex].transcriptMessageID.map(reviewedMessages.contains) == true)
+                && closures[closureIndex].reviewedAt == nil {
+            closures[closureIndex].reviewedAt = Date()
+            changed = true
+        }
+        if changed { conversations[index].turnClosures = closures }
+        return changed
     }
     /// Background work cannot still be running once its agent's process is gone, e.g. after relaunching Jack.
     private func settleBackground(_ id: UUID) {
@@ -1292,6 +1526,7 @@ enum AntigravityTerminalError: LocalizedError {
         }
     }
     public func stop(_ id: UUID) {
+        let generation = runGenerations[id]
         if compactions[id] != nil || handoffs[id] != nil { cancelledJackTurns.insert(id) }
         if runs[id] == nil {
             compactions.removeValue(forKey: id); handoffs.removeValue(forKey: id)
@@ -1320,10 +1555,11 @@ enum AntigravityTerminalError: LocalizedError {
             // Protocol interruptions keep their reservation until acknowledgement or a bounded fallback.
             if !driver.keepsAlive && !driver.awaitsStopAcknowledgement {
                 runs[id]?.cancel()
-                if let generation = runGenerations[id] { finishRun(id, generation: generation, cancelled: true) }
+                if let generation { finishRun(id, generation: generation, cancelled: true) }
             }
         }
         statuses[id] = .idle
+        resolveAttentionApprovals(for: id, approvalIDs: (approvals[id] ?? []).map(\.id), generation: generation)
         approvals[id] = []
         save(id)
     }
@@ -1339,6 +1575,7 @@ enum AntigravityTerminalError: LocalizedError {
                 guard let self, self.runGenerations[id] == generation,
                       self.approvals[id]?.contains(where: { $0.id == approvalID }) == true else { return }
                 self.approvals[id]?.removeAll { $0.id == approvalID }
+                self.resolveAttentionApprovals(for: id, approvalIDs: [approvalID], generation: generation)
                 self.restoreStatus(id)
             } catch {
                 guard let self, self.runGenerations[id] == generation, !self.stoppingRuns.contains(id),
@@ -1447,6 +1684,7 @@ enum AntigravityTerminalError: LocalizedError {
                 guard let self, self.runGenerations[id] == generation,
                       self.approvals[id]?.contains(where: { $0.id == approvalID }) == true else { return }
                 self.approvals[id]?.removeAll { $0.id == approvalID }
+                self.resolveAttentionApprovals(for: id, approvalIDs: [approvalID], generation: generation)
                 self.restoreStatus(id)
             } catch {
                 guard let self, self.runGenerations[id] == generation, !self.stoppingRuns.contains(id),
@@ -1564,12 +1802,31 @@ enum AntigravityTerminalError: LocalizedError {
         let catalog: [ChatModelChoice]
         switch provider {
         case .codex: catalog = codexModels
-        case .claude: catalog = ChatModelChoice.claudeCatalog
+        case .claude:
+            // Try to use detected models from recent sessions, fallback to hardcoded catalog
+            if detectedClaudeModels == nil {
+                let (detected, _) = ClaudeModelDetector.detectModels()
+                if detected.isEmpty {
+                    detectedClaudeModels = ChatModelChoice.claudeCatalog
+                } else {
+                    // Merge detected models with fallback catalog for missing families
+                    var merged = detected
+                    for fallback in ChatModelChoice.claudeCatalog {
+                        if !detected.contains(where: { $0.id == fallback.id }) {
+                            merged.append(fallback)
+                        }
+                    }
+                    detectedClaudeModels = merged
+                }
+            }
+            catalog = detectedClaudeModels ?? ChatModelChoice.claudeCatalog
         case .opencode: catalog = [ChatModelChoice(id: "", efforts: [])]
         case .stellar: catalog = Self.visibleStellarModels(localModels, lightMode: lightModeEnabled).map { ChatModelChoice(id: $0.id, title: $0.title, efforts: []) }
         case .antigravity:
             let title = antigravityDefaultTitle.map { "Predeterminado · \($0)" } ?? "Predeterminado"
             catalog = [ChatModelChoice(id: "", title: title, efforts: ChatModelChoice.antigravityEfforts)] + antigravityModels
+        case .qoder:
+            catalog = [ChatModelChoice(id: "", efforts: ChatModelChoice.qoderEfforts)] + qoderModels
         }
         var ids = (recentModels[provider] ?? []) + conversations.filter { $0.provider == provider }.map(\.model) + [provider.defaultModel] + catalog.map(\.id)
         if provider == .stellar {
@@ -1583,7 +1840,7 @@ enum AntigravityTerminalError: LocalizedError {
         }
     }
     public func supportedEfforts(provider: ChatProvider, model: String) -> [String] {
-        let catalog = provider == .codex ? codexModels : provider == .claude ? ChatModelChoice.claudeCatalog : provider == .antigravity ? antigravityModels : []
+        let catalog = provider == .codex ? codexModels : provider == .claude ? ChatModelChoice.claudeCatalog : provider == .antigravity ? antigravityModels : provider == .qoder ? qoderModels : []
         return catalog.first { $0.id == model }?.efforts ?? ChatModelChoice.fallbackEfforts(provider: provider, model: model)
     }
     /// Keeps the stored effort when the model has no levels, so switching back restores it.
@@ -1600,10 +1857,14 @@ enum AntigravityTerminalError: LocalizedError {
     }
     public func shutdown() {
         stopped = true; queue.removeAll(); flushTask?.cancel(); flushTask = nil
+        customizationChanges = nil; customizationCenter?.setEnabled(false)
+        customTerminalCommandRequest = nil
         modelDiscoveryGeneration += 1
         modeGeneration += 1
         antigravityModelsTask?.cancel(); antigravityModelsTask = nil; antigravityModelsRequest = nil
         loadingAntigravityModels = false
+        qoderModelsTask?.cancel(); qoderModelsTask = nil; qoderModelsRequest = nil
+        loadingQoderModels = false
         for state in flowDiagramStates.values { state.cancel() }
         flowDiagramStates.removeAll()
         for id in Array(locateTasks.keys) { cancelLocating(id) }
@@ -1692,6 +1953,7 @@ enum AntigravityTerminalError: LocalizedError {
         clearSuggestion(id)
         let generation = UUID()
         runGenerations[id] = generation
+        turnMessageStartIndices[id] = conversations.first(where: { $0.id == id })?.messages.count ?? 0
         stoppingRuns.remove(id)
         drivers[id] = driver; statuses[id] = .running
         if let c = conversations.first(where: { $0.id == id }), c.provider == .codex {
@@ -1701,6 +1963,12 @@ enum AntigravityTerminalError: LocalizedError {
             do {
                 try Task.checkCancellation()
                 guard self?.stoppingRuns.contains(id) != true else { throw CancellationError() }
+                if let self, !self.lightModeEnabled {
+                    let snapshot = await self.captureGitSnapshot(id)
+                    try Task.checkCancellation()
+                    guard self.runGenerations[id] == generation else { throw CancellationError() }
+                    if let snapshot { self.turnGitBefore[id] = snapshot }
+                }
                 try await body { [weak self] event in
                     guard let self, self.runGenerations[id] == generation else { return }
                     if case .completed = event {
@@ -1720,12 +1988,41 @@ enum AntigravityTerminalError: LocalizedError {
         guard runGenerations[id] == generation else { return }
         let wasStopping = stoppingRuns.remove(id) != nil
         let cancelled = cancelled || wasStopping
+        let capture = finishRunNow(id, generation: generation, cancelled: cancelled)
+        guard let capture, !lightModeEnabled else { return }
+        Task { [weak self] in
+            guard let self, !self.lightModeEnabled else { return }
+            let after = await self.captureGitSnapshot(at: capture.projectPath)
+            guard !self.lightModeEnabled else { return }
+            let diffs = await self.captureGitDiffs(conversationID: capture.conversationID, projectPath: capture.projectPath,
+                                                   before: capture.gitBefore, after: after)
+            guard !self.lightModeEnabled,
+                  self.conversations.contains(where: { $0.id == capture.conversationID }) else { return }
+            // The turn may have been evicted after completion. Reload the just-saved transcript
+            // before enriching it so save(id) writes the closure back to its transcript file.
+            self.loadTranscript(capture.conversationID)
+            guard !self.lightModeEnabled,
+                  let index = self.conversations.firstIndex(where: { $0.id == capture.conversationID }) else { return }
+            var closure = capture.makeClosure(after: after, diffs: diffs)
+            if let current = self.conversations[index].turnClosures?.first(where: { $0.generationID == capture.generationID }) {
+                closure.reviewedAt = current.reviewedAt
+            } else {
+                return
+            }
+            guard self.replaceExistingClosure(closure, for: capture.conversationID) else { return }
+            self.save(capture.conversationID)
+            self.evictInactiveTranscripts()
+        }
+    }
+    private func finishRunNow(_ id: UUID, generation: UUID, cancelled: Bool) -> FinishedTurnCapture? {
+        guard runGenerations[id] == generation else { return nil }
         runGenerations.removeValue(forKey: id)
         flush(id)
         settleActivities(id)
         if statuses[id] != .failed { statuses[id] = .idle }
+        resolveAttentionApprovals(for: id, approvalIDs: (approvals[id] ?? []).map(\.id), generation: generation)
         approvals[id] = []
-        finishTurn(id)
+        let capture = finishTurn(id, generation: generation, cancelled: cancelled)
         drivers.removeValue(forKey: id); runs.removeValue(forKey: id)
         completeJackTurn(id, cancelled: cancelled)
         // Claude Code reports its quota as it works; Codex and Antigravity have to be asked for.
@@ -1733,6 +2030,7 @@ enum AntigravityTerminalError: LocalizedError {
            provider == .codex || provider == .antigravity { refreshUsageSoon(provider) }
         deliverWaiting(id)
         save(id); evictInactiveTranscripts(); drainQueue()
+        return capture
     }
 
     private func restoreStatus(_ id: UUID) {
@@ -1760,16 +2058,66 @@ enum AntigravityTerminalError: LocalizedError {
         flush(id)
         save(id)
     }
-    private func finishTurn(_ id: UUID) {
-        guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
+    private func finishTurn(_ id: UUID, generation: UUID, cancelled: Bool) -> FinishedTurnCapture? {
+        let startIndex = turnMessageStartIndices.removeValue(forKey: id) ?? 0
+        guard let index = conversations.firstIndex(where: { $0.id == id }) else {
+            turnGitBefore.removeValue(forKey: id)
+            turnCapturedEvents.removeValue(forKey: id)
+            return nil
+        }
         let messages = conversations[index].messages
         if let last = messages.last(where: { ($0.role == "assistant" || $0.role == "error") && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
             conversations[index].preview = Self.preview(of: last.text)
         }
-        if let reply = messages.last(where: { $0.role == "assistant" && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+        let turnMessages = Array(messages.dropFirst(min(startIndex, messages.count)))
+        if let reply = turnMessages.last(where: { $0.role == "assistant" && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
             lastReplies[id] = String(reply.text.prefix(24_000))
         }
         if selectedID != id { conversations[index].hasUnread = true }
+        guard !lightModeEnabled else {
+            turnGitBefore.removeValue(forKey: id)
+            turnCapturedEvents.removeValue(forKey: id)
+            return nil
+        }
+        let completedAt = Date()
+        let ending: ChatTurnEnding = cancelled ? .interrupted : statuses[id] == .failed ? .failed : .completed
+        let message = turnMessages.last(where: { $0.role == "assistant" && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+        let capturedEvents = (turnCapturedEvents.removeValue(forKey: id)?.values.map { $0 } ?? []).sorted { $0.observedAt < $1.observedAt }
+        let agentSummary = message.map { String($0.text.prefix(8_000)) }
+        let agentPendingItems = ChatTurnClosureEvaluator.extractPendingDeclarations(from: agentSummary ?? "")
+        let before = turnGitBefore.removeValue(forKey: id)
+        let capture = FinishedTurnCapture(
+            conversationID: id, generationID: generation.uuidString, completedAt: completedAt,
+            ending: ending, transcriptMessageID: turnMessages.last(where: { $0.role == "assistant" || $0.role == "error" })?.id,
+            capturedEvents: capturedEvents, gitBefore: before, agentSummary: agentSummary,
+            agentPendingItems: agentPendingItems, projectPath: conversations[index].projectPath,
+            isRemote: conversations[index].remote != nil
+        )
+        let closure = capture.makeClosure(after: nil, diffs: [:])
+        updateClosure(closure, for: id)
+        if ending == .completed {
+            appendAttention(ChatAttentionItem(id: "completed:\(generation.uuidString)", kind: .completed,
+                                              title: "Turno terminado",
+                                              detail: "El agente terminó este turno.",
+                                              messageID: message?.id), to: id)
+        }
+        return capture.isRemote ? nil : capture
+    }
+
+    private func updateClosure(_ closure: ChatTurnClosure, for id: UUID) {
+        guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
+        var closures = conversations[index].turnClosures ?? []
+        closures.append(closure)
+        if closures.count > 20 { closures.removeFirst(closures.count - 20) }
+        conversations[index].turnClosures = closures
+    }
+    private func replaceExistingClosure(_ closure: ChatTurnClosure, for id: UUID) -> Bool {
+        guard let index = conversations.firstIndex(where: { $0.id == id }),
+              var closures = conversations[index].turnClosures,
+              let closureIndex = closures.firstIndex(where: { $0.generationID == closure.generationID }) else { return false }
+        closures[closureIndex] = closure
+        conversations[index].turnClosures = closures
+        return true
     }
 
     // MARK: Delegation
@@ -1815,6 +2163,12 @@ enum AntigravityTerminalError: LocalizedError {
         if conversation != conversations[index] { conversations[index] = conversation }
     }
     private func receive(_ event: ChatEvent, for id: UUID) {
+        // Many tool events take the deferred flush path and never reach apply(_:for:).
+        // Capture structured activity here, before choosing either delivery path.
+        if !lightModeEnabled, runGenerations[id] != nil, case let .tool(eventID, title, _, status) = event {
+            turnCapturedEvents[id, default: [:]][eventID] = ChatTurnCapturedEvent(
+                id: eventID, kind: .tool, title: title, status: status, observedAt: Date())
+        }
         switch event {
         case .text, .reasoning, .toolOutput, .tool:
             if lightModeEnabled { bufferLight(event, for: id) }
@@ -1904,24 +2258,147 @@ enum AntigravityTerminalError: LocalizedError {
             if !list.isEmpty { commands[Self.commandKey(conversations[index].provider, conversations[index].projectPath)] = list }
         case .suggestion(let text): suggestions[id] = text
         case .session(let sessionID): conversations[index].sessionID = sessionID; save(id)
+        case let .commandResult(eventID, command, exitStatus):
+            if !lightModeEnabled, runGenerations[id] != nil {
+                turnCapturedEvents[id, default: [:]][eventID] = ChatTurnCapturedEvent(
+                    id: eventID, kind: .tool, title: "Ejecución de comando", command: command,
+                    exitStatus: exitStatus, observedAt: Date())
+            }
         case let .tool(messageID, title, detail, status):
             let message = ChatMessage(id: messageID, role: "tool", text: title, detail: String(detail.prefix(65_536)), status: status)
             if let existing = conversations[index].messages.firstIndex(where: { $0.id == messageID }) { conversations[index].messages[existing] = message }
             else { conversations[index].messages.append(message) }
         case .approval(let request):
+            let attentionID = approvalAttentionID(request.id, generation: runGenerations[id])
+            if !lightModeEnabled, conversations[index].attentionItems?.contains(where: { $0.id == attentionID && $0.state == .obsolete }) == true {
+                break
+            }
             if !(approvals[id] ?? []).contains(where: { $0.id == request.id }) { approvals[id, default: []].append(request) }
             statuses[id] = .waiting
-        case .approvalResolved(let requestID): approvals[id]?.removeAll { $0.id == requestID }; restoreStatus(id)
+            if !lightModeEnabled {
+                let messageID = conversations[index].messages.first(where: { $0.id == request.id })?.id
+                appendAttention(ChatAttentionItem(id: attentionID, kind: .approval, title: String(request.title.prefix(300)),
+                                                  detail: String(request.detail.prefix(8_000)), messageID: messageID, approvalID: request.id), to: id)
+                save(id)
+            }
+        case .approvalResolved(let requestID):
+            approvals[id]?.removeAll { $0.id == requestID }
+            resolveAttentionApprovals(for: id, approvalIDs: [requestID], generation: runGenerations[id])
+            restoreStatus(id)
         case .mode(let mode):
             if conversations[index].mode != mode { conversations[index].mode = mode; save(id) }
         case let .delivered(messageID, text): receiveDelivered(messageID, text: text, at: index)
         case .failure(let message):
-            if conversations[index].messages.last?.text != message { conversations[index].messages.append(ChatMessage(role: "error", text: message)) }
+            let messageID: String
+            if lightModeEnabled, conversations[index].messages.last?.text == message {
+                messageID = conversations[index].messages.last?.id ?? UUID().uuidString
+            } else {
+                let errorMessage = ChatMessage(role: "error", text: message)
+                conversations[index].messages.append(errorMessage)
+                messageID = errorMessage.id
+            }
+            if !lightModeEnabled {
+                appendAttention(ChatAttentionItem(id: "failure:\(runGenerations[id]?.uuidString ?? UUID().uuidString):\(messageID)", kind: .failure,
+                                                  title: "Falló el turno", detail: message, messageID: messageID), to: id)
+                save(id)
+            }
             statuses[id] = .failed
         case .completed: break
         case .text, .reasoning, .toolOutput: break
         }
         conversations[index].updatedAt = Date()
+    }
+    private func appendAttention(_ item: ChatAttentionItem, to id: UUID) {
+        guard !lightModeEnabled, let index = conversations.firstIndex(where: { $0.id == id }) else { return }
+        var items = conversations[index].attentionItems ?? []
+        if !items.contains(where: { $0.id == item.id }) { items.append(item) }
+        conversations[index].attentionItems = items
+    }
+    private func approvalAttentionID(_ requestID: String, generation: UUID?) -> String {
+        "approval:\(generation?.uuidString ?? "idle"):\(requestID)"
+    }
+    private func resolveAttentionApprovals(for id: UUID, approvalIDs: [String], generation: UUID? = nil) {
+        guard !lightModeEnabled, !approvalIDs.isEmpty, let index = conversations.firstIndex(where: { $0.id == id }),
+              var items = conversations[index].attentionItems else { return }
+        let attentionIDs = generation.map { generation in
+            Set(approvalIDs.map { approvalAttentionID($0, generation: generation) })
+        }
+        var changed = false
+        for itemIndex in items.indices {
+            guard approvalIDs.contains(items[itemIndex].approvalID ?? ""),
+                  attentionIDs?.contains(items[itemIndex].id) ?? true,
+                  items[itemIndex].state == .pending else { continue }
+            items[itemIndex].state = .obsolete
+            changed = true
+        }
+        if changed { conversations[index].attentionItems = items; save(id) }
+    }
+    private func captureGitSnapshot(_ id: UUID) async -> ChatTurnGitSnapshot? {
+        guard !lightModeEnabled, let conversation = conversations.first(where: { $0.id == id }), conversation.remote == nil else { return nil }
+        return await captureGitSnapshot(at: conversation.projectPath)
+    }
+    private func captureGitSnapshot(at projectPath: String) async -> ChatTurnGitSnapshot? {
+        guard !lightModeEnabled else { return nil }
+        if let gitSnapshotCaptureOverride { return await gitSnapshotCaptureOverride(projectPath) }
+        return await ChatTurnGitSnapshot.capture(in: projectPath, normalMode: { [weak self] in
+            self?.lightModeEnabled == false
+        })
+    }
+    private func captureGitDiffs(conversationID: UUID, projectPath: String,
+                                 before: ChatTurnGitSnapshot?, after: ChatTurnGitSnapshot?) async -> [String: String] {
+        guard !lightModeEnabled, let before, let after else { return [:] }
+        let rootResult = await Git.run(["rev-parse", "--show-toplevel"], in: projectPath,
+                                       timeout: .seconds(10), outputLimit: 64 * 1024)
+        guard !lightModeEnabled, rootResult.succeeded else { return [:] }
+        let rootPath = rootResult.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rootPath.isEmpty else { return [:] }
+        let paths = ChatTurnClosureEvaluator.evaluate(conversationID: conversationID, completedAt: Date(), ending: .completed,
+                                                       events: [], gitBefore: before, gitAfter: after).observedFileChanges.map(\.path)
+        var result: [String: String] = [:]
+        var remaining = 128 * 1024
+        for path in paths where remaining > 0 {
+            guard !lightModeEnabled else { return [:] }
+            var patches: [String] = []
+            if let end = after.head, before.head != end {
+                let arguments: [String]
+                if let start = before.head { arguments = ["diff", "--no-ext-diff", start, end, "--", path] }
+                else { arguments = ["diff-tree", "--root", "-p", "--no-commit-id", end, "--", path] }
+                let committed = await Git.run(arguments, in: rootPath,
+                                              timeout: .seconds(10), outputLimit: min(remaining, 32 * 1024))
+                guard !lightModeEnabled else { return [:] }
+                if !committed.output.isEmpty { patches.append(committed.output) }
+            }
+            if let head = after.head {
+                guard !lightModeEnabled else { return [:] }
+                let working = await Git.run(["diff", "--no-ext-diff", head, "--", path], in: rootPath,
+                                            timeout: .seconds(10), outputLimit: min(remaining, 32 * 1024))
+                guard !lightModeEnabled else { return [:] }
+                if !working.output.isEmpty { patches.append(working.output) }
+            }
+            if patches.isEmpty, after.files.first(where: { $0.path == path })?.status == "??" {
+                guard !lightModeEnabled else { return [:] }
+                let untracked = await Git.run(["diff", "--no-index", "--no-ext-diff", "--", "/dev/null", path], in: rootPath,
+                                              timeout: .seconds(10), outputLimit: min(remaining, 32 * 1024))
+                guard !lightModeEnabled else { return [:] }
+                if !untracked.output.isEmpty { patches.append(untracked.output) }
+            }
+            let patchText = patches.joined(separator: "\n")
+            let patch = String(decoding: patchText.utf8.prefix(min(remaining, 32 * 1024)), as: UTF8.self)
+            if !patch.isEmpty { result[path] = patch; remaining -= patch.utf8.count }
+        }
+        return result
+    }
+    private func obsoleteRestoredApprovals() {
+        var changed = false
+        for index in conversations.indices {
+            guard var items = conversations[index].attentionItems else { continue }
+            for itemIndex in items.indices where items[itemIndex].kind == .approval && items[itemIndex].state == .pending {
+                items[itemIndex].state = .obsolete
+                changed = true
+            }
+            conversations[index].attentionItems = items
+        }
+        if changed { archive.save(index: conversations) }
     }
     private func save(_ id: UUID) {
         let conversation = loaded.contains(id) ? conversations.first { $0.id == id } : nil
@@ -1939,7 +2416,10 @@ enum AntigravityTerminalError: LocalizedError {
         let protected = Set(runs.keys).union(queue.map(\.0)).union(selectedID.map { [$0] } ?? []).union(paned)
         for id in loaded.subtracting(protected) {
             save(id)
-            if let index = conversations.firstIndex(where: { $0.id == id }) { conversations[index].messages = [] }
+            if let index = conversations.firstIndex(where: { $0.id == id }) {
+                conversations[index].messages = []
+                conversations[index].turnClosures = nil
+            }
             loaded.remove(id)
         }
     }
@@ -2058,6 +2538,27 @@ private extension ChatStore {
         case "comandos":
             manageJackTemplates(a, id: id); return
         default:
+            if !lightModeEnabled, let command = customization.commands.first(where: { $0.name.lowercased() == name }) {
+                switch command.kind {
+                case .prompt:
+                    let expanded = command.expanded(arguments: a)
+                    let prompt = command.content.contains("{{args}}") ? expanded : expanded + (a.isEmpty ? "" : "\n" + a)
+                    send(prompt.hasPrefix("!") ? "!" + prompt : prompt, to: id)
+                case .terminal:
+                    guard a.isEmpty else { errorMessage = "!\(name) no admite argumentos."; return }
+                    guard customTerminalCommandRequest == nil else { errorMessage = "Ya hay un comando de terminal pendiente."; return }
+                    guard let conversation = conversations.first(where: { $0.id == id }), conversation.remote == nil else {
+                        errorMessage = "Los comandos de mods solo pueden ejecutarse en un proyecto local."; return
+                    }
+                    var isDirectory: ObjCBool = false
+                    guard FileManager.default.fileExists(atPath: conversation.projectPath, isDirectory: &isDirectory), isDirectory.boolValue else {
+                        errorMessage = "La carpeta del proyecto ya no existe."; return
+                    }
+                    customTerminalCommandRequest = CustomTerminalCommandRequest(
+                        conversationID: id, title: command.title, content: command.content, projectPath: conversation.projectPath)
+                }
+                return
+            }
             guard let template = jackTemplates.first(where: { $0.name == name }) else { errorMessage = "Comando !\(name) desconocido. Consulta !comandos. Para enviar un ! literal escribe !!."; return }
             let prompt = template.prompt.contains("{{args}}") ? template.prompt.replacingOccurrences(of: "{{args}}", with: a) : template.prompt + (a.isEmpty ? "" : "\n" + a)
             send(prompt.hasPrefix("!") ? "!" + prompt : prompt, to: id); return
@@ -2132,7 +2633,11 @@ private extension ChatStore {
     func manageJackTemplates(_ arguments: String, id: UUID) {
         let parts = arguments.split(maxSplits: 2, whereSeparator: { $0.isWhitespace }).map(String.init)
         if parts.isEmpty {
-            let rows = JackCommandCatalog.builtins.map { "!\($0.name) \($0.argumentHint) — \($0.description)" } + jackTemplates.map { "!\($0.name) — \($0.prompt)" }
+            let mods = lightModeEnabled ? [] : customization.commands.map { "!\($0.name) — \($0.title)" }
+            let modNames = Set(mods.isEmpty ? [] : customization.commands.map { $0.name.lowercased() })
+            let rows = JackCommandCatalog.builtins.map { "!\($0.name) \($0.argumentHint) — \($0.description)" }
+                + mods
+                + jackTemplates.filter { !modNames.contains($0.name.lowercased()) }.map { "!\($0.name) — \($0.prompt)" }
             jackNotice(rows.joined(separator: "\n") + "\n\nPlantillas: !comandos crear nombre texto ({{args}} inserta argumentos); !comandos eliminar nombre.", to: id); return
         }
         var templates = jackTemplates
@@ -2151,7 +2656,13 @@ private extension ChatStore {
     }
 }
 public extension ChatStore {
-    var jackCommands: [ChatCommand] { JackCommandCatalog.builtins + jackTemplates.map { .init(name: $0.name, description: $0.prompt, argumentHint: "argumentos opcionales") } }
+    var jackCommands: [ChatCommand] {
+        let mods = lightModeEnabled ? [] : customization.commands.map { ChatCommand(name: $0.name, description: $0.title, argumentHint: $0.kind == .prompt ? "argumentos opcionales" : "") }
+        let modNames = Set(mods.map { $0.name.lowercased() })
+        let templates = jackTemplates.filter { !modNames.contains($0.name.lowercased()) }
+            .map { ChatCommand(name: $0.name, description: $0.prompt, argumentHint: "argumentos opcionales") }
+        return JackCommandCatalog.builtins + mods + templates
+    }
 }
 private extension String {
     var nilIfEmpty: String? { isEmpty ? nil : self }

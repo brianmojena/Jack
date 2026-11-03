@@ -32,6 +32,12 @@ struct JackApp: App {
                         appDelegate.workspace.suspendClaudeChat()
                     }
                     store.setLightMode(enabled)
+                    if enabled {
+                        CustomizationAppearance.shared.disable()
+                    } else {
+                        store.applyCustomization()
+                        CustomizationAppearance.shared.connect(to: store.customization)
+                    }
                     store.applySchedules()
                     store.applyRemote(enabled: UserDefaults.standard.bool(forKey: "jackRemoteEnabled"))
                 }

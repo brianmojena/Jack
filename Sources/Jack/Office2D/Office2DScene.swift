@@ -17,6 +17,7 @@ enum Office2DPalette {
     static func stateColor(_ s: Office2DAgentState) -> Color {
         switch s {
         case .working, .thinking: STATE_COLORS["working"]!
+        case .queued: Color(hex: "fbbf24")
         case .waiting, .blocked, .failed: STATE_COLORS["blocked"]!
         case .idle: STATE_COLORS["idle"]!
         }
@@ -272,7 +273,7 @@ struct Office2DSceneView: View {
         let vignette=Path(CGRect(x:-Self.overscan.width,y:-Self.overscan.height,width:1280+Self.overscan.width*2,height:760+Self.overscan.height*2)); c.fill(vignette,with:.radialGradient(Gradient(stops:[.init(color:.clear,location:0.5),.init(color:Color(hex:"04051a").opacity(0.6),location:1)]),center:CGPoint(x:640,y:400),startRadius:0,endRadius:960))
     }
 
-    private func stateLED(_ state: Office2DAgentState) -> Color { state == .working || state == .thinking ? Color(hex:"34d399") : state == .idle ? Color(hex:"fbbf24") : Color(hex:"ff5d6c") }
+    private func stateLED(_ state: Office2DAgentState) -> Color { state == .working || state == .thinking ? Color(hex:"34d399") : state == .idle || state == .queued ? Color(hex:"fbbf24") : Color(hex:"ff5d6c") }
     private func deskAccent(for agent: Office2DAgent) -> Color {
         let role: String
         switch agent.kind.lowercased() {

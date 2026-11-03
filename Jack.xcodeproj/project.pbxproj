@@ -7,11 +7,15 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B21B3C2D4E5F60718293A4B5 /* Customization.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21B3C2D4E5F60718293A4B5 /* Customization.swift */; };
+		B21B3C2D4E5F60718293A4B6 /* CustomizationAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21B3C2D4E5F60718293A4B6 /* CustomizationAppearance.swift */; };
+		B21B3C2D4E5F60718293A4B7 /* CustomizationSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21B3C2D4E5F60718293A4B7 /* CustomizationSettingsView.swift */; };
 		02B83CB51FECD80B94438A2F /* ChatArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = 094C42C6DC4B76FE4E66E40D /* ChatArchive.swift */; };
 		02FB26A412E092684DB37B1A /* UpdateChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = F92F2637817F350152A1A81C /* UpdateChecker.swift */; };
 		051E30A12B62E96A652522D3 /* FileExplorer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 138D59F70F9CA07105FD1933 /* FileExplorer.swift */; };
 		06A6CE197A69B714E98CE5B7 /* OfficeColleagueView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 961D65BF09CA18DC77CB3C3D /* OfficeColleagueView.swift */; };
 		072C2113618D353E495AA216 /* ChessMasters.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B0A4D0840ACD2556EE7FC91 /* ChessMasters.swift */; };
+		082B014E5E65DB1EAA95D741 /* ClaudeModelDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DA67B7C60AC3972FCB405CE /* ClaudeModelDetector.swift */; };
 		0AD32BCA8D5467B1157EE855 /* Office2DScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7920154A0C48A8B576E4954 /* Office2DScene.swift */; };
 		0BD576E2B4A206561BD3BED4 /* MainWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7BD885E59F4C6849E846404 /* MainWindowView.swift */; };
 		0C6E135505E0D5C043D73A2F /* Chess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3633D11E0EF5A076E63CAA21 /* Chess.swift */; };
@@ -73,6 +77,7 @@
 		630D91B0364828E0921F7120 /* OfficeChessSetupCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C3963173B64BA866E086FD5 /* OfficeChessSetupCard.swift */; };
 		65138D0E8C01F36F52CF9E9E /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 32B0BA461A610CE350B86967 /* AppIcon.icon */; };
 		6710432588B24B1A6CB97E59 /* TerminalInterfaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3130A5E80CADC1AE5B40976C /* TerminalInterfaceView.swift */; };
+		679D3FF076DF3B683F897907 /* ChatTurnClosure.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE3A75020C7431F6D64BC1E1 /* ChatTurnClosure.swift */; };
 		68C89B3976CF06E200C70EC1 /* OfficeStage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35E7EAF9BD58303903C67CBB /* OfficeStage.swift */; };
 		6A89D2DA42A687D07F5F2C3F /* SimulatorPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A3D7246F7BBDA7A8018807 /* SimulatorPanel.swift */; };
 		6E34413A8520410627E235EB /* FRANKLIN.usdz in Resources */ = {isa = PBXBuildFile; fileRef = FE98510172BA77F6A01641E5 /* FRANKLIN.usdz */; };
@@ -97,6 +102,7 @@
 		8CFA9AFD04527815E8EC6FC0 /* ClaudeSessionPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3789D85F443A38492640A492 /* ClaudeSessionPicker.swift */; };
 		8D901B967A33198662F4A94B /* ChatMessageRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504E39FB7DA22A1B9933C4A5 /* ChatMessageRow.swift */; };
 		8E59269511DCE8F7162A3A1C /* ClaudeArtifacts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2702CDD68A82EB830DC6D786 /* ClaudeArtifacts.swift */; };
+		8FF9F2FECB6D0079A28FD56A /* ChatAttentionInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E26E138A391135FBE24B745 /* ChatAttentionInbox.swift */; };
 		91C52FBBAF6A2CF0F25297D8 /* OfficeAvatars.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAB762688CB92664884E380E /* OfficeAvatars.swift */; };
 		945101B1264E34154DC79876 /* WorkspacePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6164E34644769C64B3E867B1 /* WorkspacePanel.swift */; };
 		957BAD3B8F877B8C3FAFFA05 /* OfficeRoom.usdz in Resources */ = {isa = PBXBuildFile; fileRef = B1D9F8E01DEDBA4586FAA1B0 /* OfficeRoom.usdz */; };
@@ -114,6 +120,7 @@
 		A7D328F4FA370B7E3C7FFB6F /* ChatProcess.swift in Sources */ = {isa = PBXBuildFile; fileRef = E229CF3EA3E5C8331E30BF2D /* ChatProcess.swift */; };
 		A98FB0615710A756161AC7F6 /* JackApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC084525C4D6CE0EBEF1CF88 /* JackApp.swift */; };
 		ACC1F89F78B5AD87F0004663 /* ImagePlaygroundViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEB5D3C1C311E732214D3E5F /* ImagePlaygroundViews.swift */; };
+		AD41BE00FB978EF84FE05ED1 /* WorktreeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9058B4C83D52331892F608A0 /* WorktreeService.swift */; };
 		AF3D1419C2B6924320A1B9DF /* VoiceKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E4018B4B7C088D5468D722D /* VoiceKey.swift */; };
 		AF626BAEB5B26D0504A10C56 /* WaitingMessagesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DCC822661DED49C89F2189E /* WaitingMessagesView.swift */; };
 		B248BA64DE2A149805CE2C3B /* ChatAside.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FCA7EE32BDFA05868D21D74 /* ChatAside.swift */; };
@@ -217,6 +224,9 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		A21B3C2D4E5F60718293A4B5 /* Customization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Customization.swift; sourceTree = "<group>"; };
+		A21B3C2D4E5F60718293A4B6 /* CustomizationAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomizationAppearance.swift; sourceTree = "<group>"; };
+		A21B3C2D4E5F60718293A4B7 /* CustomizationSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomizationSettingsView.swift; sourceTree = "<group>"; };
 		0115E6D3245B4235B6E44CAE /* Avatar_DEADPOOL.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = Avatar_DEADPOOL.png; sourceTree = "<group>"; };
 		032BBF62CE8545A33F6498ED /* AntigravityIntegration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AntigravityIntegration.swift; sourceTree = "<group>"; };
 		05109BEC027632469B1BE7E8 /* OfficeAssignments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeAssignments.swift; sourceTree = "<group>"; };
@@ -230,6 +240,7 @@
 		0D507CBFB46C0D8CC4191A10 /* Simulators.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Simulators.swift; sourceTree = "<group>"; };
 		0D6B7F996310DFC0D7965C38 /* CH31.usdz */ = {isa = PBXFileReference; lastKnownFileType = file.usdz; path = CH31.usdz; sourceTree = "<group>"; };
 		0E0312F9EF3FDF19D86B6340 /* ApprovalViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalViews.swift; sourceTree = "<group>"; };
+		0E26E138A391135FBE24B745 /* ChatAttentionInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatAttentionInbox.swift; sourceTree = "<group>"; };
 		0E4018B4B7C088D5468D722D /* VoiceKey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceKey.swift; sourceTree = "<group>"; };
 		0E8F79C0D4ADDF32C1AA5996 /* ClaudeCloudPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeCloudPanel.swift; sourceTree = "<group>"; };
 		112E9D6E62140F40A3F29A21 /* AgentBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentBridge.swift; sourceTree = "<group>"; };
@@ -248,6 +259,7 @@
 		2C4091408F121190C72E76A9 /* Avatar_LAMINE.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = Avatar_LAMINE.png; sourceTree = "<group>"; };
 		2C9731344B7463E74671F52C /* StellarCode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StellarCode.swift; sourceTree = "<group>"; };
 		2CFA10CB841F5A058AC09FE4 /* ArtifactTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactTools.swift; sourceTree = "<group>"; };
+		2DA67B7C60AC3972FCB405CE /* ClaudeModelDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeModelDetector.swift; sourceTree = "<group>"; };
 		3130A5E80CADC1AE5B40976C /* TerminalInterfaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalInterfaceView.swift; sourceTree = "<group>"; };
 		3256570DB470AE91C84FA069 /* LAMINE.usdz */ = {isa = PBXFileReference; lastKnownFileType = file.usdz; path = LAMINE.usdz; sourceTree = "<group>"; };
 		32B0BA461A610CE350B86967 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = AppIcon.icon; sourceTree = "<group>"; };
@@ -298,6 +310,7 @@
 		8ED82B9B70891B0200DA37ED /* ProjectIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectIndex.swift; sourceTree = "<group>"; };
 		8F6561788FB990BD803A0FB9 /* ProgressViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressViews.swift; sourceTree = "<group>"; };
 		8FF0216E59E6C55F5A224A5A /* OfficeChessRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeChessRoute.swift; sourceTree = "<group>"; };
+		9058B4C83D52331892F608A0 /* WorktreeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorktreeService.swift; sourceTree = "<group>"; };
 		94A395B75510E22A65D43219 /* VoiceDictationButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceDictationButton.swift; sourceTree = "<group>"; };
 		961D65BF09CA18DC77CB3C3D /* OfficeColleagueView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeColleagueView.swift; sourceTree = "<group>"; };
 		96265CFED9209661366D40C0 /* AgentPanes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPanes.swift; sourceTree = "<group>"; };
@@ -355,6 +368,7 @@
 		DD0F0EC32A5D428E50E5152F /* NotebookSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotebookSession.swift; sourceTree = "<group>"; };
 		DD2509598C4FC1C9E886108E /* SSHTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHTransport.swift; sourceTree = "<group>"; };
 		DE392CC548349392081A80A6 /* NotebookPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotebookPanel.swift; sourceTree = "<group>"; };
+		DE3A75020C7431F6D64BC1E1 /* ChatTurnClosure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTurnClosure.swift; sourceTree = "<group>"; };
 		DE478C8255BAFA828A7913CE /* jack-progress */ = {isa = PBXFileReference; includeInIndex = 0; path = "jack-progress"; sourceTree = BUILT_PRODUCTS_DIR; };
 		E1DA779938E07CE10645928A /* ChatCommandViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatCommandViews.swift; sourceTree = "<group>"; };
 		E229CF3EA3E5C8331E30BF2D /* ChatProcess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatProcess.swift; sourceTree = "<group>"; };
@@ -427,11 +441,14 @@
 				D8E5B74C47ED76F7F4E3175D /* ChatModels.swift */,
 				E229CF3EA3E5C8331E30BF2D /* ChatProcess.swift */,
 				55789284D46B10B50C316C86 /* ChatStore.swift */,
+				DE3A75020C7431F6D64BC1E1 /* ChatTurnClosure.swift */,
 				0D0A660EF197200211C217B4 /* ChatUsage.swift */,
 				3633D11E0EF5A076E63CAA21 /* Chess.swift */,
 				9B0A4D0840ACD2556EE7FC91 /* ChessMasters.swift */,
 				2702CDD68A82EB830DC6D786 /* ClaudeArtifacts.swift */,
+				2DA67B7C60AC3972FCB405CE /* ClaudeModelDetector.swift */,
 				CA9AEFCAF5C3EB12827473A9 /* ClaudeSessions.swift */,
+				A21B3C2D4E5F60718293A4B5 /* Customization.swift */,
 				8A45A93DAF44DBBC83A60C50 /* ExecutableResolver.swift */,
 				23A3C12F03AEFEE7243BF5C8 /* FlowDiagram.swift */,
 				BD49B26FBE95D7FD23912D74 /* Git.swift */,
@@ -468,6 +485,7 @@
 				F92F2637817F350152A1A81C /* UpdateChecker.swift */,
 				0E4018B4B7C088D5468D722D /* VoiceKey.swift */,
 				B28C9861FC67C38346F78797 /* VoiceTranscriber.swift */,
+				9058B4C83D52331892F608A0 /* WorktreeService.swift */,
 			);
 			path = JackCore;
 			sourceTree = "<group>";
@@ -565,6 +583,7 @@
 				CCFCEC6A2BE443EE8AB64111 /* AutomationsView.swift */,
 				EE20CBCE09336DFA3CA28709 /* BatterySaver.swift */,
 				5019EA3818C709E8D20043A4 /* BrowserPicker.swift */,
+				0E26E138A391135FBE24B745 /* ChatAttentionInbox.swift */,
 				E1DA779938E07CE10645928A /* ChatCommandViews.swift */,
 				504E39FB7DA22A1B9933C4A5 /* ChatMessageRow.swift */,
 				C3D8A6CBC10C08DC5BE8F996 /* ChatModelPicker.swift */,
@@ -572,6 +591,8 @@
 				84A5AF320597FA5C3D4BEE01 /* ClaudeArtifactImportSheet.swift */,
 				0E8F79C0D4ADDF32C1AA5996 /* ClaudeCloudPanel.swift */,
 				3789D85F443A38492640A492 /* ClaudeSessionPicker.swift */,
+				A21B3C2D4E5F60718293A4B6 /* CustomizationAppearance.swift */,
+				A21B3C2D4E5F60718293A4B7 /* CustomizationSettingsView.swift */,
 				0AD6A284F00CF9276696D1F8 /* ContextPanelView.swift */,
 				138D59F70F9CA07105FD1933 /* FileExplorer.swift */,
 				17C8EF45B0037C8560493285 /* FlowPanel.swift */,
@@ -796,11 +817,14 @@
 				4554A60DE0E5512B0E29B1B4 /* AutomationsView.swift in Sources */,
 				5D953693E66E01A72D9DB935 /* BatterySaver.swift in Sources */,
 				FDA0C86DE21F32B305B5F8F8 /* BrowserPicker.swift in Sources */,
+				8FF9F2FECB6D0079A28FD56A /* ChatAttentionInbox.swift in Sources */,
 				D9BC01980D4186E943774370 /* ChatCommandViews.swift in Sources */,
 				8D901B967A33198662F4A94B /* ChatMessageRow.swift in Sources */,
 				BF38477F58288B2D1279DF30 /* ChatModelPicker.swift in Sources */,
 				0D341C6641105DD295680C11 /* ChatTranscript.swift in Sources */,
 				38BDF783DE0F3545ED96A4A6 /* ClaudeArtifactImportSheet.swift in Sources */,
+				B21B3C2D4E5F60718293A4B6 /* CustomizationAppearance.swift in Sources */,
+				B21B3C2D4E5F60718293A4B7 /* CustomizationSettingsView.swift in Sources */,
 				3621471A9E8A3D283111D4E5 /* ClaudeCloudPanel.swift in Sources */,
 				8CFA9AFD04527815E8EC6FC0 /* ClaudeSessionPicker.swift in Sources */,
 				F4C4F1A3CBF9BF0DD8CEB3FB /* ContextPanelView.swift in Sources */,
@@ -886,10 +910,13 @@
 				B2B738782CA7D19B82A2B3DA /* ChatModels.swift in Sources */,
 				A7D328F4FA370B7E3C7FFB6F /* ChatProcess.swift in Sources */,
 				96AB78C25512D6E21C9AA45B /* ChatStore.swift in Sources */,
+				679D3FF076DF3B683F897907 /* ChatTurnClosure.swift in Sources */,
 				1E4B9916484367A33AC3D959 /* ChatUsage.swift in Sources */,
 				0C6E135505E0D5C043D73A2F /* Chess.swift in Sources */,
 				072C2113618D353E495AA216 /* ChessMasters.swift in Sources */,
 				8E59269511DCE8F7162A3A1C /* ClaudeArtifacts.swift in Sources */,
+				082B014E5E65DB1EAA95D741 /* ClaudeModelDetector.swift in Sources */,
+				B21B3C2D4E5F60718293A4B5 /* Customization.swift in Sources */,
 				56C38ADB49FAC17203F73ED4 /* ClaudeSessions.swift in Sources */,
 				6EB861C0B842D3CECBD7F800 /* ExecutableResolver.swift in Sources */,
 				2B63503F337D59229C435107 /* FlowDiagram.swift in Sources */,
@@ -927,6 +954,7 @@
 				02FB26A412E092684DB37B1A /* UpdateChecker.swift in Sources */,
 				AF3D1419C2B6924320A1B9DF /* VoiceKey.swift in Sources */,
 				B3D592FF705AF382D9633262 /* VoiceTranscriber.swift in Sources */,
+				AD41BE00FB978EF84FE05ED1 /* WorktreeService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

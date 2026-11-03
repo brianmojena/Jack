@@ -32,7 +32,7 @@ public enum AgentUpdater {
         switch provider {
         case .claude: return .selfUpdate(["update"])
         case .opencode: return .selfUpdate(["upgrade"])
-        case .antigravity: return .selfUpdate(["update"])
+        case .antigravity, .qoder: return .selfUpdate(["update"])
         case .codex, .stellar: return .unsupported
         }
     }

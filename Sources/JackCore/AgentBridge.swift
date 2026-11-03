@@ -245,7 +245,7 @@ public struct ChatDelegation: Equatable {
         if name == "create_agent" {
             tool["description"] = "Create a sub-agent in Jack and start it on a task right away. Returns its agent_id. It runs in parallel with you and does not see this conversation, so the task must be self-contained. Use context only for the minimal facts or paths this task needs."
             properties["context"] = ["type": "string", "description": "Optional, concise, task-specific facts or paths. Jack never copies the caller's transcript."]
-            properties["provider"] = ["type": "string", "enum": ["codex", "claude", "opencode", "antigravity"], "description": "Which coding agent runs the task."]
+            properties["provider"] = ["type": "string", "enum": ["codex", "claude", "opencode", "antigravity", "qoder"], "description": "Which coding agent runs the task."]
         } else if name == "send_message" {
             tool["description"] = "Send a follow-up message to one of your sub-agents. A busy agent may hold it until its next step or until its turn ends; the response reports whether it was queued or handed to the driver."
         }
@@ -270,8 +270,8 @@ public struct ChatDelegation: Equatable {
     func call(_ name: String, arguments: [String: Any], caller: UUID) async -> (String, Bool) {
         guard let store else { return ("Jack is closing.", true) }
         guard let parent = store.conversations.first(where: { $0.id == caller }) else { return ("The calling conversation no longer exists.", true) }
-        guard parent.provider != .antigravity || !store.lightModeEnabled else {
-            return ("Antigravity is available only in Normal mode.", true)
+        guard !(parent.provider.isNormalOnly && store.lightModeEnabled) else {
+            return ("\(parent.provider.title) is available only in Normal mode.", true)
         }
         if name.hasPrefix("artifact_") {
             guard permissions[caller]?.normalMode == true, !store.lightModeEnabled else {
@@ -309,10 +309,10 @@ public struct ChatDelegation: Equatable {
         switch name {
         case "create_agent":
             guard let provider = (arguments["provider"] as? String).flatMap(ChatProvider.init(rawValue:)) else {
-                return ("provider must be one of codex, claude, opencode, antigravity.", true)
+                return ("provider must be one of codex, claude, opencode, antigravity, qoder.", true)
             }
             guard !(store.lightModeEnabled && provider.isNormalOnly) else {
-                return ("Antigravity is available only in Normal mode.", true)
+                return ("\(provider.title) is available only in Normal mode.", true)
             }
             guard let task = (arguments["task"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !task.isEmpty else {
                 return ("task is required.", true)

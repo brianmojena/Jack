@@ -194,6 +194,8 @@ enum UsageDecoder {
                 JackLog.write("cuota de Antigravity: \(error.localizedDescription)")
                 return ProviderUsage(provider: .antigravity, note: "No se pudo consultar la cuota de Antigravity: \(error.localizedDescription)")
             }
+        case .qoder:
+            return ProviderUsage(provider: .qoder, note: "Qoder no expone su cuota en el CLI; consúltala con /usage en su terminal.")
         }
     }
     /// `/usage` is answered locally by Claude Code, without inference, and stores a fresh reading in `~/.claude.json`.

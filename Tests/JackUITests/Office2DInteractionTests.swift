@@ -1,5 +1,5 @@
 import AppKit
-import JackCore
+@testable import JackCore
 import SwiftUI
 import XCTest
 @testable import Jack
@@ -9,6 +9,14 @@ final class Office2DInteractionTests: XCTestCase {
 
     private func agent(_ state: Office2DAgentState, id: String = "agent") -> Office2DAgent {
         Office2DAgent(id: id, name: "Codex", kind: "codex", state: state, activity: nil, seed: 0)
+    }
+
+    @MainActor private func waitFor(_ condition: () -> Bool) async throws -> Bool {
+        for _ in 0..<300 {
+            if condition() { return true }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        return condition()
     }
 
     @MainActor func testWalkAdvancesContinuouslyAndSurvivesStreamingUpdates() throws {
@@ -80,6 +88,8 @@ final class Office2DInteractionTests: XCTestCase {
             drivers.append(driver)
             return driver
         }, commandLoader: { _, _ in [] })
+        store.gitSnapshotCaptureOverride = { _ in nil }
+        store.setConcurrency(3)
         defer {
             store.shutdown()
             drivers.forEach { $0.stop() }
@@ -107,12 +117,15 @@ final class Office2DInteractionTests: XCTestCase {
             ids.append(id)
             store.send("Vista de prueba", to: id)
         }
-        try await Task.sleep(for: .milliseconds(300))
-        XCTAssertEqual(model.agents.count, 3)
+        let allAgentsStarted = try await waitFor { drivers.count == 3 && drivers.allSatisfy { $0.event != nil } }
+        XCTAssertTrue(allAgentsStarted, "Each fake driver should start without waiting on Git capture")
+        let allAgentsObserved = try await waitFor { model.agents.count == 3 }
+        XCTAssertTrue(allAgentsObserved)
         let stableOrder = model.agents.map(\.id)
-        drivers.last?.event?(.approval(ChatApproval(id: "approval", title: "Ejecutar pruebas", detail: "Confirmar")))
-        try await Task.sleep(for: .milliseconds(150))
-        XCTAssertTrue(model.agents.contains { $0.state == .waiting })
+        let approvalDriver = try XCTUnwrap(drivers.first { $0.conversationID == ids[2] })
+        approvalDriver.event?(.approval(ChatApproval(id: "approval", title: "Ejecutar pruebas", detail: "Confirmar")))
+        let approvalObserved = try await waitFor { model.agents.contains { $0.id == ids[2].uuidString && $0.state == .waiting } }
+        XCTAssertTrue(approvalObserved, "The selected fake driver approval should reach the office model")
         try snapshot(host, size: CGSize(width: 1100, height: 720), name: "wide")
         window.setContentSize(NSSize(width: 636, height: 580))
         try await Task.sleep(for: .milliseconds(100))
@@ -121,18 +134,21 @@ final class Office2DInteractionTests: XCTestCase {
             .defaultAppStorage(defaults)
         try await Task.sleep(for: .milliseconds(100))
         try snapshot(host, size: CGSize(width: 636, height: 580), name: "no-sidebar")
-        drivers.first?.stop()
-        try await Task.sleep(for: .milliseconds(200))
+        let completedDriver = try XCTUnwrap(drivers.first { $0.conversationID == ids[0] })
+        completedDriver.stop()
+        let completionObserved = try await waitFor { model.agents.contains { $0.id == ids[0].uuidString && $0.state == .idle } }
+        XCTAssertTrue(completionObserved, "Stopping that fake driver should complete its conversation")
         XCTAssertEqual(model.agents.map(\.id), stableOrder)
         XCTAssertTrue(model.agents.contains { $0.state == .idle }, "Completed agents remain to celebrate and rest")
         let newcomer = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .codex, title: "Otro agente"))
         store.send("Vista de prueba", to: newcomer)
-        try await Task.sleep(for: .milliseconds(150))
+        let newcomerObserved = try await waitFor { model.agents.count == 4 }
+        XCTAssertTrue(newcomerObserved)
         XCTAssertEqual(Array(model.agents.prefix(3).map(\.id)), stableOrder, "An arrival must not move existing desks")
         XCTAssertEqual(model.agents.last?.id, newcomer.uuidString)
         store.remove(ids[0])
-        try await Task.sleep(for: .milliseconds(150))
-        XCTAssertFalse(model.agents.contains { $0.id == ids[0].uuidString })
+        let removalObserved = try await waitFor { !model.agents.contains { $0.id == ids[0].uuidString } }
+        XCTAssertTrue(removalObserved, "Removing a completed conversation should remove it from the office roster")
     }
 
     @MainActor private func snapshot<V: View>(_ host: NSHostingView<V>, size: CGSize, name: String) throws {
@@ -148,8 +164,10 @@ final class Office2DInteractionTests: XCTestCase {
 
 @MainActor private final class PreviewDriver: ChatDriver {
     var event: (@MainActor (ChatEvent) -> Void)?
+    private(set) var conversationID: UUID?
     private var continuation: CheckedContinuation<Void, Never>?
     func run(conversation: ChatConversation, prompt: String, onEvent: @escaping @MainActor (ChatEvent) -> Void) async throws {
+        conversationID = conversation.id
         event = onEvent
         onEvent(.tool(id: "read", title: "Read", detail: "Sources/Jack/Office2D/Office2DView.swift", status: "running"))
         await withCheckedContinuation { continuation = $0 }

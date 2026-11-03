@@ -1,3 +1,23 @@
+## Personalización en Normal — 3 de noviembre de 2026
+
+Implementación de personalización declarativa en modo Normal; todo el código de esta funcionalidad fue escrito por Luna.
+
+- `swift test --build-system native --disable-sandbox --skip-update --cache-path /private/tmp/jack-polish-cache` con el filtro `Customization|ChatCommandTests|LightModeTests|TerminalWorkspaceTests|ClaudeTerminalLifecycleTests|AntigravityTerminalLifecycleTests|PaneLayoutTests`: **43 pruebas, 0 fallos**. Registro: `/private/tmp/jack-customization-tests.log`.
+- Revisión del editor renderizado a 720 × 620 y de un cambio anidado de color; el PID de la terminal permaneció constante.
+- Se verificaron hot reload por escritura in-place y reemplazo atómico, ausencia de I/O al desactivar y que importar comandos no los ejecuta.
+- `project.pbxproj` pasó `plutil lint` y `git diff --check` no reportó problemas.
+- Se intentó Release con Xcode y cachés temporales, pero la resolución de dependencias quedó bloqueada por `sandbox-exec` (`sandbox_apply Operation not permitted`). No hay Release confirmado ni app instalada.
+
+## Bandeja, cierres y worktrees — 26 de octubre de 2026
+
+Implementación exclusiva de Normal, escrita con GPT Luna y revisada en integración. La bandeja conserva permisos, fallos y turnos pendientes; los cierres separan ejecuciones registradas de declaraciones del agente; los worktrees permiten revisar e integrar únicamente el commit revisado mediante fast-forward.
+
+- Compilación de desarrollo de la aplicación y sus pruebas con SwiftPM nativo: correcta. Pasaron **116 pruebas**, sin fallos, de ChatStore, cierres, worktrees, integración de Codex, parsers, configuración, comandos, Light y la regresión de seguimiento entre turnos de AgentMentions.
+- Se usó `swift test --build-system native --disable-sandbox --skip-update` con cachés y un scratch en `/private/tmp`, reutilizando las dependencias locales. El filtro incluyó `ChatTurnClosureTests|WorktreeServiceTests|ChatStoreTests|CodexIntegrationTests|AgentMentionsTests/testProviderMentionCreatesChildAndBusyReuseReportsJackQueue|LightModeTests|ChatDriversTests|ChatRunConfigurationTests|ChatCommandTests`.
+- Las pruebas con Git real cubren aislamiento, rutas con espacios y subdirectorios, cambios de contenido y commits entre capturas, revisión obsoleta, base sucia, errores de estado, historia divergente y cambio a Light. Los drivers simulados usan una captura inyectada para evitar depender de la temporización de procesos Git.
+- La suite completa no pudo validarse: las restricciones del entorno impiden abrir sockets y los tests de WebKit no avanzaron. El motor predeterminado también requiere un Metal Toolchain ausente; la compilación nativa anterior sí terminó. No se verificó Release con Xcode ni se realizó una revisión visual manual de los nuevos controles.
+- Las capturas pueden incluir cambios concurrentes y no prueban autoría. Las huellas leen metadatos y como máximo el primer MiB. Solo Codex aporta actualmente códigos de salida estructurados al nuevo cierre; una declaración del agente no se presenta como prueba verificada.
+
 # Validación de pestañas — 7 de octubre de 2026
 
 Jack 0.3.20 compila en Release con firma ad hoc verificada. Las vistas reales de pestañas de Basic e Ice se probaron en un proceso aislado con NSHostingView, sin mostrar ventanas ni abrir Jack. Solo se sustituyeron las dependencias del panel de herramientas; las pestañas y el sistema de diseño se compilaron desde los archivos de la aplicación.

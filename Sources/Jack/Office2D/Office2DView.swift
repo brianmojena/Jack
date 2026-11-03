@@ -38,6 +38,7 @@ struct Office2DView: View {
     }
 
     private var workingCount: Int { viewModel.agents.filter { $0.state == .working || $0.state == .thinking }.count }
+    private var queuedCount: Int { viewModel.agents.filter { $0.state == .queued }.count }
     private var waitingCount: Int { viewModel.agents.filter { $0.state == .waiting || $0.state == .blocked }.count }
     private var cameraZoom: CGFloat { selectedID == nil ? 1 : 1.45 }
     private var floorCount: Int { max(1, (viewModel.agents.count + 11) / 12) }
@@ -153,6 +154,7 @@ struct Office2DView: View {
                 .accessibilityLabel("\(agent.name), \(stateTitle(agent.state))\(agent.activity.map { ", \($0)" } ?? "")")
                 .accessibilityAddTraits(.isButton)
                 .accessibilityAction { select(agent.id) }
+                .accessibilityAction(named: Text("Abrir conversación")) { viewModel.open(agentID: agent.id) }
                 .contextMenu {
                     Button("Abrir conversación", systemImage: "text.bubble") { viewModel.open(agentID: agent.id) }
                     if agent.state == .idle {
@@ -202,9 +204,10 @@ struct Office2DView: View {
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 8) {
                         statChip(value: workingCount, title: "trabajando", color: .mint)
+                        statChip(value: queuedCount, title: "en cola", color: .orange)
                         statChip(value: waitingCount, title: "te necesitan", color: .orange)
                     }
-                    Text("\(workingCount) trabajando · \(waitingCount) te necesitan").font(.system(size: 11))
+                    Text("\(workingCount) trabajando · \(queuedCount) en cola · \(waitingCount) te necesitan").font(.system(size: 11))
                 }
                 Spacer(minLength: 0)
                 if floorCount > 1 {
@@ -326,16 +329,18 @@ struct Office2DView: View {
         .background(selectedID == agent.id ? color.opacity(0.15) : .white.opacity(0.035), in: RoundedRectangle(cornerRadius: 13))
         .overlay(RoundedRectangle(cornerRadius: 13).stroke(selectedID == agent.id ? color.opacity(0.55) : .clear, lineWidth: 1))
         .contentShape(RoundedRectangle(cornerRadius: 13))
-        .accessibilityElement(children: .combine).accessibilityAddTraits(.isButton)
+        .accessibilityElement(children: .combine)
         .accessibilityLabel("\(agent.name), \(conversation?.provider.title ?? agent.kind), \(shortPath(conversation?.projectPath ?? "")), \(stateTitle(agent.state))")
     }
 
     private var agentRows: some View {
         VStack(spacing: 6) {
             ForEach(viewModel.agents) { agent in
-                agentRow(agent)
-                    .onTapGesture(count: 2) { viewModel.open(agentID: agent.id) }
-                    .onTapGesture { select(agent.id) }
+                Button { select(agent.id) } label: { agentRow(agent) }
+                    .buttonStyle(.plain)
+                    .simultaneousGesture(TapGesture(count: 2).onEnded { viewModel.open(agentID: agent.id) })
+                    .accessibilityAddTraits(selectedID == agent.id ? .isSelected : [])
+                    .accessibilityAction(named: Text("Abrir conversación")) { viewModel.open(agentID: agent.id) }
             }
         }.frame(maxWidth: .infinity, alignment: .top)
     }
@@ -433,6 +438,7 @@ struct Office2DView: View {
         switch state {
         case .working: "Trabajando"
         case .thinking: "Pensando"
+        case .queued: "En cola"
         case .waiting: "Esperando"
         case .blocked: "Bloqueado"
         case .idle: "Libre"

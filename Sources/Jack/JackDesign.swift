@@ -5,21 +5,22 @@ import SwiftUI
 /// Colors of Jack's dark, dense workspace look. Every color also has a light variant,
 /// so the app still follows the system appearance.
 enum JackPalette {
-    static let canvasColor = adaptive(light: rgb(0xFFFFFF), dark: rgb(0x0E0E0F))
-    static let chromeColor = adaptive(light: rgb(0xF3F3F5), dark: rgb(0x161618))
-    static let canvas = Color(nsColor: canvasColor)
+    static var canvasColor: NSColor { themed(\.canvas) ?? adaptive(light: rgb(0xFFFFFF), dark: rgb(0x0E0E0F)) }
+    static var chromeColor: NSColor { themed(\.chrome) ?? adaptive(light: rgb(0xF3F3F5), dark: rgb(0x161618)) }
+    static var canvas: Color { Color(nsColor: canvasColor) }
     /// Sidebar, tab strips and status bar.
-    static let chrome = Color(nsColor: chromeColor)
-    static let selection = Color(nsColor: adaptive(light: NSColor.black.withAlphaComponent(0.075), dark: NSColor.white.withAlphaComponent(0.085)))
-    static let panel = Color(nsColor: adaptive(light: NSColor.black.withAlphaComponent(0.04), dark: NSColor.white.withAlphaComponent(0.05)))
-    static let panelStrong = Color(nsColor: adaptive(light: NSColor.black.withAlphaComponent(0.065), dark: NSColor.white.withAlphaComponent(0.08)))
+    static var chrome: Color { Color(nsColor: chromeColor) }
+    static var selection: Color { Color(nsColor: themed(\.selection) ?? adaptive(light: NSColor.black.withAlphaComponent(0.075), dark: NSColor.white.withAlphaComponent(0.085))) }
+    static var panel: Color { Color(nsColor: themed(\.panel) ?? adaptive(light: NSColor.black.withAlphaComponent(0.04), dark: NSColor.white.withAlphaComponent(0.05))) }
+    static var panelStrong: Color { Color(nsColor: themed(\.panel) ?? adaptive(light: NSColor.black.withAlphaComponent(0.065), dark: NSColor.white.withAlphaComponent(0.08))) }
     static let codeBackground = Color(nsColor: adaptive(light: NSColor.black.withAlphaComponent(0.035), dark: NSColor.white.withAlphaComponent(0.035)))
-    static let composer = canvas
+    static var composer: Color { canvas }
     static let hairline = Color(nsColor: adaptive(light: NSColor.black.withAlphaComponent(0.1), dark: NSColor.white.withAlphaComponent(0.085)))
-    static let accent = Color.accentColor
-    static let muted = Color(nsColor: .secondaryLabelColor)
+    static var accent: Color { themed(\.accent).map { Color(nsColor: $0) } ?? Color.accentColor }
+    static var muted: Color { themed(\.muted).map { Color(nsColor: $0) } ?? Color(nsColor: .secondaryLabelColor) }
     static let faint = Color(nsColor: .tertiaryLabelColor)
-    static let secondaryText = Color(nsColor: .labelColor).opacity(0.86)
+    static var primaryText: Color { themed(\.text).map { Color(nsColor: $0) } ?? .primary }
+    static var secondaryText: Color { themed(\.text).map { Color(nsColor: $0).opacity(0.86) } ?? Color(nsColor: .labelColor).opacity(0.86) }
     static let red = Color(nsColor: .systemRed)
     static let amber = Color(nsColor: .systemOrange)
     static let green = Color(nsColor: .systemGreen)
@@ -37,6 +38,12 @@ enum JackPalette {
     static func adaptive(light: NSColor, dark: NSColor) -> NSColor {
         NSColor(name: nil) { appearance in
             appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
+        }
+    }
+
+    private static func themed(_ keyPath: KeyPath<CustomizationTheme, String?>) -> NSColor? {
+        MainActor.assumeIsolated {
+            CustomizationAppearance.color(CustomizationAppearance.shared.paletteTheme?[keyPath: keyPath])
         }
     }
 }
@@ -62,6 +69,7 @@ enum InterfaceStyle: String, CaseIterable, Identifiable {
 
 extension EnvironmentValues {
     @Entry var interfaceStyle: InterfaceStyle = .basic
+    @Entry var jackCustomizationRevision = 0
 }
 
 /// The window's layers. Basic paints each one; Ice leaves them to the system, so the glass
@@ -226,12 +234,12 @@ func displayPath(_ path: String, project: String) -> String {
 
 /// Official provider logos, stored as template vectors in the asset catalog.
 func providerLogo(_ provider: ChatProvider) -> String {
-    switch provider { case .codex: "ProviderCodex"; case .claude: "ProviderClaude"; case .opencode: "ProviderOpenCode"; case .stellar: "ProviderStellar"; case .antigravity: "ProviderAntigravity" }
+    switch provider { case .codex: "ProviderCodex"; case .claude: "ProviderClaude"; case .opencode: "ProviderOpenCode"; case .stellar: "ProviderStellar"; case .antigravity: "ProviderAntigravity"; case .qoder: "ProviderQoder" }
 }
 
 /// Fallback when the asset catalog is not bundled (e.g. `swift run`).
 func providerSymbol(_ provider: ChatProvider) -> String {
-    switch provider { case .codex: "chevron.left.forwardslash.chevron.right"; case .claude: "asterisk"; case .opencode: "terminal"; case .stellar: "sparkle"; case .antigravity: "sparkles" }
+    switch provider { case .codex: "chevron.left.forwardslash.chevron.right"; case .claude: "asterisk"; case .opencode: "terminal"; case .stellar: "sparkle"; case .antigravity: "sparkles"; case .qoder: "q.circle" }
 }
 
 /// The provider's logo at `size` points, falling back to its SF Symbol.
@@ -257,6 +265,7 @@ func providerColor(_ provider: ChatProvider) -> Color {
     case .opencode: Color(nsColor: .systemTeal)
     case .stellar: Color(nsColor: .systemIndigo)
     case .antigravity: Color(nsColor: .systemGreen)
+    case .qoder: Color(nsColor: .systemPurple)
     }
 }
 

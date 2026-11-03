@@ -120,7 +120,8 @@ public enum Office2DStateMapper {
     public static func state(for status: ChatStatus, lastMessageRole: String? = nil) -> Office2DAgentState {
         switch status {
         case .idle: .idle
-        case .queued, .waiting: .waiting
+        case .queued: .queued
+        case .waiting: .waiting
         case .failed: .failed
         case .running:
             switch lastMessageRole {

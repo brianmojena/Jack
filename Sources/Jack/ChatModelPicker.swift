@@ -36,12 +36,12 @@ struct ChatModelPicker: View {
         return allowsBypass && conversation.provider == .claude ? base + [ChatRunMode.bypass] : base
     }
     private var modeTitle: String {
-        modes.first { $0.id == conversation.mode }?.title ?? (conversation.mode ?? (conversation.provider == .opencode ? "Predeterminado" : conversation.provider == .claude ? "Manual" : "Normal"))
+        modes.first { $0.id == conversation.mode }?.title ?? (conversation.mode ?? (conversation.provider == .opencode ? "Predeterminado" : conversation.provider == .claude || conversation.provider == .qoder ? "Manual" : "Normal"))
     }
 
     /// Claude Code's colors for the modes that change what it may do without asking.
     private var modeColor: Color {
-        guard conversation.provider == .claude || conversation.provider == .stellar || conversation.provider == .antigravity else { return JackPalette.muted }
+        guard conversation.provider == .claude || conversation.provider == .stellar || conversation.provider == .antigravity || conversation.provider == .qoder else { return JackPalette.muted }
         switch conversation.mode {
         case "plan": return JackPalette.blue
         case "acceptEdits", "accept-edits": return JackPalette.purple
@@ -57,6 +57,17 @@ struct ChatModelPicker: View {
         case .antigravity: return "Plan y Aceptar ediciones usan las reglas de permisos del CLI; Auto ejecuta sin preguntar"
         case .codex where conversation.mode == "auto": return "Auto ejecuta dentro del proyecto; las acciones que requieren permiso se deniegan"
         default: return "Modo de trabajo para el próximo mensaje"
+        }
+    }
+    private var modelDisplayTitle: String {
+        if let selected = selected {
+            return selected.title
+        } else if conversation.model.isEmpty {
+            return "Predeterminado"
+        } else if conversation.provider == .claude {
+            return ChatModelChoice.claudeTitle(for: conversation.model)
+        } else {
+            return conversation.model
         }
     }
 
@@ -97,13 +108,23 @@ struct ChatModelPicker: View {
                     }
                     Button("Actualizar modelos de Antigravity") { Task { await store.refreshAntigravityModels() } }
                         .disabled(store.loadingAntigravityModels)
+                } else if conversation.provider == .qoder {
+                    ForEach(choices) { choice in modelButton(choice) }
+                    Divider()
+                    if store.loadingQoderModels { Text("Cargando modelos de Qoder…") }
+                    if let error = store.qoderModelsError { Text(error) }
+                    if !store.loadingQoderModels, store.qoderModelsError == nil, store.qoderModels.isEmpty {
+                        Text("Aún no hay modelos: actualiza el catálogo")
+                    }
+                    Button("Actualizar modelos de Qoder") { Task { await store.refreshQoderModels() } }
+                        .disabled(store.loadingQoderModels)
                 } else {
                     ForEach(choices) { choice in modelButton(choice) }
                 }
                 Divider()
                 Button("Otro modelo…") { linkingCloud = false; customModel = conversation.model; custom = true }
             } label: {
-                Text(selected?.title ?? (conversation.model.isEmpty ? "Predeterminado" : conversation.model)).lineLimit(1).truncationMode(.middle)
+                Text(modelDisplayTitle).lineLimit(1).truncationMode(.middle)
                     .frame(maxWidth: 150, alignment: .leading)
             }
             .menuStyle(.borderlessButton)
@@ -201,6 +222,9 @@ struct ChatModelPicker: View {
             if conversation.provider == .antigravity, store.antigravityModels.isEmpty, !store.loadingAntigravityModels {
                 await store.refreshAntigravityModels()
             }
+            if conversation.provider == .qoder, store.qoderModels.isEmpty, !store.loadingQoderModels {
+                await store.refreshQoderModels()
+            }
         }
     }
 
@@ -208,8 +232,29 @@ struct ChatModelPicker: View {
         Button {
             store.updateSettings(id: conversation.id, model: choice.id, effort: conversation.effort)
         } label: {
-            if choice.id == conversation.model { Label(choice.title, systemImage: "checkmark") }
-            else { Text(choice.title) }
+            if choice.id == conversation.model {
+                if let subtitle = choice.subtitle {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(choice.title)
+                            Text(subtitle).font(.system(size: 11)).foregroundStyle(JackPalette.muted)
+                        }
+                    } icon: {
+                        Image(systemName: "checkmark")
+                    }
+                } else {
+                    Label(choice.title, systemImage: "checkmark")
+                }
+            } else {
+                if let subtitle = choice.subtitle {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(choice.title)
+                        Text(subtitle).font(.system(size: 11)).foregroundStyle(JackPalette.muted)
+                    }
+                } else {
+                    Text(choice.title)
+                }
+            }
         }
     }
 

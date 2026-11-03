@@ -13,6 +13,7 @@ public enum ChatDriverFactory {
         case .opencode: return OpenCodeChatDriver()
         case .stellar: return StellarChatDriver()
         case .antigravity: return AntigravityChatDriver()
+        case .qoder: return QoderChatDriver()
         }
     }
 }
@@ -105,7 +106,7 @@ private enum ChatDriverError: LocalizedError {
 }
 
 enum CodexProtocol {
-    static func event(_ object: [String: Any], session: inout String?, approvals: inout [String: PendingApproval], permissionProfiles: Bool = false) -> [ChatEvent] {
+    static func event(_ object: [String: Any], session: inout String?, approvals: inout [String: PendingApproval], permissionProfiles: Bool = false, captureCommandResults: Bool = true) -> [ChatEvent] {
         if let method = object["method"] as? String {
             let params = object["params"] as? [String: Any] ?? [:]
             if method == "serverRequest/resolved", let rpcID = params["requestId"] {
@@ -178,7 +179,11 @@ enum CodexProtocol {
                 if type != "agentMessage" && type != "userMessage" && type != "reasoning" {
                     let id = item["id"] as? String ?? UUID().uuidString
                     let status = method == "item/started" ? "running" : (item["status"] as? String ?? "completed")
-                    return [.tool(id: id, title: readableItem(type: type, item: item), detail: readableDetails(type: type, item: item), status: status)]
+                    let tool = ChatEvent.tool(id: id, title: readableItem(type: type, item: item), detail: readableDetails(type: type, item: item), status: status)
+                    if captureCommandResults, type == "commandExecution", method == "item/completed" {
+                        return [tool, .commandResult(id: id, command: item["command"] as? String ?? "", exitStatus: item["exitCode"] as? Int)]
+                    }
+                    return [tool]
                 }
             }
             if method == "turn/completed" {
@@ -391,7 +396,8 @@ final class CodexChatDriver: ProcessChatDriver {
                 try process.writeJSON(["id": rpcID, "error": ["code": -32600, "message": "Turn is being interrupted"]])
                 continue
             }
-            let events = CodexProtocol.event(object, session: &self.threadID, approvals: &pendingApprovals, permissionProfiles: !energySaving)
+            let events = CodexProtocol.event(object, session: &self.threadID, approvals: &pendingApprovals,
+                                             permissionProfiles: !energySaving, captureCommandResults: !energySaving)
             let knownRequest = pendingApprovals.values.contains {
                 String(describing: $0.payload["rpcID"] ?? "") == String(describing: object["id"] ?? "") && $0.payload["method"] as? String == object["method"] as? String
             }
@@ -1352,6 +1358,85 @@ private final class AntigravityChatDriver: ProcessChatDriver {
     }
 }
 
+/// Qoder CLI: one process per turn, speaking Claude Code's stream-json. Its stdin cannot carry the
+/// permission protocol, so answers go to the turn's own process, which stays open until the turn ends.
+private final class QoderChatDriver: ProcessChatDriver {
+    override func run(conversation: ChatConversation, prompt: String, onEvent: @escaping @MainActor (ChatEvent) -> Void) async throws {
+        try await run(conversation: conversation, prompt: prompt, delegation: nil, onEvent: onEvent)
+    }
+
+    override func run(conversation: ChatConversation, prompt: String, delegation: ChatDelegation?,
+                      onEvent: @escaping @MainActor (ChatEvent) -> Void) async throws {
+        stop()
+        let generation = UUID()
+        runGeneration = generation
+        guard let executable = ExecutableResolver.resolve(ChatProvider.qoder.executableName,
+                                                          override: UserDefaults.standard.string(forKey: "providerExecutablePath.qoder")) else {
+            throw ChatDriverError.executableMissing("qodercli")
+        }
+        // No inline images: the prompt carries the paths and --add-dir gives access to their folders.
+        let promptText = ChatAttachments.promptText(prompt, attachments: conversation.turnAttachments, inlineImages: false)
+        var environment = ProgressFiles.environment(for: conversation.id)
+        // wait_for_agents may hold a call open for up to 15 minutes.
+        if delegation != nil { environment["MCP_TOOL_TIMEOUT"] = "960000" }
+        let arguments = ChatRunConfiguration.qoderArguments(conversation, prompt: promptText, delegation: delegation)
+        let process = try begin(executable, arguments: arguments, directory: conversation.projectPath, environment: environment)
+        do {
+            let reader = StructuredLineReader(process.lines)
+            var decoder = ClaudeProtocol.Decoder()
+            var completed = false
+            try await withTaskCancellationHandler {
+                while let line = try await reader.next() {
+                    try Task.checkCancellation()
+                    guard runGeneration == generation else { throw CancellationError() }
+                    guard let object = jsonObject(line) else { continue }
+                    if object["subtype"] as? String == "init", let names = object["slash_commands"] as? [String] {
+                        emit(.commands(names.map { ChatCommand(name: $0) }), generation: generation, to: onEvent)
+                    }
+                    for var event in decoder.events(object) {
+                        if case .approval(let approval) = event { pendingApprovals[approval.id] = decoder.approvals[approval.id] }
+                        if case .mode(let mode) = event { event = .mode(ChatRunConfiguration.qoderJackMode(mode)) }
+                        if case .completed = event { completed = true }
+                        if case .failure = event { completed = true }
+                        emit(event, generation: generation, to: onEvent)
+                    }
+                    if completed { break }
+                }
+            } onCancel: {
+                process.terminate()
+            }
+            if !completed {
+                try Task.checkCancellation()
+                guard runGeneration == generation else { throw CancellationError() }
+                throw ChatDriverError.process(await process.failureDescription(default: "Qoder se cerró antes de terminar."))
+            }
+        } catch {
+            await finish(process, generation: generation)
+            throw error
+        }
+        await finish(process, generation: generation)
+    }
+
+    override func respond(approvalID: String, choice: String, message: String?) async throws {
+        guard let pending = pendingApprovals.removeValue(forKey: approvalID) else { throw ChatDriverError.invalidApproval(approvalID) }
+        try reply(pending, ClaudeProtocol.permissionResponse(pending, choice: choice, message: message))
+    }
+
+    override func resolve(_ pending: PendingApproval, allow: Bool) async throws {
+        try reply(pending, ClaudeProtocol.permissionResponse(pending, choice: allow ? "allow" : "deny", message: nil))
+    }
+
+    override func answer(approvalID: String, answers: [String: String]) async throws {
+        guard let pending = pendingApprovals.removeValue(forKey: approvalID) else { throw ChatDriverError.invalidApproval(approvalID) }
+        try reply(pending, ClaudeProtocol.questionResponse(pending, answers: answers))
+    }
+
+    private func reply(_ pending: PendingApproval, _ response: [String: Any]) throws {
+        guard let child, let requestID = pending.payload["requestID"] as? String else { throw ChatDriverError.invalidApproval("expired") }
+        try child.writeJSON(["type": "control_response", "response": ["subtype": "success", "request_id": requestID, "response": response]])
+    }
+}
+
 private final class OpenCodeChatDriver: ProcessChatDriver {
     private var baseURL: URL?
     private var sessionID: String?
@@ -1835,8 +1920,8 @@ public enum ChatCommandService {
         case .claude: return try await claude(directory: directory)
         case .stellar: return []
         case .codex: return try await codex(directory: directory)
-        case .antigravity:
-            throw ChatDriverError.protocolFailure("Antigravity no expone su lista de comandos por el protocolo headless.")
+        case .antigravity, .qoder:
+            throw ChatDriverError.protocolFailure("\(provider.title) no expone su lista de comandos por el protocolo headless.")
         case .opencode:
             return try await OpenCodeModelService.withServer(directory: directory) { root, password in
                 let (data, response) = try await request(root, path: "/command", method: "GET", body: nil, password: password)
@@ -2011,6 +2096,46 @@ enum ChatRunConfiguration {
         for directory in (conversation.additionalDirectories + conversation.attachmentDirectories)
             where seen.insert(directory).inserted { arguments += ["--add-dir", directory] }
         return arguments
+    }
+    /// Qoder's argv for one turn. Permission answers travel on stdin, so the prompt is positional after `--`.
+    static func qoderArguments(_ conversation: ChatConversation, prompt: String, delegation: ChatDelegation?) -> [String] {
+        var arguments = ["-p", "--permission-prompt-tool", "stdio", "-o", "stream-json", "--include-partial-messages",
+                         "--permission-mode", qoderPermissionMode(conversation.mode)]
+        if !conversation.model.isEmpty { arguments += ["--model", conversation.model] }
+        if ["low", "medium", "high", "xhigh", "max"].contains(conversation.effort) { arguments += ["--reasoning-effort", conversation.effort] }
+        if let session = conversation.sessionID, !session.isEmpty { arguments += ["--resume", session] }
+        for directory in conversation.additionalDirectories + conversation.attachmentDirectories { arguments += ["--add-dir", directory] }
+        if let delegation { arguments += qoderDelegation(delegation) }
+        if let instructions = agentInstructions(delegating: delegation?.delegates == true, images: delegation?.images == true,
+                                                notebooks: delegation?.notebooks == true, normalMode: delegation?.normalMode == true) {
+            arguments += ["--append-system-prompt", instructions]
+        }
+        return arguments + ["--", prompt]
+    }
+    /// Jack's permission mode in Qoder's `--permission-mode` spelling; "manual" is Qoder's "default".
+    static func qoderPermissionMode(_ jackMode: String?) -> String {
+        switch jackMode {
+        case "plan": return "plan"
+        case "acceptEdits": return "accept_edits"
+        case "auto": return "auto"
+        case "dontAsk": return "dont_ask"
+        case "bypassPermissions": return "bypass_permissions"
+        default: return "default"
+        }
+    }
+    /// The inverse of `qoderPermissionMode`, for the modes Qoder reports in its events.
+    static func qoderJackMode(_ cli: String) -> String {
+        switch cli {
+        case "default": return "manual"
+        case "accept_edits": return "acceptEdits"
+        case "dont_ask": return "dontAsk"
+        case "bypass_permissions": return "bypassPermissions"
+        default: return cli
+        }
+    }
+    /// Claude's delegation with Qoder's spelling of `--allowedTools`, which takes a single value.
+    static func qoderDelegation(_ delegation: ChatDelegation) -> [String] {
+        claudeDelegation(delegation).map { $0 == "--allowedTools" ? "--allowed-tools" : $0 }
     }
     /// The launch settings a running Claude Code process cannot change. Mode and model change live, and the
     /// folders of one message's attachments are left out so attaching a file does not restart the session.

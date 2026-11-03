@@ -9,6 +9,10 @@ struct ChatTranscript: View, Equatable {
     let active: Bool
     let monospaced: Bool
     let ice: Bool
+    let jumpTarget: ChatTranscriptJump?
+    let onJumpHandled: (UUID) -> Void
+    let onOpenGit: (String?) -> Void
+    let onReviewClosure: (String) -> Void
     let onPrompt: (String) -> Void
     @State private var visibleCount = 100
     /// The user scrolled up; the chat stops following until they return to the end.
@@ -22,8 +26,10 @@ struct ChatTranscript: View, Equatable {
         // Arrays and strings compare their storage first, so an untouched chat costs almost nothing.
         lhs.conversation.id == rhs.conversation.id && lhs.conversation.messages == rhs.conversation.messages
             && lhs.active == rhs.active && lhs.monospaced == rhs.monospaced && lhs.ice == rhs.ice
+            && lhs.jumpTarget == rhs.jumpTarget
             && lhs.conversation.provider == rhs.conversation.provider && lhs.conversation.model == rhs.conversation.model
             && lhs.conversation.effort == rhs.conversation.effort && lhs.conversation.projectPath == rhs.conversation.projectPath
+            && lhs.conversation.turnClosures == rhs.conversation.turnClosures
     }
 
     var body: some View {
@@ -64,6 +70,14 @@ struct ChatTranscript: View, Equatable {
                             )
                             .equatable()
                             .id(message.id)
+                            ForEach((conversation.turnClosures ?? []).filter { $0.transcriptMessageID == message.id }) { closure in
+                                ChatTurnClosureView(closure: closure, onOpenGit: onOpenGit, onReview: { onReviewClosure(closure.id) })
+                            }
+                        }
+                        ForEach((conversation.turnClosures ?? []).filter { closure in
+                            closure.transcriptMessageID == nil || !conversation.messages.contains(where: { $0.id == closure.transcriptMessageID })
+                        }) { closure in
+                            ChatTurnClosureView(closure: closure, onOpenGit: onOpenGit, onReview: { onReviewClosure(closure.id) })
                         }
                     }
                     Color.clear.frame(height: 1).id(Self.bottomID)
@@ -112,8 +126,27 @@ struct ChatTranscript: View, Equatable {
                 visibleCount = 100
                 proxy.scrollTo(Self.bottomID, anchor: .bottom)
             }
+            .onChange(of: jumpTarget, initial: true) { _, target in
+                guard let target, target.conversationID == conversation.id,
+                      let index = conversation.messages.firstIndex(where: { $0.id == target.messageID }) else { return }
+                visibleCount = max(visibleCount, conversation.messages.count - index + 1)
+                unfollowed = true
+                DispatchQueue.main.async {
+                    proxy.scrollTo(target.messageID, anchor: .center)
+                    onJumpHandled(target.token)
+                }
+            }
             // A second scroll after the first layout makes the rows in view appear.
-            .onAppear { DispatchQueue.main.async { proxy.scrollTo(Self.bottomID, anchor: .bottom) } }
+            .onAppear {
+                if let target = jumpTarget, target.conversationID == conversation.id,
+                   conversation.messages.contains(where: { $0.id == target.messageID }) {
+                    visibleCount = conversation.messages.count
+                    unfollowed = true
+                    DispatchQueue.main.async { proxy.scrollTo(target.messageID, anchor: .center) }
+                } else {
+                    DispatchQueue.main.async { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
+                }
+            }
             .overlay(alignment: .bottom) {
                 ZStack {
                     if unfollowed {

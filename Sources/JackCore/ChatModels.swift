@@ -1,18 +1,18 @@
 import Foundation
 
 public enum ChatProvider: String, Codable, CaseIterable, Identifiable {
-    case codex, claude, opencode, stellar, antigravity
+    case codex, claude, opencode, stellar, antigravity, qoder
     public var id: String { rawValue }
-    public var title: String { switch self { case .codex: return "Codex"; case .claude: return "Claude Code"; case .opencode: return "OpenCode"; case .stellar: return "Stellar Code"; case .antigravity: return "Antigravity" } }
+    public var title: String { switch self { case .codex: return "Codex"; case .claude: return "Claude Code"; case .opencode: return "OpenCode"; case .stellar: return "Stellar Code"; case .antigravity: return "Antigravity"; case .qoder: return "Qoder" } }
     /// The command Jack looks for on disk. Most providers use the raw value; Antigravity installs `agy`.
-    public var executableName: String { self == .antigravity ? "agy" : rawValue }
+    public var executableName: String { self == .antigravity ? "agy" : self == .qoder ? "qodercli" : rawValue }
     /// Providers Jack only offers in the Normal window. Light keeps its original, smaller set.
-    public var isNormalOnly: Bool { self == .antigravity }
+    public var isNormalOnly: Bool { self == .antigravity || self == .qoder }
     /// Jack's own agent; it runs local models and needs no executable.
     public var isBuiltIn: Bool { self == .stellar }
     /// Shown on its cards while it is being built.
     public var isBeta: Bool { self == .stellar }
-    public var defaultModel: String { switch self { case .codex: return "gpt-6-luna"; case .claude: return "sonnet"; case .opencode, .stellar, .antigravity: return "" } }
+    public var defaultModel: String { switch self { case .codex: return "gpt-6-luna"; case .claude: return "sonnet"; case .opencode, .stellar, .antigravity, .qoder: return "" } }
 }
 public enum ChatStatus: String, Codable { case idle, queued, running, waiting, failed }
 public struct ChatMessage: Identifiable, Codable, Equatable {
@@ -92,6 +92,10 @@ public struct ChatConversation: Identifiable, Codable, Equatable {
     public var preview: String? = nil
     /// The last turn finished while the conversation was not selected.
     public var hasUnread: Bool? = nil
+    /// Durable Normal-mode inbox events. Selecting a conversation does not clear these records.
+    public var attentionItems: [ChatAttentionItem]? = nil
+    /// Structured evidence and agent-declared follow-up from the last completed turn.
+    public var turnClosures: [ChatTurnClosure]? = nil
     /// When the user pinned it to the top of the sidebar; at most `ChatStore.maxPinned` chats are pinned.
     public var pinnedAt: Date? = nil
     /// Marked by the user as something to come back to: the sidebar shows a bright dot.
@@ -106,6 +110,34 @@ public struct ChatConversation: Identifiable, Codable, Equatable {
     public var remote: ChatRemoteEndpoint? = nil
     public init(id: UUID = UUID(), title: String = "Nuevo agente", projectPath: String, provider: ChatProvider = .codex, model: String? = nil, effort: String = "high", sessionID: String? = nil, messages: [ChatMessage] = [], updatedAt: Date = Date()) {
         self.id = id; self.title = title; self.projectPath = projectPath; self.provider = provider; self.model = model ?? provider.defaultModel; self.effort = effort; self.sessionID = sessionID; self.messages = messages; self.updatedAt = updatedAt
+    }
+}
+
+/// An event that needs explicit review in Jack's Normal-mode inbox.
+public struct ChatAttentionItem: Identifiable, Codable, Equatable {
+    public enum Kind: String, Codable, Equatable { case approval, failure, completed }
+    public enum State: String, Codable, Equatable { case pending, reviewed, obsolete }
+    public var id: String
+    public var kind: Kind
+    public var title: String
+    public var detail: String
+    public var createdAt: Date
+    public var messageID: String?
+    public var approvalID: String?
+    public var state: State
+    public init(id: String, kind: Kind, title: String, detail: String = "", createdAt: Date = Date(), messageID: String? = nil, approvalID: String? = nil, state: State = .pending) {
+        self.id = id; self.kind = kind; self.title = title; self.detail = detail
+        self.createdAt = createdAt; self.messageID = messageID; self.approvalID = approvalID; self.state = state
+    }
+}
+
+/// Request to open a conversation at a specific transcript message.
+public struct ChatTranscriptJump: Equatable {
+    public var conversationID: UUID
+    public var messageID: String
+    public var token: UUID
+    public init(conversationID: UUID, messageID: String, token: UUID = UUID()) {
+        self.conversationID = conversationID; self.messageID = messageID; self.token = token
     }
 }
 public extension ChatConversation {
@@ -155,6 +187,7 @@ public struct ChatRunMode: Identifiable, Equatable {
         case .opencode: return []
         case .stellar: return [.init(id: "manual", title: "Manual"), .init(id: "acceptEdits", title: "Aceptar ediciones"), .init(id: "auto", title: "Auto")]
         case .antigravity: return [.init(id: "plan", title: "Plan"), .init(id: "accept-edits", title: "Aceptar ediciones"), .init(id: "auto", title: "Auto")]
+        case .qoder: return [.init(id: "manual", title: "Manual"), .init(id: "plan", title: "Plan"), .init(id: "acceptEdits", title: "Aceptar ediciones"), .init(id: "auto", title: "Auto"), .init(id: "dontAsk", title: "Sin preguntas")]
         }
     }
 }
@@ -162,6 +195,8 @@ public enum ChatEvent {
     case session(String)
     case text(id: String, text: String, replace: Bool)
     case tool(id: String, title: String, detail: String, status: String)
+    /// Structured command completion metadata when a provider supplies an exit status.
+    case commandResult(id: String, command: String, exitStatus: Int?)
     case reasoning(id: String, text: String, replace: Bool)
     case toolOutput(id: String, text: String)
     case usage(ProviderUsage)

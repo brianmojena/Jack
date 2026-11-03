@@ -34,6 +34,7 @@ struct WorkspaceTab: Identifiable, Equatable {
     let id: UUID
     let kind: WorkspaceTool
     let number: Int
+    var title: String? = nil
 }
 
 /// Each agent's terminals and browser tabs. They stay alive while the user switches agents,
@@ -101,7 +102,7 @@ struct WorkspaceTab: Identifiable, Equatable {
     }
 
     @discardableResult
-    func open(_ kind: WorkspaceTool, for conversation: UUID) -> WorkspaceTab {
+    func open(_ kind: WorkspaceTool, for conversation: UUID, title: String? = nil) -> WorkspaceTab {
         let list = tabs(for: conversation)
         // One simulator, Git or flow tab per agent is enough: they show the same device, project and plan.
         if kind == .simulator || kind == .git || kind == .flow || kind == .artifacts, let existing = list.first(where: { $0.kind == kind }) {
@@ -109,7 +110,7 @@ struct WorkspaceTab: Identifiable, Equatable {
             return existing
         }
         let number = (list.filter { $0.kind == kind }.map(\.number).max() ?? 0) + 1
-        let tab = WorkspaceTab(id: UUID(), kind: kind, number: number)
+        let tab = WorkspaceTab(id: UUID(), kind: kind, number: number, title: title)
         tabs[conversation] = list + [tab]
         selection[conversation] = tab.id
         return tab
@@ -138,9 +139,25 @@ struct WorkspaceTab: Identifiable, Equatable {
         else { open(kind, for: conversation) }
     }
 
-    func terminal(_ tab: UUID, conversation: UUID, directory: String, remote: ChatRemoteEndpoint? = nil) -> TerminalSession {
+    func runCustomCommand(_ request: CustomTerminalCommandRequest) throws -> WorkspaceTab {
+        var isDirectory: ObjCBool = false
+        guard request.projectPath.hasPrefix("/"),
+              FileManager.default.fileExists(atPath: request.projectPath, isDirectory: &isDirectory), isDirectory.boolValue else {
+            throw CustomTerminalCommandError.invalidDirectory
+        }
+        guard !request.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw CustomTerminalCommandError.emptyCommand
+        }
+        let tab = open(.terminal, for: request.conversationID, title: request.title)
+        let launch = TerminalProcessLaunch(executable: "/bin/zsh", arguments: ["-lc", request.content])
+        _ = terminal(tab.id, conversation: request.conversationID, directory: request.projectPath, directLaunch: launch)
+        return tab
+    }
+
+    func terminal(_ tab: UUID, conversation: UUID, directory: String, remote: ChatRemoteEndpoint? = nil,
+                  directLaunch: TerminalProcessLaunch? = nil) -> TerminalSession {
         if let session = terminals[tab] { return session }
-        let session = TerminalSession(directory: directory, remote: remote) { [weak self] url in self?.openLink(url, for: conversation) }
+        let session = TerminalSession(directory: directory, remote: remote, directLaunch: directLaunch) { [weak self] url in self?.openLink(url, for: conversation) }
         terminals[tab] = session
         return session
     }
@@ -197,6 +214,16 @@ struct WorkspaceTab: Identifiable, Equatable {
         cancelAutomaticGitCommits()
         terminals.values.forEach { $0.terminate() }
         simulatorSession?.shutdownOnQuit()
+    }
+}
+
+enum CustomTerminalCommandError: LocalizedError {
+    case invalidDirectory, emptyCommand
+    var errorDescription: String? {
+        switch self {
+        case .invalidDirectory: "La carpeta del proyecto ya no existe o no es local."
+        case .emptyCommand: "El comando de terminal está vacío."
+        }
     }
 }
 
@@ -322,7 +349,7 @@ private struct WorkspaceTabTitle: View {
             BrowserTitle(session: browser)
         } else {
             switch tab.kind {
-            case .terminal: Text("Terminal \(tab.number)")
+            case .terminal: Text(tab.title ?? "Terminal \(tab.number)")
             case .browser: Text("Nueva pestaña")
             case .simulator: Text("Simulador")
             case .git: Text("Git")
@@ -428,8 +455,8 @@ struct TerminalProcessLaunch {
         running = false
     }
 
-    /// Preserve SwiftTerm's exit monitor until it reaps this agent. `view.terminate()` cancels that
-    /// monitor immediately, so it cannot acknowledge ownership transfer for a native agent session.
+    /// Preserve SwiftTerm's exit monitor until it reaps the agent. `view.terminate()` cancels that
+    /// monitor immediately, so it cannot acknowledge ownership release for a native terminal session.
     func terminateAfterAcknowledgement() {
         let pid = view.process.shellPid
         guard !hasExited, pid > 0 else { return }
@@ -464,6 +491,8 @@ final class JackTerminalView: LocalProcessTerminalView {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
+        NotificationCenter.default.addObserver(self, selector: #selector(customizationDidChange(_:)),
+                                                name: .jackCustomizationChanged, object: nil)
         font = .monospacedSystemFont(ofSize: 12, weight: .regular)
         scrollerStyle = .overlay
         optionAsMetaKey = false
@@ -472,6 +501,10 @@ final class JackTerminalView: LocalProcessTerminalView {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self, name: .jackCustomizationChanged, object: nil)
+    }
 
     override func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {
         if let url = URL(string: link), ["http", "https"].contains(url.scheme?.lowercased() ?? ""), let openLink {
@@ -486,13 +519,19 @@ final class JackTerminalView: LocalProcessTerminalView {
         applyTheme()
     }
 
+    @objc private func customizationDidChange(_ notification: Notification) {
+        Task { @MainActor [weak self] in self?.applyTheme() }
+    }
+
     private func applyTheme() {
         let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let theme = CustomizationAppearance.shared.paletteTheme
+        let accent = CustomizationAppearance.color(theme?.accent) ?? .controlAccentColor
         effectiveAppearance.performAsCurrentDrawingAppearance {
             nativeBackgroundColor = JackPalette.canvasColor.usingColorSpace(.sRGB) ?? .textBackgroundColor
-            nativeForegroundColor = NSColor.labelColor.usingColorSpace(.sRGB) ?? .textColor
-            selectedTextBackgroundColor = NSColor.controlAccentColor.withAlphaComponent(dark ? 0.38 : 0.24)
-            caretColor = NSColor.controlAccentColor
+            nativeForegroundColor = (CustomizationAppearance.color(theme?.text) ?? .labelColor).usingColorSpace(.sRGB) ?? .textColor
+            selectedTextBackgroundColor = accent.withAlphaComponent(dark ? 0.38 : 0.24)
+            caretColor = accent
         }
         installColors((dark ? Self.darkPalette : Self.lightPalette).map { value in
             SwiftTerm.Color(red8: UInt16(value >> 16 & 0xFF), green8: UInt16(value >> 8 & 0xFF), blue8: UInt16(value & 0xFF))

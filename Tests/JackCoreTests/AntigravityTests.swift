@@ -138,7 +138,7 @@ final class AntigravityTests: XCTestCase {
             return try XCTUnwrap(provider?["enum"] as? [String])
         }
         XCTAssertEqual(try providerEnum(AgentBridge.tools), ["codex", "claude", "opencode"])
-        XCTAssertEqual(try providerEnum(AgentBridge.normalTools), ["codex", "claude", "opencode", "antigravity"])
+        XCTAssertEqual(try providerEnum(AgentBridge.normalTools), ["codex", "claude", "opencode", "antigravity", "qoder"])
     }
 
     func testModelListParsingKeepsSlugsAndTitles() {

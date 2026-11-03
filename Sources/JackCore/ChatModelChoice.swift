@@ -3,30 +3,53 @@ import Foundation
 public struct ChatModelChoice: Identifiable, Equatable {
     public var id: String
     public var title: String
+    public var subtitle: String?
     public var efforts: [String]
-    public init(id: String, title: String? = nil, efforts: [String] = ["low", "medium", "high"]) {
-        self.id = id; self.title = title ?? (id.isEmpty ? "Predeterminado" : id); self.efforts = efforts
+    public init(id: String, title: String? = nil, subtitle: String? = nil, efforts: [String] = ["low", "medium", "high"]) {
+        self.id = id; self.title = title ?? (id.isEmpty ? "Predeterminado" : id); self.subtitle = subtitle; self.efforts = efforts
     }
 }
 
 public extension ChatModelChoice {
     static let claudeCatalog = [
-        ChatModelChoice(id: "fable", title: "Fable", efforts: claudeEfforts(for: "fable")),
-        ChatModelChoice(id: "opus", title: "Opus", efforts: claudeEfforts(for: "opus")),
-        ChatModelChoice(id: "sonnet", title: "Sonnet", efforts: claudeEfforts(for: "sonnet")),
-        ChatModelChoice(id: "haiku", title: "Haiku", efforts: claudeEfforts(for: "haiku")),
+        ChatModelChoice(id: "fable", title: "Fable 5.1", subtitle: "El más capaz", efforts: claudeEfforts(for: "fable")),
+        ChatModelChoice(id: "opus", title: "Opus 5.5", subtitle: "Muy capaz", efforts: claudeEfforts(for: "opus")),
+        ChatModelChoice(id: "sonnet", title: "Sonnet 5.5", subtitle: "Equilibrado", efforts: claudeEfforts(for: "sonnet")),
+        ChatModelChoice(id: "haiku", title: "Haiku 4.5", subtitle: "Rápido y económico", efforts: claudeEfforts(for: "haiku")),
     ]
     /// Antigravity accepts these levels through `--effort`; the selected model decides which it implements.
     static let antigravityEfforts = ["low", "medium", "high", "xhigh", "max"]
+    /// Reasoning levels `qodercli` accepts; the selected model decides which it implements.
+    static let qoderEfforts = ["low", "medium", "high", "xhigh", "max"]
     /// Levels Claude Code accepts for `--effort` with an alias or full model id.
-    /// Haiku and models before Opus 4.5 reject effort; Opus 4.5 lacks xhigh/max; the 4.6 family lacks xhigh.
+    /// Haiku 4.x and models before Opus 4.5 reject effort; Opus 4.5 lacks xhigh/max; the 4.6 family lacks xhigh.
+    /// Haiku 5+ supports effort levels.
     static func claudeEfforts(for model: String) -> [String] {
         let id = model.lowercased()
-        let unsupported = ["haiku", "claude-3", "sonnet-4-5", "sonnet-4-0", "sonnet-4-2", "opus-4-0", "opus-4-1", "opus-4-2"]
+        let unsupported = ["haiku-4", "claude-3", "sonnet-4-5", "sonnet-4-0", "sonnet-4-2", "opus-4-0", "opus-4-1", "opus-4-2"]
         if unsupported.contains(where: id.contains) { return [] }
+        // Special case: bare "haiku" alias without version context defaults to no effort (for backward compatibility with older Haiku 4.x)
+        if id == "haiku" { return [] }
         if id.contains("opus-4-5") { return ["low", "medium", "high"] }
         if id.contains("opus-4-6") || id.contains("sonnet-4-6") { return ["low", "medium", "high", "max"] }
         return ["low", "medium", "high", "xhigh", "max"]
+    }
+    /// Maps a full Claude model ID to a readable title with version, e.g. "claude-opus-5-5" -> "Opus 5.5".
+    /// Falls back to the raw id if not recognized.
+    static func claudeTitle(for model: String) -> String {
+        let id = model.lowercased()
+        if id == "fable" || id.contains("fable-5-1") { return "Fable 5.1" }
+        if id == "opus" || id.contains("opus-5-5") { return "Opus 5.5" }
+        if id == "opus-4-6" || id.contains("opus-4-6") { return "Opus 4.6" }
+        if id == "opus-4-5" || id.contains("opus-4-5") { return "Opus 4.5" }
+        if id.contains("opus") { return "Opus" }
+        if id == "sonnet" || id.contains("sonnet-5-5") { return "Sonnet 5.5" }
+        if id == "sonnet-4-6" || id.contains("sonnet-4-6") { return "Sonnet 4.6" }
+        if id == "sonnet-4-5" || id.contains("sonnet-4-5") { return "Sonnet 4.5" }
+        if id.contains("sonnet") { return "Sonnet" }
+        if id == "haiku" || id.contains("haiku-4-5") { return "Haiku 4.5" }
+        if id.contains("haiku") { return "Haiku" }
+        return model
     }
     /// Efforts for a model outside the provider's catalog, such as one typed by hand.
     static func fallbackEfforts(provider: ChatProvider, model: String) -> [String] {
@@ -35,6 +58,7 @@ public extension ChatModelChoice {
         case .codex: ["low", "medium", "high"]
         case .opencode, .stellar: []
         case .antigravity: antigravityEfforts
+        case .qoder: qoderEfforts
         }
     }
     static func effortTitle(_ effort: String) -> String {
@@ -86,8 +110,16 @@ enum ChatModelCatalog {
     }
     /// Asynchronous because it runs the CLI; callers update their catalog when it returns.
     static func antigravityModels(executable: String, override: String?) async -> [ChatModelChoice] {
+        let text = await modelListOutput(executable: executable, override: override, arguments: ["models"])
+        return Task.isCancelled ? [] : parseAntigravityModels(text)
+    }
+    static func qoderModels(executable: String, override: String?) async -> [ChatModelChoice] {
+        let text = await modelListOutput(executable: executable, override: override, arguments: ["--list-models"])
+        return Task.isCancelled ? [] : parseQoderModels(text)
+    }
+    private static func modelListOutput(executable: String, override: String?, arguments: [String]) async -> String {
         guard let path = ExecutableResolver.resolve(executable, override: override),
-              let child = try? StructuredChild(executable: path, arguments: ["models"], directory: NSTemporaryDirectory()) else { return [] }
+              let child = try? StructuredChild(executable: path, arguments: arguments, directory: NSTemporaryDirectory()) else { return "" }
         child.closeInput()
         let timer = Task { try? await Task.sleep(for: .seconds(30)); if !Task.isCancelled { child.terminate() } }
         var text = ""
@@ -102,8 +134,21 @@ enum ChatModelCatalog {
         timer.cancel()
         if Task.isCancelled { child.terminate() }
         await child.waitForExit()
-        return Task.isCancelled ? [] : parseAntigravityModels(text)
+        return text
     }
+    /// `qodercli --list-models` prints a `MODEL` header, then one name per line; the name is also what `-m` takes.
+    static func parseQoderModels(_ output: String) -> [ChatModelChoice] {
+        let subtitles = ["Auto": "Elige el modelo por ti", "Ultimate": "El más capaz", "Fast": "Rápido", "Efficient": "Económico"]
+        return output.components(separatedBy: .newlines).compactMap { line -> ChatModelChoice? in
+            let name = line.trimmingCharacters(in: .whitespaces)
+            guard !name.isEmpty, name != "MODEL", !name.contains(" ") else { return nil }
+            return ChatModelChoice(id: name, subtitle: subtitles[name], efforts: ChatModelChoice.qoderEfforts)
+        }
+    }
+    static let qoderModelsCacheKey = "qoderModelsCache"
+    static func encodeQoderModels(_ models: [ChatModelChoice]) -> [String] { models.map(\.id) }
+    /// Re-parsing the cached names restores the subtitles, which are not stored.
+    static func decodeQoderModels(_ lines: [String]) -> [ChatModelChoice] { parseQoderModels(lines.joined(separator: "\n")) }
     static func cachedCodex(at url: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/models_cache.json")) -> [ChatModelChoice] {
         guard let bytes = try? Data(contentsOf: url),
               let root = (try? JSONSerialization.jsonObject(with: bytes)) as? [String: Any],

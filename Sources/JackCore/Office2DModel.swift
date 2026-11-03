@@ -7,6 +7,7 @@ import Foundation
 public enum Office2DAgentState: String, Equatable, CaseIterable {
     case working    // ejecutando herramienta o escribiendo
     case thinking   // razonando
+    case queued     // en cola, sin intervención pendiente
     case waiting    // espera respuesta o aprobación del usuario
     case blocked    // bloqueado
     case idle       // sin tarea / terminado
