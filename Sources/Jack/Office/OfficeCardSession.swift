@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(JackCore)
 import JackCore
+#endif
 import SwiftUI
 
 /// Una partida de cartas en la mesa de la oficina: el usuario contra dos compañeros (Mentiroso, póker) o contra uno que hace de
@@ -29,6 +31,8 @@ import SwiftUI
         var slot: Int
         var name: String
         var profile: String?
+        /// El modelo con que piensa; sin elegir, Gemma.
+        var brain: OfficeBrainChoice?
     }
 
     struct Player: Identifiable, Equatable {
@@ -39,6 +43,8 @@ import SwiftUI
         var name: String
         var seat: String
         var profile: String?
+        /// El modelo con que piensa; sin elegir, Gemma.
+        var brain: OfficeBrainChoice?
         var isHuman: Bool { slot == nil }
     }
 
@@ -129,7 +135,7 @@ import SwiftUI
         let seats = ["white", "black", OfficeChessSet.northSeat]
         var made = [Player(id: 0, slot: nil, name: humanName, seat: seats[0], profile: nil)]
         for (index, person) in people.prefix(game.opponents).enumerated() {
-            made.append(Player(id: index + 1, slot: person.slot, name: person.name, seat: seats[index + 1], profile: person.profile))
+            made.append(Player(id: index + 1, slot: person.slot, name: person.name, seat: seats[index + 1], profile: person.profile, brain: person.brain))
         }
         players = made
         said = [:]
@@ -256,7 +262,7 @@ import SwiftUI
 
     private func speaker(for player: Player) -> OfficeCardTalker.Speaker {
         OfficeCardTalker.Speaker(name: player.name, profile: player.profile, game: game?.phrase ?? "las cartas",
-                                 others: players.filter { $0.id != player.id }.map(\.name))
+                                 others: players.filter { $0.id != player.id }.map(\.name), brain: player.brain)
     }
 
     private func recentChat() -> [String] {

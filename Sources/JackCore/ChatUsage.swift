@@ -162,6 +162,7 @@ enum UsageDecoder {
     }
 }
 
+#if os(macOS)
 @MainActor public enum ChatUsageService {
     public static func read(_ provider: ChatProvider, allowsCloud: Bool = false) async -> ProviderUsage {
         switch provider {
@@ -285,3 +286,4 @@ enum UsageDecoder {
         throw NSError(domain: "Codex", code: -1, userInfo: [NSLocalizedDescriptionKey: "Codex cerró la consulta sin datos de cuota."])
     }
 }
+#endif

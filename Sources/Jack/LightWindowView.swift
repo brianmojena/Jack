@@ -413,7 +413,7 @@ private struct LightCommandsPanel: View {
                     commandRows(store.commands(for: conversation) ?? [], prefix: "/")
                     Divider()
                     Text("De Jack").font(.caption).foregroundStyle(.secondary)
-                    commandRows(JackCommandCatalog.builtins + store.jackTemplates.map { ChatCommand(name: $0.name, description: $0.prompt) }, prefix: "!")
+                    commandRows(JackCommandCatalog.builtins.filter { $0.name != "mod" } + store.jackTemplates.map { ChatCommand(name: $0.name, description: $0.prompt) }, prefix: "!")
                 }
             }
         }.padding(20).frame(width: 530, height: 430)

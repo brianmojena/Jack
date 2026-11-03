@@ -16,6 +16,7 @@ mkdir -p $app/Contents/MacOS $app/Contents/Helpers $app/Contents/Resources
 cp "$bin/BuildCloudApp" $app/Contents/MacOS/BuildCloud
 cp "$bin/buildcloud" $app/Contents/Helpers/buildcloud
 cp Resources/Info.plist $app/Contents/Info.plist
+cp Resources/AppIcon.icns $app/Contents/Resources/AppIcon.icns
 codesign --force --sign - $app/Contents/Helpers/buildcloud
 codesign --force --sign - $app
 

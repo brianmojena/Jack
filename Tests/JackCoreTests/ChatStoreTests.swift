@@ -554,7 +554,7 @@ final class ChatStoreTests: XCTestCase {
         store.updateSettings(id: id, model: "haiku", effort: "xhigh")
         XCTAssertEqual(store.selectedConversation?.effort, "xhigh")
         XCTAssertEqual(store.supportedEfforts(provider: .claude, model: "haiku"), [])
-        XCTAssertEqual(store.modelChoices(for: .claude).first { $0.id == "claude-sonnet-4-6" }?.efforts, nil)
+        XCTAssertEqual(store.modelChoices(for: .claude).first { $0.id == "claude-sonnet-4-6" }?.efforts, ["low", "medium", "high", "max"])
         store.updateSettings(id: id, model: "claude-sonnet-4-6", effort: "xhigh")
         XCTAssertEqual(store.selectedConversation?.effort, "high")
         XCTAssertEqual(store.modelChoices(for: .claude).first { $0.id == "claude-sonnet-4-6" }?.efforts, ["low", "medium", "high", "max"])

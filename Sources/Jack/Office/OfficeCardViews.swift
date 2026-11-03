@@ -1,4 +1,6 @@
+#if canImport(JackCore)
 import JackCore
+#endif
 import SwiftUI
 
 private let cardInk = Color(red: 0.11, green: 0.25, blue: 0.46)

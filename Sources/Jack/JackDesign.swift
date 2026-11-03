@@ -54,22 +54,26 @@ enum JackPalette {
 /// macOS's own Liquid Glass structure. Terminal presents native PTYs instead of chats. Office draws the
 /// agents as characters in an animated 2D studio or a 3D office, with access to their chats.
 enum InterfaceStyle: String, CaseIterable, Identifiable {
-    case basic, ice, terminal, office, office2D
+    case basic, ice, terminal, office, office2D, codeos
 
     static let key = "interfaceStyle"
 
     var isOffice: Bool { self == .office || self == .office2D }
-    var availableInLight: Bool { self != .terminal && !isOffice }
+    var availableInLight: Bool { self != .terminal && !isOffice && self != .codeos }
 
     var id: String { rawValue }
     var title: String {
-        switch self { case .basic: "Basic"; case .ice: "Ice"; case .terminal: "Terminal"; case .office: "Oficina 3D"; case .office2D: "Oficina 2D" }
+        switch self { case .basic: "Basic"; case .ice: "Ice"; case .terminal: "Terminal"; case .office: "Oficina 3D"; case .office2D: "Oficina 2D"; case .codeos: "CodeOS" }
     }
 }
 
 extension EnvironmentValues {
     @Entry var interfaceStyle: InterfaceStyle = .basic
     @Entry var jackCustomizationRevision = 0
+    /// Colour the Ice glass is tinted with, when a host (CodeOS) wants the chat to take on its project's colour.
+    @Entry var jackTint: Color? = nil
+    /// CodeOS lists a project's chats in its own pane: no search field in the window toolbar.
+    @Entry var jackHidesSidebarSearch = false
 }
 
 /// The window's layers. Basic paints each one; Ice leaves them to the system, so the glass
@@ -84,7 +88,7 @@ private struct JackSurfaceBackground: ViewModifier {
 
     func body(content: Content) -> some View {
         switch style {
-        case .basic, .terminal, .office, .office2D: content.background(surface == .chrome ? JackPalette.chrome : JackPalette.canvas)
+        case .basic, .terminal, .office, .office2D, .codeos: content.background(surface == .chrome ? JackPalette.chrome : JackPalette.canvas)
         case .ice: content
         }
     }
@@ -96,12 +100,14 @@ private struct JackGlassBackground<S: InsettableShape>: ViewModifier {
     let basic: Color
     var interactive = false
     @Environment(\.interfaceStyle) private var style
+    @Environment(\.jackTint) private var tint
 
     func body(content: Content) -> some View {
-        if style == .basic || style.isOffice {
+        if style == .basic || style.isOffice || style == .codeos {
             content.background(basic, in: shape)
         } else if #available(macOS 26, *) {
-            content.glassEffect(interactive ? .regular.interactive() : .regular, in: shape)
+            let glass: Glass = interactive ? .regular.interactive() : .regular
+            content.glassEffect(tint.map { glass.tint($0.opacity(0.26)) } ?? glass, in: shape)
         } else {
             content.background(.regularMaterial, in: shape)
         }

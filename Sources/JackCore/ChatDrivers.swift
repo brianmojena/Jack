@@ -1455,7 +1455,7 @@ private final class OpenCodeChatDriver: ProcessChatDriver {
         var environment = ["OPENCODE_SERVER_USERNAME": "jack", "OPENCODE_SERVER_PASSWORD": password]
         if let config = ChatRunConfiguration.openCodeConfig(conversation, delegation: delegation) { environment["OPENCODE_CONFIG_CONTENT"] = config }
         environment.merge(ProgressFiles.environment(for: conversation.id)) { _, new in new }
-        let process = try begin(executable, arguments: ["serve", "--hostname", "127.0.0.1", "--port", String(port), "--pure"], directory: conversation.projectPath, environment: environment)
+        let process = try begin(executable, arguments: ["serve", "--hostname", "127.0.0.1", "--port", String(port)] + OpenCodeCLI.pureArguments(executable: executable), directory: conversation.projectPath, environment: environment)
         do {
         let root = URL(string: "http://127.0.0.1:\(port)")!
         baseURL = root
@@ -1851,7 +1851,7 @@ public enum OpenCodeModelService {
         let port = try availableLoopbackPort()
         let password = UUID().uuidString + UUID().uuidString
         let child = try StructuredChild(executable: executable,
-            arguments: ["serve", "--hostname", "127.0.0.1", "--port", String(port), "--pure"],
+            arguments: ["serve", "--hostname", "127.0.0.1", "--port", String(port)] + OpenCodeCLI.pureArguments(executable: executable),
             directory: directory,
             environment: ["OPENCODE_SERVER_USERNAME": "jack", "OPENCODE_SERVER_PASSWORD": password])
         defer { child.terminate(); Task { await child.waitForExit() } }
@@ -2218,12 +2218,6 @@ private func availableLoopbackPort() throws -> UInt16 {
 
 private func jsonObject(_ data: Data) -> [String: Any]? {
     (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-}
-
-func boundedJSON(_ value: Any, limit: Int = 64 * 1024) -> String {
-    guard let data = try? JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed, .sortedKeys]) else { return String(describing: value).prefix(limit).description }
-    if data.count <= limit { return String(data: data, encoding: .utf8) ?? "" }
-    return String(data: data.prefix(limit), encoding: .utf8).map { $0 + "\n… output truncated at 64 KB" } ?? "[output truncated at 64 KB]"
 }
 
 private func readableItem(type: String, item: [String: Any]) -> String {

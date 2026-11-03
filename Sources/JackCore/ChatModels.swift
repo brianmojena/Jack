@@ -1,6 +1,6 @@
 import Foundation
 
-public enum ChatProvider: String, Codable, CaseIterable, Identifiable {
+public enum ChatProvider: String, Codable, CaseIterable, Identifiable, Sendable {
     case codex, claude, opencode, stellar, antigravity, qoder
     public var id: String { rawValue }
     public var title: String { switch self { case .codex: return "Codex"; case .claude: return "Claude Code"; case .opencode: return "OpenCode"; case .stellar: return "Stellar Code"; case .antigravity: return "Antigravity"; case .qoder: return "Qoder" } }
@@ -234,6 +234,8 @@ public struct ChatCommand: Identifiable, Codable, Equatable {
         return (String(name), body.dropFirst(name.count).trimmingCharacters(in: .whitespacesAndNewlines))
     }
 }
+// Los agentes solo corren en la Mac.
+#if os(macOS)
 @MainActor public protocol ChatDriver: AnyObject {
     func run(conversation: ChatConversation, prompt: String, onEvent: @escaping @MainActor (ChatEvent) -> Void) async throws
     /// Runs a turn with Jack's delegation tools attached, for providers that support them.
@@ -292,6 +294,7 @@ public extension ChatDriver {
     func close() { stop() }
     func setEnergySaving(_ enabled: Bool) {}
 }
+#endif
 
 /// Jack commands are local to the app; provider slash commands retain their own routing.
 public struct JackContextSettings: Codable, Equatable {
@@ -324,7 +327,8 @@ public enum JackCommandCatalog {
         .init(name: "plan", description: "Activa Plan y prepara la tarea", argumentHint: "tarea"),
         .init(name: "revisar", description: "Revisa los cambios del proyecto", argumentHint: "instrucciones opcionales"),
         .init(name: "presupuesto", description: "Avisa al acercarse al presupuesto de tokens", argumentHint: "20000 | off"),
-        .init(name: "comandos", description: "Lista, crea o elimina plantillas personales", argumentHint: "crear nombre texto | eliminar nombre")
+        .init(name: "comandos", description: "Lista, crea o elimina plantillas personales", argumentHint: "crear nombre texto | eliminar nombre"),
+        .init(name: "mod", description: "Crea, instala o lista mods con el agente de código", argumentHint: "crear descripción | instalar ruta.json | listar")
     ]
     public static let defaults: [JackCommandTemplate] = [
         .init(name: "revisar-pr", prompt: "Revisa los cambios actuales como una pull request: errores, regresiones y pruebas que faltan. No modifiques archivos. {{args}}"),

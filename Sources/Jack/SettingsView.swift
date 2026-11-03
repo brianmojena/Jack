@@ -98,7 +98,7 @@ private struct GeneralSettings: View {
             } header: {
                 Text("Apariencia")
             } footer: {
-                Text("Basic es la interfaz densa de siempre. Ice usa la estructura nativa de macOS con Liquid Glass: barra lateral flotante, barra de herramientas del sistema y el editor flotando sobre la conversación." + (store.lightModeEnabled ? "" : " Terminal organiza Claude Code y shells nativos por proyecto, con pestañas y paneles divididos. Oficina 2D recupera el estudio animado con agentes, paseos y detalles interactivos. Oficina 3D muestra a tus agentes como personajes en una oficina: pulsa un personaje o un escritorio para ponerlo a trabajar, ver lo que hace y escribirle."))
+                Text("Basic es la interfaz densa de siempre. Ice usa la estructura nativa de macOS con Liquid Glass: barra lateral flotante, barra de herramientas del sistema y el editor flotando sobre la conversación." + (store.lightModeEnabled ? "" : " Terminal organiza Claude Code y shells nativos por proyecto, con pestañas y paneles divididos. Oficina 2D recupera el estudio animado con agentes, paseos y detalles interactivos. Oficina 3D muestra a tus agentes como personajes en una oficina: pulsa un personaje o un escritorio para ponerlo a trabajar, ver lo que hace y escribirle. CodeOS convierte Jack en una consola a pantalla completa: tus proyectos como juegos, perfiles para compartir la cuenta de Claude y el chat de cada proyecto en Ice."))
                     .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
             }
             Section {

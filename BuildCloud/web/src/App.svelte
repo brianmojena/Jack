@@ -1,4 +1,5 @@
 <script>
+  import logo from './lib/logo.js'
   import { onMount } from 'svelte'
   import AppIcon from './lib/AppIcon.svelte'
   import InstallButton from './lib/InstallButton.svelte'
@@ -143,7 +144,7 @@
 {:else}
   <!-- Lista de apps. -->
   <header class="large-title">
-    <h1>BuildCloud</h1>
+    <h1><img class="logo" src={logo} alt="" width="34" height="34" />BuildCloud</h1>
     {#if data?.certificate}<a href="/certificado" class="nav-link">Certificado</a>{/if}
   </header>
 
@@ -213,6 +214,8 @@
     justify-content: space-between;
     padding: 52px 4px 10px;
   }
+  .large-title h1 { display: flex; align-items: center; gap: 10px; }
+  .logo { border-radius: 8px; }
   .large-title h1 { font-size: 34px; font-weight: 700; letter-spacing: 0.01em; }
   .nav-link { font-size: 17px; padding-bottom: 6px; }
 

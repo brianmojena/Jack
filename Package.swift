@@ -16,7 +16,8 @@ let package = Package(
     ],
     targets: [
         .target(name: "JackCore"),
-        .executableTarget(name: "Jack", dependencies: ["JackCore", .product(name: "SwiftTerm", package: "SwiftTerm")]),
+        .executableTarget(name: "Jack", dependencies: ["JackCore", .product(name: "SwiftTerm", package: "SwiftTerm")],
+                          exclude: ["Office/Engine/OfficeDetail.metal"]),
         .executableTarget(name: "JackProbe", dependencies: ["JackCore"]),
         .executableTarget(name: "JackChatProbe", dependencies: ["JackCore"]),
         .executableTarget(name: "JackProgress", dependencies: ["JackCore"]),

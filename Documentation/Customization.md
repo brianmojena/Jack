@@ -2,7 +2,7 @@
 
 ## Guía rápida
 
-Abre **Ajustes → Personalización**. Pulsa **Nuevo** para crear un mod y personaliza el tema, la distribución y los comandos con los controles rápidos. También puedes editar el JSON directamente: Jack valida y guarda los cambios automáticamente 450 ms después de que dejes de escribir. Un JSON inválido muestra el error y conserva la última versión válida.
+Abre **Ajustes → Personalización**. Pulsa **Nuevo** para crear un mod y personaliza el tema, la distribución y los comandos con los controles rápidos. También puedes editar el JSON directamente: Jack valida y guarda los cambios automáticamente 180 ms después de que dejes de escribir. Un JSON inválido muestra el error y conserva la última versión válida.
 
 Puedes activar varios mods a la vez. El orden de la lista determina la prioridad: el último mod habilitado gana cuando varios definen el mismo campo; los campos que omite no borran los anteriores. **Restablecer** desactiva las personalizaciones y vuelve a los valores normales sin borrar los mods ni sus archivos.
 
@@ -13,6 +13,18 @@ Los comandos `prompt` aparecen como plantillas para los agentes: escribe `!nombr
 Los campos `workspacePosition`, `workspaceWidth`, `workspaceHeight` y `explorerVisible` solo afectan a la distribución cuando hay paneles de chat. `sidebarPosition`, `sidebarWidth`, `sidebarVisible` y `statusBarVisible` también se aplican en Terminal. La escena de Oficina conserva su diseño propio.
 
 La personalización solo está disponible en el modo Normal; no añade controles ni tareas a Light. Puedes probar el [ejemplo Neon Workspace](../Examples/Mods/neon-workspace.json), que incluye tema, distribución y un comando de cada tipo.
+
+## Crear un mod con el agente
+
+Escribe `!mod crear un panel oscuro con acento verde` en un chat de un proyecto local. Jack le pasa al agente el esquema completo con sus límites y le pide que deje el JSON en `mods/<id>.json` **dentro del proyecto**: el agente no toca la carpeta de datos de Jack ni `enabled.json`. Cuando termine, corre `!mod instalar mods/mi-tema.json` y Jack valida el archivo, lo copia a `Customization/Packs/` y lo activa.
+
+- La ruta de `!mod instalar` debe ser relativa y quedar dentro del proyecto; Jack rechaza rutas absolutas, segmentos `..` y enlaces simbólicos.
+- Si el JSON no cumple el esquema, la instalación falla sin tocar los mods existentes y el error aparece en el chat.
+- Repetir la instalación con el mismo `id` reemplaza ese mod, igual que **Importar** en Ajustes.
+- `!mod listar` muestra los mods con su estado y cualquier error de carga; `!mod` sin argumentos repite el uso.
+- `mods/` es una carpeta de tu proyecto: añádela al `.gitignore` si no quieres versionar los borradores.
+
+En Light el comando no aparece en la lista de `!` y se rechaza si lo escribes.
 
 ## Formato del paquete JSON
 

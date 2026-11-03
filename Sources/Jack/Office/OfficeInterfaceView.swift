@@ -1,4 +1,6 @@
+#if canImport(JackCore)
 import JackCore
+#endif
 import SwiftUI
 import simd
 
@@ -31,19 +33,34 @@ private struct OfficeActions: Hashable {
 /// - Cada personaje con un agente lleva sobre la cabeza una burbuja naranja, anclada a él, para elegir su modelo.
 /// - Cuando el agente contesta, necesita algo o falla, su personaje muestra una burbuja verde, amarilla o roja; al pulsarla
 ///   se abre su chat. «Ver pantalla» acerca la cámara a su monitor, donde se ve el trabajo del agente tal cual.
-struct OfficeInterfaceView<Content: View>: View {
-    @ObservedObject var store: ChatStore
+struct OfficeInterfaceView<Host: OfficeHost, Content: View>: View {
+    /// Los agentes: en la Mac, los chats de Jack; en el iPhone, los de la Mac por Jack Remote.
+    @ObservedObject var store: Host
     var sidebarVisible: Bool
     var onShowSidebar: () -> Void
     /// El contenido del panel; lo construye quien tiene el chat completo de Jack.
     @ViewBuilder var dockContent: (OfficePanelTarget) -> Content
 
-    @StateObject private var stage = OfficeStage()
+    @StateObject private var stage: OfficeStage = {
+        #if os(macOS)
+        // El fondo fuera de las paredes, del color de la barra lateral de Jack (en el modo de color en que esté la app).
+        var color = NSColor.black
+        NSApp.effectiveAppearance.performAsCurrentDrawingAppearance { color = JackPalette.chromeColor.usingColorSpace(.sRGB) ?? .black }
+        OfficeStage.backdropColor = color
+        #else
+        OfficeStage.backdropColor = JackPalette.chromeColor
+        #endif
+        return OfficeStage()
+    }()
     @StateObject private var assignments = OfficeAssignments()
     /// Los ajustes gráficos (el engranaje de arriba a la derecha).
     @StateObject private var graphics = OfficeGraphics()
     /// El avatar (modelo 3D) que lleva cada persona.
     @StateObject private var avatars = OfficeAvatarChoices()
+    /// Con qué modelo piensa cada personaje y cómo es (su personalidad), por avatar.
+    @StateObject private var personas = OfficePersonaSettings()
+    /// El puesto cuyo personaje se está ajustando (modelo y personalidad).
+    @State private var editingPersona: Int?
     /// La partida de ajedrez en curso (si la hay) y el puesto cuyo personaje está preparando una.
     @StateObject private var chess = OfficeChessGame()
     @State private var settingUpChess: Int?
@@ -54,6 +71,8 @@ struct OfficeInterfaceView<Content: View>: View {
     @State private var settingUpCards: Int?
     /// Dos personajes del sofá charlando de un tema al azar.
     @StateObject private var talk = OfficeSofaTalk()
+    /// Quien está dibujando en la pizarra (si alguien lo está).
+    @StateObject private var sketch = OfficeSketchSession()
     @State private var camera = OfficeCamera(target: OfficePose.world(x: 3.2, y: -4.5, z: 2.4))
     @State private var dock: OfficeDock?
     @State private var actions: OfficeActions?
@@ -78,10 +97,13 @@ struct OfficeInterfaceView<Content: View>: View {
     private var slots: [OfficeLayout.Slot] { stage.layout?.slots ?? [] }
 
     /// La personalidad del avatar que lleva ahora el puesto (los tres personajes añadidos después tienen la suya).
-    private func persona(of slot: OfficeLayout.Slot) -> OfficePersona? { OfficePersonas.persona(forAvatar: avatars.avatar(for: slot)) }
+    private func persona(of slot: OfficeLayout.Slot) -> OfficePersona? { personas.persona(forAvatar: avatars.avatar(for: slot), name: name(of: slot)) }
+
+    /// El modelo con que piensa el personaje del puesto (el elegido para su avatar); `nil` es Gemma.
+    private func brain(of slot: OfficeLayout.Slot) -> OfficeBrainChoice? { personas.brain(for: avatars.avatar(for: slot)) }
 
     /// Cómo se llama la persona del puesto: la de su avatar, si tiene personalidad propia; si no, la del puesto.
-    private func name(of slot: OfficeLayout.Slot) -> String { persona(of: slot)?.name ?? slot.name }
+    private func name(of slot: OfficeLayout.Slot) -> String { OfficePersonas.persona(forAvatar: avatars.avatar(for: slot))?.name ?? slot.name }
 
     var body: some View {
         OfficeSceneView(stage: stage, camera: camera, quality: graphics.quality, measuresFPS: graphics.showFPS, onFPS: { graphics.fps = $0 }, onPick: { tag, _ in if viewing == nil, !chess.humanSeated, !cards.humanSeated { pick(tag.index) } }, onPickNothing: { actions = nil; choosingAvatar = nil; settingUpChess = nil; settingUpCards = nil })
@@ -97,6 +119,7 @@ struct OfficeInterfaceView<Content: View>: View {
             .overlay(alignment: .bottomTrailing) { cardDock }
             .overlay(alignment: .top) { cardReturn }
             .overlay(alignment: .bottom) { dockOverlay }
+            .overlay { personaEditor }
             .overlay { screenContent }
             .overlay(alignment: .top) { screenOverlay }
             .overlay(alignment: .topLeading) { if !sidebarVisible { sidebarButton } }
@@ -116,9 +139,10 @@ struct OfficeInterfaceView<Content: View>: View {
                 if slots.indices.contains(where: { working.contains(slots[$0].id) && chess.involves($0) }) { chess.stop(stage: stage) }
                 if slots.indices.contains(where: { working.contains(slots[$0].id) && cards.involves($0) }) { cards.stop() }
                 if slots.indices.contains(where: { working.contains(slots[$0].id) && talk.involves($0) }) { talk.stop() }
+                if slots.indices.contains(where: { working.contains(slots[$0].id) && sketch.involves($0) }) { sketch.stop(stage: stage) }
             }
-            .onChange(of: store.lightModeEnabled) { _, light in if light { chess.stop(stage: stage); cards.stop(); talk.stop() } }
-            .onDisappear { chess.stop(stage: stage); cards.stop(); talk.stop() }
+            .onChange(of: store.lightModeEnabled) { _, light in if light { chess.stop(stage: stage); cards.stop(); talk.stop(); sketch.stop(stage: stage) } }
+            .onDisappear { chess.stop(stage: stage); cards.stop(); talk.stop(); sketch.stop(stage: stage) }
             .onChange(of: chess.humanSeated) { _, seated in moveCameraToChessSeat(seated) }
             .onChange(of: cards.humanSeated) { _, seated in moveCameraToCardSeat(seated) }
             .onChange(of: talk.pair) { _, pair in updateTalkAnimations(pair) }
@@ -162,11 +186,11 @@ struct OfficeInterfaceView<Content: View>: View {
                 busy.insert(id)
                 let messages = conversation.messages
                 let previous = narration[slot.id]
-                let name = name(of: slot), persona = persona(of: slot)?.profile, tool = tool(for: slot), slotID = slot.id
+                let name = name(of: slot), persona = persona(of: slot)?.profile, tool = tool(for: slot), slotID = slot.id, brain = brain(of: slot)
                 Task {
                     defer { busy.remove(id) }
                     guard let text = try? await narrator.summary(as: name, persona: persona, tool: tool, of: messages, previous: previous,
-                                                                 lightMode: store.lightModeEnabled) else { return }
+                                                                 brain: brain, lightMode: store.lightModeEnabled) else { return }
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { narration[slotID] = text }
                 }
             }
@@ -180,7 +204,7 @@ struct OfficeInterfaceView<Content: View>: View {
         let worker = OfficeWorker(tool: tool(for: slot), status: status, messages: conversation.messages)
         let history = assignments.chat(in: slot.id)
         Task {
-            guard let text = try? await narrator.report(as: name(of: slot), persona: persona(of: slot)?.profile, history: history, worker: worker, lightMode: store.lightModeEnabled) else { return }
+            guard let text = try? await narrator.report(as: name(of: slot), persona: persona(of: slot)?.profile, history: history, worker: worker, brain: brain(of: slot), lightMode: store.lightModeEnabled) else { return }
             assignments.append(OfficeLine(role: .person, text: text), slot: slot.id)
             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { narration[slot.id] = text }
             // Quien pidió ayuda se entera de cómo acabó la parte de su compañero.
@@ -210,7 +234,7 @@ struct OfficeInterfaceView<Content: View>: View {
             defer { thinking.remove(slot.id) }
             do {
                 let decision = try await narrator.reply(as: name(of: slot), persona: persona(of: slot)?.profile, history: history, worker: worker, team: team, catalog: catalog,
-                                                        lightMode: store.lightModeEnabled)
+                                                        brain: brain(of: slot), lightMode: store.lightModeEnabled)
                 assignments.append(OfficeLine(role: .person, text: decision.reply), slot: slot.id)
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { narration[slot.id] = decision.reply }
                 if let task = decision.task { delegate(task, slot: index) }
@@ -218,7 +242,7 @@ struct OfficeInterfaceView<Content: View>: View {
             } catch is CancellationError {
             } catch {
                 assignments.append(OfficeLine(role: .note, text: "\(name(of: slot)) no pudo contestar: \(error.localizedDescription)"), slot: slot.id)
-                withAnimation { narration[slot.id] = "Perdona, ahora mismo no puedo pensar (no responde \(OfficeNarrator.modelName))." }
+                withAnimation { narration[slot.id] = "Perdona, ahora mismo no puedo pensar (no responde \(brain(of: slot)?.title ?? OfficeNarrator.modelName))." }
             }
         }
     }
@@ -258,6 +282,7 @@ struct OfficeInterfaceView<Content: View>: View {
             && !talk.involves(slots.firstIndex { $0.id == slot.id } ?? -1)
             && stage.showering != slots.firstIndex { $0.id == slot.id }
             && stage.drinking != slots.firstIndex { $0.id == slot.id }
+            && stage.drawing != slots.firstIndex { $0.id == slot.id }
     }
 
     /// Los compañeros de una persona, para que decida a quién pedir ayuda y sepa cómo van los que ya la ayudan.
@@ -303,24 +328,17 @@ struct OfficeInterfaceView<Content: View>: View {
         assignments.append(OfficeLine(role: .task, text: task), slot: slot.id)
         assignments.setWorking(true, slot: slot.id)
         if let conversation = conversation(in: slot) {
-            store.send(task, to: conversation.id)
+            store.officeSend(task, to: conversation.id)
             return
         }
         let choice = workerChoice[slot.id] ?? lastChoice
-        let projects = ProjectIndex.shared.ordered(recent: recentProjects)
-        guard let id = store.createLocating(task, provider: choice.provider, model: choice.model.isEmpty ? nil : choice.model, projects: projects) else {
-            assignments.append(OfficeLine(role: .note, text: "No se pudo crear el agente: \(store.errorMessage ?? "revisa la configuración de \(choice.provider.title).")"), slot: slot.id)
-            return
+        Task {
+            guard let id = await store.officeCreate(task, provider: choice.provider, model: choice.model.isEmpty ? nil : choice.model) else {
+                assignments.append(OfficeLine(role: .note, text: "No se pudo crear el agente: \(store.errorMessage ?? "revisa la configuración de \(choice.provider.title).")"), slot: slot.id)
+                return
+            }
+            assignments.assign(id, to: slot.id)
         }
-        assignments.assign(id, to: slot.id)
-    }
-
-    /// Las carpetas de proyecto usadas hace poco, para que Jack sitúe los encargos nuevos.
-    private var recentProjects: [String] {
-        var seen = Set<String>()
-        var paths = store.conversations.sorted { $0.updatedAt > $1.updatedAt }.map(\.projectPath)
-        if let last = UserDefaults.standard.string(forKey: "lastProjectPath") { paths.append(last) }
-        return paths.filter { $0 != ProjectLocator.unplacedFolder && FileManager.default.fileExists(atPath: $0) && seen.insert($0).inserted }
     }
 
     /// El agente que tiene (o tendrá) a su cargo la persona de un puesto, como «Claude Code · Haiku».
@@ -349,7 +367,7 @@ struct OfficeInterfaceView<Content: View>: View {
                     labeled[slot.id] = title
                 }
             }
-            let live = graphics.quality.liveScreens
+            let live = graphics.quality.liveScreens && OfficeLiveScreen.isAvailable
             tick += 1
             for (index, slot) in slots.enumerated() {
                 var key = "off"
@@ -406,7 +424,7 @@ struct OfficeInterfaceView<Content: View>: View {
         guard stage.state == .ready else { return }
         let logo = OfficeTVLogo()
         while !Task.isCancelled {
-            if let image = OfficeTVView.image(usage: store.usage[.claude], now: Date()) { await stage.setTV(image: image) }
+            if let image = OfficeTVView.image(usage: store.officeUsage, now: Date()) { await stage.setTV(image: image) }
             try? await Task.sleep(for: .seconds(Self.tvPhase))
 
             let quality = graphics.quality
@@ -441,6 +459,8 @@ struct OfficeInterfaceView<Content: View>: View {
             if stage.showering == index { return .shower }
             // Tomando café: igual, acaba y vuelve a su sofá.
             if stage.drinking == index { return .coffee }
+            // Dibujando en la pizarra: igual, acaba y vuelve a su sofá.
+            if stage.drawing == index { return .draw }
             let atDesk = assignments.working.contains(slot.id)
             // Jugando a las cartas, sentado a la mesa (también si su agente se pone a trabajar: entonces se acaba la partida).
             if !atDesk, let id = cards.seat(of: index), let seat = stage.chess?.seats[id],
@@ -502,6 +522,9 @@ struct OfficeInterfaceView<Content: View>: View {
             if talk.involves(index) {
                 return [OfficePill(title: "Dejar de charlar", symbol: "bubble.left.and.bubble.right", tint: .purple) { actions = nil; talk.stop() }, changeAvatar, close]
             }
+            if sketch.involves(index) {
+                return [OfficePill(title: "Dejar de dibujar", symbol: "pencil.slash", tint: .purple) { actions = nil; sketch.stop(stage: stage) }, changeAvatar, close]
+            }
             guard working else {
                 var items = [OfficePill(title: "Trabajar", symbol: "keyboard", tint: .orange, action: go(.work))]
                 // El ajedrez necesita la mesa, un compañero libre y que no se esté ahorrando (lo juega Gemma, en la nube).
@@ -521,7 +544,8 @@ struct OfficeInterfaceView<Content: View>: View {
                         items.append(OfficePill(title: "Charlar con \(name(of: slots[other]))", symbol: "bubble.left.and.bubble.right", tint: .blue) {
                             actions = nil
                             talk.start(index, other, people: Dictionary(uniqueKeysWithValues: slots.enumerated().map { entry in
-                                (entry.offset, OfficeSofaTalk.Person(name: name(of: entry.element), profile: persona(of: entry.element)?.profile, about: persona(of: entry.element)?.about))
+                                (entry.offset, OfficeSofaTalk.Person(name: name(of: entry.element), profile: persona(of: entry.element)?.profile, about: persona(of: entry.element)?.about,
+                                                          brain: brain(of: entry.element)))
                             }),
                                        lightMode: { store.lightModeEnabled })
                         })
@@ -535,6 +559,15 @@ struct OfficeInterfaceView<Content: View>: View {
                 if stage.coffeeBar != nil, stage.drinking == nil, onSofa(index) {
                     items.append(OfficePill(title: "Tomar café", symbol: "cup.and.saucer", tint: .orange) { actions = nil; stage.startCoffee(slot: index) })
                 }
+                // Dibujar: va a la pizarra y garabatea algo que se le ocurre al azar (lo inventa Gemma, en la nube).
+                if canDraw(index) {
+                    items.append(OfficePill(title: "Dibujar en la pizarra", symbol: "pencil.and.scribble", tint: .purple) {
+                        actions = nil
+                        sketch.start(slot: index, person: OfficeSketchSession.Person(name: name(of: slot), profile: persona(of: slot)?.profile, brain: brain(of: slot)), stage: stage,
+                                     lightMode: { store.lightModeEnabled })
+                    })
+                }
+                items += personaPills(index)
                 items.append(changeAvatar)
                 items.append(close)
                 return items
@@ -546,6 +579,7 @@ struct OfficeInterfaceView<Content: View>: View {
                 items.append(OfficePill(title: "Ver pantalla", symbol: "display", tint: .teal) { actions = nil; viewScreen(index) })
             }
             items.append(OfficePill(title: "Terminar de trabajar", symbol: "moon.zzz", tint: .purple) { actions = nil; stopWorking(slot: index) })
+            items += personaPills(index)
             items.append(changeAvatar)
             items.append(close)
             return items
@@ -614,6 +648,50 @@ struct OfficeInterfaceView<Content: View>: View {
 
     /// Solo charla quien está sentado en su sofá.
     private func onSofa(_ index: Int) -> Bool { stage.actors[safe: index]?.isOnSofa == true }
+
+    /// Las acciones del cerebro del personaje: ajustar su modelo y su personalidad, y apagar o encender esta.
+    private func personaPills(_ index: Int) -> [OfficePill] {
+        guard slots.indices.contains(index), !store.lightModeEnabled else { return [] }
+        let avatar = avatars.avatar(for: slots[index])
+        var items = [OfficePill(title: "Modelo y personalidad", symbol: "brain.head.profile", tint: .teal) { actions = nil; editingPersona = index }]
+        if personas.hasPersonality(avatar) {
+            let off = personas.isOff(avatar)
+            items.append(OfficePill(title: off ? "Encender personalidad" : "Apagar personalidad", symbol: off ? "theatermasks.fill" : "theatermasks", tint: .purple) {
+                actions = nil
+                personas.setOff(!off, for: avatar)
+            })
+        }
+        return items
+    }
+
+    /// La tarjeta para ajustar el modelo y la personalidad del personaje de `editingPersona`.
+    @ViewBuilder private var personaEditor: some View {
+        if let index = editingPersona, slots.indices.contains(index) {
+            let slot = slots[index], avatar = avatars.avatar(for: slot)
+            OfficePersonaEditor(
+                name: name(of: slot),
+                thumbnail: OfficeCharacter.all.first { $0.id == avatar }?.thumbnail,
+                originalProfile: personas.defaultProfile(for: avatar),
+                brain: personas.brain(for: avatar),
+                profile: personas.storedProfile(for: avatar) ?? "",
+                personalityOff: personas.isOff(avatar),
+                store: store,
+                onSave: { brain, profile, off in
+                    personas.setBrain(brain, for: avatar)
+                    personas.setProfile(profile, for: avatar)
+                    personas.setOff(off, for: avatar)
+                    editingPersona = nil
+                },
+                onClose: { editingPersona = nil }
+            )
+            .id(avatar)
+        }
+    }
+
+    /// Dibujar necesita la pizarra libre y a este personaje en su sofá (lo inventa Gemma, en la nube).
+    private func canDraw(_ index: Int) -> Bool {
+        OfficeSketchSession.isAvailable && stage.whiteboard != nil && stage.drawing == nil && !sketch.isActive && !store.lightModeEnabled && onSofa(index)
+    }
 
     private var canPlayChessAgainstMe: Bool {
         stage.chess != nil && !chess.isActive && !cards.isActive && !store.lightModeEnabled
@@ -714,7 +792,7 @@ struct OfficeInterfaceView<Content: View>: View {
         for (other, actor) in stage.actors.enumerated() { actor.concealed = other == index }
         // La vista real se pone encima cuando la cámara se detiene. En vivo, el monitor ya muestra lo mismo al mismo tamaño,
         // así que aparece sin fundido: solo pasa a poder tocarse. Con el resumen ligero sí se funde.
-        let live = graphics.quality.liveScreens
+        let live = graphics.quality.liveScreens && OfficeLiveScreen.isAvailable
         Task {
             for _ in 0..<60 where !camera.isSettled {
                 try? await Task.sleep(for: .milliseconds(50))
@@ -793,7 +871,7 @@ struct OfficeInterfaceView<Content: View>: View {
                 ZStack {
                     ForEach(Array(slots.enumerated()), id: \.element.id) { index, slot in
                         let conversation = conversation(in: slot)
-                        let said = chess.involves(index) ? chess.said[index] : cards.involves(index) ? cards.said[index] : talk.involves(index) ? talk.said[index] : (assignments.working.contains(slot.id) ? narration[slot.id] : nil)
+                        let said = chess.involves(index) ? chess.said[index] : cards.involves(index) ? cards.said[index] : talk.involves(index) ? talk.said[index] : sketch.involves(index) ? sketch.said[index] : (assignments.working.contains(slot.id) ? narration[slot.id] : nil)
                         if conversation != nil || said != nil, stage.actors.indices.contains(index),
                            let point = camera.projectCurrent(stage.actors[index].headPosition, in: sceneSize) {
                             VStack(spacing: 6) {
@@ -846,6 +924,7 @@ struct OfficeInterfaceView<Content: View>: View {
                             onStart: { white, black in
                                 settingUpChess = nil
                                 let names = Dictionary(uniqueKeysWithValues: slots.enumerated().map { ($0.offset, name(of: $0.element)) })
+                                chess.brains = Dictionary(uniqueKeysWithValues: slots.enumerated().compactMap { entry in brain(of: entry.element).map { (entry.offset, $0) } })
                                 if versusSetup {
                                     // El lado con puesto -1 es el usuario.
                                     let (character, color) = white.slot >= 0 ? (white, ChessColor.white) : (black, ChessColor.black)
@@ -874,7 +953,7 @@ struct OfficeInterfaceView<Content: View>: View {
         let others = slots.indices.filter { $0 != index && isFree(slots[$0]) }
         let chosen = [index] + others.prefix(game.opponents - 1)
         guard chosen.count == game.opponents else { return }
-        let people = chosen.map { OfficeCardSession.Person(slot: $0, name: name(of: slots[$0]), profile: persona(of: slots[$0])?.profile) }
+        let people = chosen.map { OfficeCardSession.Person(slot: $0, name: name(of: slots[$0]), profile: persona(of: slots[$0])?.profile, brain: brain(of: slots[$0])) }
         cards.start(game, with: people, as: Self.playerName, stage: stage, lightMode: { store.lightModeEnabled })
     }
 
@@ -935,7 +1014,11 @@ struct OfficeInterfaceView<Content: View>: View {
 
     /// Cómo se llama quien juega: el nombre de su cuenta del Mac.
     private static var playerName: String {
+        #if os(macOS)
         NSFullUserName().split(separator: " ").first.map(String.init) ?? "Tú"
+        #else
+        "Tú"
+        #endif
     }
 
     /// Sentado a la mesa, la cámara pasa a su silla; al levantarse, vuelve a la sala donde estuviera.
@@ -999,7 +1082,7 @@ struct OfficeInterfaceView<Content: View>: View {
                 .background(JackPalette.canvas)
                 .clipped()
                 .position(x: rect.midX, y: rect.midY)
-                .transition(graphics.quality.liveScreens ? .identity : .opacity)
+                .transition(graphics.quality.liveScreens && OfficeLiveScreen.isAvailable ? .identity : .opacity)
         }
     }
 
@@ -1176,8 +1259,8 @@ private struct OfficeTail: Shape {
 
 /// Sobre un personaje con agente: el modelo con el que trabaja, que se cambia con un toque,
 /// y su aviso (verde, amarillo o rojo) cuando hay algo que ver.
-private struct OfficeModelBubble: View {
-    @ObservedObject var store: ChatStore
+private struct OfficeModelBubble<Host: OfficeHost>: View {
+    @ObservedObject var store: Host
     let conversation: ChatConversation
     let status: ChatStatus
     let badge: OfficeBadge?

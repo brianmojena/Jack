@@ -1087,8 +1087,15 @@ enum AntigravityTerminalError: LocalizedError {
     public func isBusy(_ id: UUID) -> Bool { runs[id] != nil || queue.contains { $0.0 == id } }
     /// Whether the agent reads waiting messages while it works, rather than after its turn.
     public func readsWhileWorking(_ id: UUID) -> Bool { drivers[id]?.keepsAlive == true || liveDrivers[id] != nil }
+    /// CodeOS's shared-account quota: asked before a message goes to a Claude agent, it returns the reason to refuse it, or nil. Unset
+    /// (and so without effect) unless a CodeOS profile is playing, and never in Light mode.
+    public var sendGate: (@MainActor (ChatConversation) -> String?)?
     /// `interrupting` stops the turn so the agent reads the message right away, like Ctrl+Enter.
     public func send(_ prompt: String, attachments: [String] = [], to id: UUID, interrupting: Bool = false, preservingApproval: Bool = false) {
+        if !lightModeEnabled, let gate = sendGate, let c = conversations.first(where: { $0.id == id }), c.provider == .claude, let refusal = gate(c) {
+            errorMessage = refusal
+            return
+        }
         _ = sendIfAccepted(prompt, attachments: attachments, to: id, interrupting: interrupting, preservingApproval: preservingApproval)
     }
     private func sendIfAccepted(_ prompt: String, attachments: [String] = [], to id: UUID, interrupting: Bool = false, preservingApproval: Bool = false) -> Bool {
@@ -1700,7 +1707,9 @@ enum AntigravityTerminalError: LocalizedError {
                     detectedClaudeModels = merged
                 }
             }
-            catalog = detectedClaudeModels ?? ChatModelChoice.claudeCatalog
+            var base = detectedClaudeModels ?? ChatModelChoice.claudeCatalog
+            if !lightModeEnabled { base += ChatModelChoice.claudeExact }
+            catalog = base
         case .opencode: catalog = [ChatModelChoice(id: "", efforts: [])]
         case .stellar: catalog = Self.visibleStellarModels(localModels, lightMode: lightModeEnabled).map { ChatModelChoice(id: $0.id, title: $0.title, efforts: []) }
         case .antigravity:
@@ -1721,7 +1730,7 @@ enum AntigravityTerminalError: LocalizedError {
         }
     }
     public func supportedEfforts(provider: ChatProvider, model: String) -> [String] {
-        let catalog = provider == .codex ? codexModels : provider == .claude ? ChatModelChoice.claudeCatalog : provider == .antigravity ? antigravityModels : provider == .qoder ? qoderModels : []
+        let catalog = provider == .codex ? codexModels : provider == .claude ? ChatModelChoice.claudeCatalog + ChatModelChoice.claudeExact : provider == .antigravity ? antigravityModels : provider == .qoder ? qoderModels : []
         return catalog.first { $0.id == model }?.efforts ?? ChatModelChoice.fallbackEfforts(provider: provider, model: model)
     }
     /// Keeps the stored effort when the model has no levels, so switching back restores it.
@@ -2223,6 +2232,41 @@ private extension ChatStore {
             send("Prepara un resumen de traspaso para continuar con otro agente: objetivo, decisiones, archivos relevantes, estado y pendientes. Incluye instrucciones fijadas. No uses herramientas ni modifiques archivos.", to: id); return
         case "comandos":
             manageJackTemplates(a, id: id); return
+        case "mod":
+            guard !lightModeEnabled else { errorMessage = "!mod solo está disponible en el modo Normal."; return }
+            let conversation = conversations[i]
+            guard conversation.remote == nil else { errorMessage = "!mod necesita un proyecto local."; return }
+            let sub = words.first?.lowercased() ?? ""
+            let rest = a.dropFirst(sub.count).trimmingCharacters(in: .whitespacesAndNewlines)
+            switch sub {
+            case "crear":
+                guard !rest.isEmpty, rest.utf8.count <= 4_000 else { errorMessage = "Uso: !mod crear <descripción>."; return }
+                send(ModCommand.creationPrompt(description: rest), to: id); return
+            case "instalar":
+                guard !rest.isEmpty else { errorMessage = "Uso: !mod instalar <ruta.json>."; return }
+                let project = URL(fileURLWithPath: conversation.projectPath).standardizedFileURL
+                let file = project.appendingPathComponent(rest).standardizedFileURL
+                // Both sides resolved: an ancestor symlink (/var, mounted homes) must not reject the project, while a link out of it must.
+                guard !rest.hasPrefix("/"), !rest.split(separator: "/").contains(".."),
+                      file.resolvingSymlinksInPath().path.hasPrefix(project.resolvingSymlinksInPath().path + "/") else {
+                    errorMessage = "La ruta del mod debe ser relativa y quedar dentro del proyecto."; return
+                }
+                do {
+                    let packID = try customization.importPack(data: try CustomizationCenter.packData(at: file))
+                    try customization.setPackEnabled(packID, true)
+                    jackNotice("Mod «\(packID)» instalado y activado. Ajústalo en Ajustes → Personalización.", to: id)
+                } catch { errorMessage = "No se pudo instalar el mod: \(error.localizedDescription)" }
+                return
+            case "listar":
+                let enabled = Set(customization.enabledIDs)
+                var lines = customization.packs.map { "\($0.id) — \($0.name) (\(enabled.contains($0.id) ? "activado" : "desactivado"))" }
+                if let failure = customization.error { lines.append(failure) }
+                jackNotice((lines.isEmpty ? ["No hay mods instalados. Crea uno con !mod crear <descripción>."] : lines).joined(separator: "\n"), to: id); return
+            case "":
+                jackNotice("!mod crear <descripción> — el agente redacta el pack en mods/<id>.json.\n!mod instalar <ruta.json> — lo valida, lo instala y lo activa.\n!mod listar — mods disponibles y su estado.", to: id); return
+            default:
+                errorMessage = "Uso: !mod crear <descripción> | instalar <ruta.json> | listar."; return
+            }
         default:
             if !lightModeEnabled, let command = customization.commands.first(where: { $0.name.lowercased() == name }) {
                 switch command.kind {
@@ -2321,7 +2365,7 @@ private extension ChatStore {
         if parts.isEmpty {
             let mods = lightModeEnabled ? [] : customization.commands.map { "!\($0.name) — \($0.title)" }
             let modNames = Set(mods.isEmpty ? [] : customization.commands.map { $0.name.lowercased() })
-            let rows = JackCommandCatalog.builtins.map { "!\($0.name) \($0.argumentHint) — \($0.description)" }
+            let rows = JackCommandCatalog.builtins.filter { !lightModeEnabled || $0.name != "mod" }.map { "!\($0.name) \($0.argumentHint) — \($0.description)" }
                 + mods
                 + jackTemplates.filter { !modNames.contains($0.name.lowercased()) }.map { "!\($0.name) — \($0.prompt)" }
             jackNotice(rows.joined(separator: "\n") + "\n\nPlantillas: !comandos crear nombre texto ({{args}} inserta argumentos); !comandos eliminar nombre.", to: id); return
@@ -2347,7 +2391,7 @@ public extension ChatStore {
         let modNames = Set(mods.map { $0.name.lowercased() })
         let templates = jackTemplates.filter { !modNames.contains($0.name.lowercased()) }
             .map { ChatCommand(name: $0.name, description: $0.prompt, argumentHint: "argumentos opcionales") }
-        return JackCommandCatalog.builtins + mods + templates
+        return JackCommandCatalog.builtins.filter { !lightModeEnabled || $0.name != "mod" } + mods + templates
     }
 }
 private extension String {

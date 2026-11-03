@@ -1,4 +1,6 @@
+#if canImport(JackCore)
 import JackCore
+#endif
 import SwiftUI
 
 /// Los casilleros del tablero encima de la escena, para jugar con el ratón sobre las piezas en 3D: se pulsa una pieza propia y

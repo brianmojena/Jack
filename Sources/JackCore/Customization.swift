@@ -233,6 +233,7 @@ public struct CustomizationCommand: Codable, Equatable, Identifiable {
     public static func decodePack(_ data: Data) throws -> CustomizationPack {
         try decodePackUnchecked(data)
     }
+    public static func packData(at url: URL) throws -> Data { try readBounded(url) }
     private static func readBounded(_ url: URL) throws -> Data {
         let fd = open(url.path, O_RDONLY | O_NONBLOCK | O_NOFOLLOW)
         guard fd >= 0 else { throw ValidationError.invalid("no se puede abrir el archivo") }
@@ -280,4 +281,22 @@ public struct CustomizationCommand: Codable, Equatable, Identifiable {
         }
     }
     private static func bounded(_ value: String, _ max: Int) -> Bool { !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && value.utf8.count <= max }
+}
+
+enum ModCommand {
+    /// Lo que `!mod crear` le encarga al agente: Jack redacta el esquema, el agente escribe el archivo y `!mod instalar` lo valida.
+    static func creationPrompt(description: String) -> String {
+        let reserved = JackCommandCatalog.builtins.map(\.name).joined(separator: ", ")
+        return """
+        Crea un mod (paquete de personalización) de Jack para esta descripción: «\(description)».
+        Escribe el JSON en mods/<id>.json dentro del proyecto actual. No toques la carpeta de datos de Jack ni enabled.json. Al terminar, indica exactamente !mod instalar mods/<id>.json.
+        Reglas; incumplirlas hace que Jack rechace el archivo:
+        - Raíz: schemaVersion (entero 1), id, name y commands (array, admitido vacío). author, theme y layout son opcionales.
+        - id: de 1 a 64 bytes ASCII en minúsculas (a-z, 0-9, - y _) e igual al nombre del archivo. name y author: hasta 120 bytes. Archivo: hasta 1 MiB y hasta 100 comandos.
+        - theme: appearance es system, light o dark; canvas, chrome, panel, selection, accent, text y muted son #RRGGBB o #RRGGBBAA.
+        - layout: interface es basic, ice, terminal, office u office2D; sidebarPosition left o right; workspacePosition right o bottom; sidebarWidth 210-400; workspaceWidth 300-1200; workspaceHeight 180-700; sidebarVisible, statusBarVisible y explorerVisible booleanas. Todo opcional: lo que se omita conserva el valor actual de Jack.
+        - Cada comando de commands: name (ASCII de 1 a 64, único sin distinguir mayúsculas, y distinto de los reservados: \(reserved)), title de hasta 120 bytes, kind prompt o terminal y content de hasta 20000 bytes si es prompt o 8000 si es terminal. Un prompt sustituye {{args}} por los argumentos del usuario; un comando de terminal es literal y no admite {{args}}.
+        - Devuelve solo JSON válido, sin comentarios.
+        """
+    }
 }

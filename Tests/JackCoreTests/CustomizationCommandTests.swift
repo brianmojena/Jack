@@ -157,6 +157,118 @@ final class CustomizationCommandTests: XCTestCase {
         observation.cancel()
     }
 
+    @MainActor func testModCrearLeEncargaAlAgenteUnPackConElEsquemaCompleto() async throws {
+        let root = try projectDirectory("mod-crear")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let driver = CustomizationCommandDriver()
+        let store = ChatStore(archive: ChatArchive(directory: root), preferences: nil, driverFactory: { _ in driver })
+        defer { store.shutdown() }
+        let id = try XCTUnwrap(store.create(projectPath: root.path, provider: .codex))
+        store.applyCustomization()
+        XCTAssertTrue(store.jackCommands.contains { $0.name == "mod" })
+
+        store.send("!mod crear un panel oscuro con acento verde", to: id)
+        let sawSchema = await waitUntil { driver.prompt?.contains("schemaVersion") == true }
+        XCTAssertTrue(sawSchema)
+        let prompt = try XCTUnwrap(driver.prompt)
+        XCTAssertTrue(prompt.contains("un panel oscuro con acento verde"))
+        XCTAssertTrue(prompt.contains("mods/<id>.json"))
+        XCTAssertTrue(prompt.contains("!mod instalar mods/<id>.json"))
+        XCTAssertTrue(prompt.contains("enabled.json"))
+        XCTAssertTrue(prompt.contains("sidebarWidth 210-400"))
+        // Los nombres reservados salen del catálogo, así que nunca se desincronizan.
+        XCTAssertTrue(prompt.contains(JackCommandCatalog.builtins.map(\.name).joined(separator: ", ")))
+        driver.stop()
+    }
+
+    @MainActor func testModInstalarValidaActivaYListaElPack() throws {
+        let root = try projectDirectory("mod-instalar")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let archive = ChatArchive(directory: root)
+        let store = ChatStore(archive: archive, preferences: nil, driverFactory: { _ in CustomizationCommandDriver() })
+        defer { store.shutdown() }
+        let id = try XCTUnwrap(store.create(projectPath: root.path, provider: .codex))
+        store.applyCustomization()
+        let mods = root.appendingPathComponent("mods", isDirectory: true)
+        try FileManager.default.createDirectory(at: mods, withIntermediateDirectories: true)
+        let pack = CustomizationPack(id: "neon", name: "Neon", theme: .init(accent: "#55E6C1"),
+                                     commands: [.init(name: "neon_review", title: "Review", kind: .prompt, content: "Revisa {{args}}")])
+        try JSONEncoder().encode(pack).write(to: mods.appendingPathComponent("neon.json"))
+
+        store.send("!mod listar", to: id)
+        XCTAssertTrue(store.conversations.first { $0.id == id }?.messages.last?.text.contains("!mod crear") == true)
+        store.send("!mod instalar mods/neon.json", to: id)
+        XCTAssertNil(store.errorMessage)
+        XCTAssertEqual(store.customization.enabledIDs, ["neon"])
+        XCTAssertEqual(store.customization.packs.first?.name, "Neon")
+        let installed = root.appendingPathComponent("Customization", isDirectory: true)
+            .appendingPathComponent("Packs", isDirectory: true).appendingPathComponent("neon.json")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: installed.path))
+        XCTAssertEqual(store.jackCommands.first { $0.name == "neon_review" }?.description, "Review")
+
+        store.send("!mod listar", to: id)
+        let notice = try XCTUnwrap(store.conversations.first { $0.id == id }?.messages.last?.text)
+        XCTAssertTrue(notice.contains("neon — Neon (activado)"), notice)
+    }
+
+    @MainActor func testModInstalarRechazaRutasFueraDelProyecto() throws {
+        let root = try projectDirectory("mod-escape")
+        let outside = try projectDirectory("mod-outside")
+        defer { try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: outside) }
+        let store = ChatStore(archive: ChatArchive(directory: root), preferences: nil, driverFactory: { _ in CustomizationCommandDriver() })
+        defer { store.shutdown() }
+        let id = try XCTUnwrap(store.create(projectPath: root.path, provider: .codex))
+        store.applyCustomization()
+        let pack = CustomizationPack(id: "outside", name: "Outside")
+        let outsidePack = outside.appendingPathComponent("outside.json")
+        try JSONEncoder().encode(pack).write(to: outsidePack)
+        let mods = root.appendingPathComponent("mods", isDirectory: true)
+        try FileManager.default.createDirectory(at: mods, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(atPath: mods.appendingPathComponent("evil.json").path, withDestinationPath: outsidePack.path)
+
+        for attempt in ["!mod instalar ../\(outside.lastPathComponent)/outside.json", "!mod instalar \(outsidePack.path)", "!mod instalar mods/evil.json"] {
+            store.send(attempt, to: id)
+            XCTAssertTrue(store.errorMessage?.contains("dentro del proyecto") == true, attempt)
+            store.errorMessage = nil
+        }
+        XCTAssertTrue(store.customization.packs.isEmpty)
+    }
+
+    @MainActor func testModInstalarRechazaUnPackInvalidoSinInstalarNada() throws {
+        let root = try projectDirectory("mod-invalid")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = ChatStore(archive: ChatArchive(directory: root), preferences: nil, driverFactory: { _ in CustomizationCommandDriver() })
+        defer { store.shutdown() }
+        let id = try XCTUnwrap(store.create(projectPath: root.path, provider: .codex))
+        store.applyCustomization()
+        let mods = root.appendingPathComponent("mods", isDirectory: true)
+        try FileManager.default.createDirectory(at: mods, withIntermediateDirectories: true)
+        try JSONEncoder().encode(CustomizationPack(id: "bad", name: "Bad", layout: .init(sidebarWidth: 50)))
+            .write(to: mods.appendingPathComponent("bad.json"))
+
+        store.send("!mod instalar mods/bad.json", to: id)
+        XCTAssertTrue(store.errorMessage?.contains("No se pudo instalar el mod") == true)
+        XCTAssertTrue(store.customization.packs.isEmpty)
+        XCTAssertTrue(store.customization.enabledIDs.isEmpty)
+    }
+
+    @MainActor func testModDesapareceDeLaListaYSeRechazaEnLight() throws {
+        let root = try projectDirectory("mod-light")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = ChatStore(archive: ChatArchive(directory: root), preferences: nil, lightMode: true)
+        defer { store.shutdown() }
+        let id = try XCTUnwrap(store.create(projectPath: root.path, provider: .codex))
+        store.applyCustomization()
+        XCTAssertFalse(store.jackCommands.contains { $0.name == "mod" })
+        store.send("!mod listar", to: id)
+        XCTAssertTrue(store.errorMessage?.contains("Normal") == true)
+        store.errorMessage = nil
+        store.send("!comandos", to: id)
+        let help = try XCTUnwrap(store.conversations.first { $0.id == id }?.messages.last?.text)
+        XCTAssertFalse(help.contains("!mod"), help)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Customization").path))
+    }
+
     @MainActor private func projectDirectory(_ name: String) throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("jack-custom-\(name)-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)

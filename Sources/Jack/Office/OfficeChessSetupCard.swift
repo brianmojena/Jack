@@ -1,4 +1,6 @@
+#if canImport(JackCore)
 import JackCore
+#endif
 import SwiftUI
 
 /// El cuadro para mandar a dos personajes a jugar al ajedrez: con quién juega el personaje pulsado y qué maestro interpreta

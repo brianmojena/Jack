@@ -4,7 +4,7 @@ Chat nativo y compacto para gestionar varios agentes de desarrollo en macOS. Int
 
 ## Versionado
 
-La versión actual es **0.3.65**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
+La versión actual es **0.3.66**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
 
 ## Construir
 
@@ -217,6 +217,7 @@ Escribe `!` en el cuadro de mensaje para ver sugerencias; Tab completa, Enter en
 | `!revisar` | Pide revisar cambios sin editar archivos. |
 | `!presupuesto 20000` | Inicia un presupuesto aproximado desde cero y avisa al 80 %. No detiene la ejecución. `off` lo desactiva. |
 | `!comandos` | Lista comandos y plantillas personales. |
+| `!mod crear descripción` | Le encarga al agente escribir un mod de personalización en `mods/<id>.json` del proyecto. `!mod instalar mods/<id>.json` lo valida, lo instala y lo activa; `!mod listar` muestra los mods y su estado. Solo en el modo Normal. |
 
 Crea una plantilla con `!comandos crear mi-comando instrucciones {{args}}` y úsala con `!mi-comando argumentos`. Repetir el nombre actualiza su plantilla; `!comandos eliminar mi-comando` la elimina. Las plantillas son globales a Jack y se guardan en `Chats/commands.json`; inicialmente se incluyen `!revisar-pr`, `!documentar` y `!preparar-release`.
 

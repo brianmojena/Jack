@@ -118,6 +118,11 @@ struct ChatModelPicker: View {
                     }
                     Button("Actualizar modelos de Qoder") { Task { await store.refreshQoderModels() } }
                         .disabled(store.loadingQoderModels)
+                } else if conversation.provider == .claude, allowsCloud {
+                    // Normal: the exact model, not only the family.
+                    ClaudeModelMenuItems(choices: choices, selected: conversation.model) { id in
+                        store.updateSettings(id: conversation.id, model: id, effort: conversation.effort)
+                    }
                 } else {
                     ForEach(choices) { choice in modelButton(choice) }
                 }

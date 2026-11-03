@@ -9,6 +9,12 @@ public struct OfficePersona: Equatable, Sendable {
     public let profile: String
     /// Una línea para que los demás sepan con quién hablan.
     public let about: String
+
+    public init(name: String, profile: String, about: String) {
+        self.name = name
+        self.profile = profile
+        self.about = about
+    }
 }
 
 public enum OfficePersonas {

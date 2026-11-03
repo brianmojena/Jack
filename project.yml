@@ -58,6 +58,53 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ENABLE_APP_SANDBOX: NO
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
+  # Jack en el iPhone: la oficina 3D con el mismo motor que la Mac (Sources/Jack/Office/Engine, compilado en las dos apps) y la
+  # lógica pura de los juegos de JackCore. Agentes y modelos se los pide a la Mac de la red local.
+  JackMobile:
+    type: application
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - Sources/JackMobile
+      # La oficina entera (motor e interfaz) es la misma que en la Mac; solo cambia quién da los agentes.
+      - path: Sources/Jack/Office
+        excludes:
+          - ChatStore+OfficeHost.swift
+      # Lo de JackCore que piensa y juega en la oficina (Gemma y los demás modelos se piden a la Mac).
+      - Sources/JackCore/Chess.swift
+      - Sources/JackCore/PlayingCards.swift
+      - Sources/JackCore/ChessMasters.swift
+      - Sources/JackCore/Poker.swift
+      - Sources/JackCore/Blackjack.swift
+      - Sources/JackCore/LiarGame.swift
+      - Sources/JackCore/ChatModels.swift
+      - Sources/JackCore/ChatModelChoice.swift
+      - Sources/JackCore/ChatUsage.swift
+      - Sources/JackCore/StellarOllama.swift
+      - Sources/JackCore/OfficeBrain.swift
+      - Sources/JackCore/OfficeNarrator.swift
+      - Sources/JackCore/OfficeChatter.swift
+      - Sources/JackCore/OfficeChessPlayer.swift
+      - Sources/JackCore/OfficeCardTalker.swift
+      - Sources/JackCore/OfficePersonas.swift
+      - Sources/JackCore/OfficeInspiration.swift
+      # Jack Remote: el iPhone le pide a la Mac que ejecute los agentes.
+      - Sources/JackCore/JackRemoteProtocol.swift
+      - path: Resources/Office/Runtime
+        buildPhase: resources
+      - path: Resources/Office/Cards
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.jack.mobile
+        PRODUCT_NAME: Jack
+        INFOPLIST_FILE: Resources/Mobile/Info.plist
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_IDENTITY: "Apple Development"
+        CODE_SIGN_STYLE: Automatic
+        # Equipo de Fernando (el mismo que Financia, Claula y FelicityHogar).
+        DEVELOPMENT_TEAM: 3978UBKA75
+        IPHONEOS_DEPLOYMENT_TARGET: "18.0"
   jack-progress:
     type: tool
     platform: macOS
@@ -71,6 +118,10 @@ targets:
         # Uses the JackCore.framework embedded in Jack.app/Contents/Frameworks.
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
 schemes:
+  JackMobile:
+    build:
+      targets:
+        JackMobile: all
   Jack:
     build:
       targets:

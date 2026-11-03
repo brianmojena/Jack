@@ -21,6 +21,17 @@ public extension ChatModelChoice {
     static let antigravityEfforts = ["low", "medium", "high", "xhigh", "max"]
     /// Reasoning levels `qodercli` accepts; the selected model decides which it implements.
     static let qoderEfforts = ["low", "medium", "high", "xhigh", "max"]
+    /// The exact Claude models, by family, newest first. The aliases above always mean "the latest of the family"; these pin one version
+    /// (`claude --model claude-opus-4-8`). Normal mode only: Light keeps the four aliases.
+    static let claudeVersions: [(family: String, models: [ChatModelChoice])] = [
+        ("Fable", [("claude-fable-5-1", "Fable 5.1"), ("claude-fable-5", "Fable 5")]),
+        ("Opus", [("claude-opus-5-5", "Opus 5.5"), ("claude-opus-5", "Opus 5"), ("claude-opus-4-8", "Opus 4.8"), ("claude-opus-4-7", "Opus 4.7"),
+                  ("claude-opus-4-6", "Opus 4.6"), ("claude-opus-4-5", "Opus 4.5")]),
+        ("Sonnet", [("claude-sonnet-5-5", "Sonnet 5.5"), ("claude-sonnet-5", "Sonnet 5"), ("claude-sonnet-4-6", "Sonnet 4.6"),
+                    ("claude-sonnet-4-5-20250929", "Sonnet 4.5")]),
+        ("Haiku", [("claude-haiku-5-5", "Haiku 5.5"), ("claude-haiku-4-5-20251001", "Haiku 4.5")])
+    ].map { family, models in (family, models.map { ChatModelChoice(id: $0.0, title: $0.1, efforts: claudeEfforts(for: $0.0)) }) }
+    static var claudeExact: [ChatModelChoice] { claudeVersions.flatMap(\.models) }
     /// Levels Claude Code accepts for `--effort` with an alias or full model id.
     /// Haiku 4.x and models before Opus 4.5 reject effort; Opus 4.5 lacks xhigh/max; the 4.6 family lacks xhigh.
     /// Haiku 5+ supports effort levels.
@@ -74,6 +85,7 @@ public extension ChatModelChoice {
     }
 }
 
+#if os(macOS)
 enum ChatModelCatalog {
     /// Reuse the CLI's local catalog: opening the picker never starts an agent.
     /// Reads the CLI's own model list: one `slug<TAB>title` line per model. No inference is started.
@@ -160,6 +172,7 @@ enum ChatModelCatalog {
         }
     }
 }
+#endif
 
 public struct OpenCodeProviderModels: Identifiable, Equatable {
     public var id: String
