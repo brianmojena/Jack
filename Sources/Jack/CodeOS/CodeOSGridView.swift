@@ -13,7 +13,7 @@ struct CodeOSGridView: View {
             let inner = geo.size.width - 2 * 110 * u
             let columns = max(Int((inner + spacing) / (cell + spacing)), 1)
             ZStack {
-                Color.black.opacity(0.72).background(.ultraThinMaterial).ignoresSafeArea()
+                Color.canvas.opacity(0.72).background(.ultraThinMaterial).ignoresSafeArea()
                 VStack(alignment: .leading, spacing: 26 * u) {
                     HStack(alignment: .firstTextBaseline) {
                         Text("TODOS LOS PROYECTOS").font(.system(size: 30 * u, weight: .heavy)).tracking(2 * u)
@@ -23,7 +23,7 @@ struct CodeOSGridView: View {
                             Label("Mostrando los quitados", systemImage: "eye").font(.system(size: 17 * u, weight: .semibold)).foregroundStyle(.orange)
                         }
                     }
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.ink)
                     ScrollViewReader { proxy in
                         ScrollView(showsIndicators: false) {
                             LazyVGrid(columns: Array(repeating: GridItem(.fixed(cell), spacing: spacing, alignment: .top), count: columns), alignment: .leading, spacing: 34 * u) {
@@ -40,6 +40,7 @@ struct CodeOSGridView: View {
                     HStack(spacing: 38 * u) {
                         hint("FLECHAS", "NAVEGAR", u, action: nil)
                         hint("ENTER", "ABRIR", u) { model.activateGrid() }
+                        hint("N", "NUEVO", u) { model.openPicker() }
                         hint("BORRAR", "QUITAR O RESTAURAR", u) { model.toggleGridHidden() }
                         hint("H", model.showHidden ? "OCULTAR LOS QUITADOS" : "MOSTRAR LOS QUITADOS", u) { model.toggleShowHidden() }
                         hint("ESC", "VOLVER", u) { model.closeGrid() }
@@ -57,10 +58,10 @@ struct CodeOSGridView: View {
         Button { action?() } label: {
             HStack(spacing: 12 * u) {
                 Text(glyph).font(.system(size: 16 * u, weight: .bold)).padding(.horizontal, 10 * u).frame(minWidth: 34 * u, minHeight: 34 * u)
-                    .overlay(Capsule().strokeBorder(.white.opacity(0.9), lineWidth: 2 * u))
+                    .overlay(Capsule().strokeBorder(.ink.opacity(0.9), lineWidth: 2 * u))
                 Text(label).font(.system(size: 16 * u, weight: .bold)).tracking(1.5 * u)
             }
-            .foregroundStyle(.white.opacity(0.9))
+            .foregroundStyle(.ink.opacity(0.9))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -75,13 +76,13 @@ struct CodeOSGridView: View {
                 .overlay(alignment: .topTrailing) {
                     if removed {
                         Image(systemName: "eye.slash.fill").font(.system(size: 16 * u, weight: .bold)).foregroundStyle(.white)
-                            .padding(8 * u).background(.black.opacity(0.65), in: Circle()).padding(10 * u)
+                            .padding(8 * u).background(.canvas.opacity(0.65), in: Circle()).padding(10 * u)
                     }
                 }
                 .focusRing(focused, u: u)
                 .shadow(color: .black.opacity(focused ? 0.6 : 0), radius: 22 * u, y: 8 * u)
                 .scaleEffect(focused ? 1.07 : 1)
-            Text(project.name).font(.system(size: 17 * u, weight: .semibold)).foregroundStyle(.white.opacity(focused ? 1 : 0.65)).lineLimit(1)
+            Text(project.name).font(.system(size: 17 * u, weight: .semibold)).foregroundStyle(.ink.opacity(focused ? 1 : 0.65)).lineLimit(1)
         }
         .frame(width: side, alignment: .leading)
         .opacity(removed ? 0.45 : 1)
