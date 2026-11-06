@@ -950,7 +950,7 @@ struct MainWindowView: View {
                 ApprovalCard(approval: approval, provider: conversation.provider, projectPath: conversation.projectPath,
                              repliesInChat: store.canSend(to: conversation.id) && store.statuses[conversation.id]?.isActive == true,
                              // ⌘↩ belongs to the composer while it holds a message: it interrupts and sends it.
-                             shortcutsEnabled: !inPane && (drafts[conversation.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                             shortcutsEnabled: !inPane && (drafts[conversation.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, pagedQuestions: true,
                              onRespond: { choice, message in store.respond(conversationID: conversation.id, approvalID: approval.id, choice: choice, message: message) },
                              onAnswer: { answers in store.answer(conversationID: conversation.id, approvalID: approval.id, answers: answers) })
             }

@@ -373,7 +373,7 @@ struct AgentPaneView: View, Equatable {
                     VStack(spacing: 8) {
                         ForEach(approvals) { approval in
                             ApprovalCard(approval: approval, provider: conversation.provider, projectPath: conversation.projectPath,
-                                         repliesInChat: false, shortcutsEnabled: false,
+                                         repliesInChat: false, shortcutsEnabled: false, pagedQuestions: true,
                                          onRespond: { onRespond(approval.id, $0, $1) },
                                          onAnswer: { onAnswer(approval.id, $0) })
                         }

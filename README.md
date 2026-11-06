@@ -2,9 +2,11 @@
 
 Chat nativo y compacto para gestionar varios agentes de desarrollo en macOS. Interfaz oscura en SwiftUI/AppKit, con proyectos, conversaciones independientes, herramientas plegables y permisos dentro del chat.
 
+La versión de Windows en C# y WinUI 3 comienza en [`Windows/`](Windows/README.md). Incluye una base de interfaz del modo Normal y un núcleo independiente que se puede comprobar en macOS; la ventana requiere Windows, también dentro de una máquina virtual.
+
 ## Versionado
 
-La versión actual es **0.3.66**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
+La versión actual es **0.3.69**. Las siguientes versiones avanzan dentro de la serie **0.3**, hasta **0.3.99**. El salto a **0.4** por un cambio grande se hará únicamente cuando el usuario lo indique explícitamente.
 
 ## Construir
 

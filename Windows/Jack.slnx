@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="Jack.Core/Jack.Core.csproj" />
+  <Project Path="Jack.Core.Checks/Jack.Core.Checks.csproj" />
+  <Project Path="Jack.WinUI/Jack.WinUI.csproj" />
+</Solution>

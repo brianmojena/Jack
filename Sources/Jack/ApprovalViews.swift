@@ -11,6 +11,8 @@ struct ApprovalCard: View {
     let repliesInChat: Bool
     /// Off while the composer holds a message, so ⌘↩ sends it instead of answering here.
     var shortcutsEnabled = true
+    /// Questions go one at a time (Normal mode); Light keeps the single long form.
+    var pagedQuestions = false
     let onRespond: (_ choice: String, _ message: String?) -> Void
     let onAnswer: ([String: String]) -> Void
 
@@ -22,7 +24,7 @@ struct ApprovalCard: View {
                 Spacer()
             }
             if !approval.questions.isEmpty {
-                ChatQuestionForm(approval: approval, shortcutsEnabled: shortcutsEnabled, onAnswer: onAnswer)
+                ChatQuestionForm(approval: approval, shortcutsEnabled: shortcutsEnabled, paged: pagedQuestions, onAnswer: onAnswer)
             } else if approval.isPlan {
                 ScrollView { PlanBox(text: approval.detail) }
                     .frame(maxHeight: 340)
@@ -146,38 +148,19 @@ struct ApprovalCard: View {
 struct ChatQuestionForm: View {
     let approval: ChatApproval
     var shortcutsEnabled = true
+    var paged = false
     let onAnswer: ([String: String]) -> Void
     @State private var answers: [String: String] = [:]
     @State private var selections: [String: Set<String>] = [:]
+    @State private var step = 0
 
     var body: some View {
+        if paged { wizard } else { form }
+    }
+
+    private var form: some View {
         VStack(alignment: .leading, spacing: 14) {
-            ForEach(approval.questions) { question in
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 6) {
-                        if !question.header.isEmpty {
-                            Text(question.header.uppercased())
-                                .font(.system(size: 9, weight: .bold)).tracking(0.5)
-                                .padding(.horizontal, 6).padding(.vertical, 2)
-                                .background(JackPalette.panelStrong, in: Capsule())
-                                .foregroundStyle(JackPalette.muted)
-                        }
-                        Text(question.question).font(.system(size: 12.5, weight: .medium))
-                    }
-                    if let options = question.options, !options.isEmpty {
-                        ForEach(options, id: \.label) { option in
-                            optionRow(option, question: question)
-                        }
-                    }
-                    let binding = Binding(get: { answers[question.id] ?? "" }, set: { answers[question.id] = $0 })
-                    if question.isSecret == true {
-                        SecureField("Respuesta", text: binding).textFieldStyle(.roundedBorder)
-                    } else {
-                        TextField(question.options?.isEmpty == false ? "Otra respuesta" : "Escribe tu respuesta", text: binding)
-                            .textFieldStyle(.roundedBorder)
-                    }
-                }
-            }
+            ForEach(approval.questions) { questionView($0) }
             HStack {
                 Spacer()
                 Button("Enviar respuestas") { onAnswer(finalAnswers) }
@@ -185,6 +168,83 @@ struct ChatQuestionForm: View {
                     .keyboardShortcut(shortcutsEnabled ? KeyboardShortcut(.return, modifiers: .command) : nil)
                     .disabled(approval.questions.contains { (finalAnswers[$0.id] ?? "").isEmpty })
                     .help("Enviar respuestas (⌘↩)")
+            }
+        }
+    }
+
+    /// One question at a time with a progress bar, so a long list never outgrows the window.
+    private var wizard: some View {
+        let questions = approval.questions
+        let index = min(step, questions.count - 1)
+        let question = questions[index]
+        let last = index == questions.count - 1
+        return VStack(alignment: .leading, spacing: 12) {
+            if questions.count > 1 { progress(questions, index) }
+            ScrollView { questionView(question).frame(maxWidth: .infinity, alignment: .leading) }
+                .frame(maxHeight: 280)
+                .fixedSize(horizontal: false, vertical: true)
+                .id(question.id)
+                .transition(.opacity)
+            HStack(spacing: 8) {
+                if index > 0 { Button("Atrás") { go(index - 1) } }
+                Spacer()
+                Button(last ? "Enviar respuestas" : "Siguiente") { if last { onAnswer(finalAnswers) } else { go(index + 1) } }
+                    .buttonStyle(.borderedProminent).tint(JackPalette.accent)
+                    .keyboardShortcut(shortcutsEnabled ? KeyboardShortcut(.return, modifiers: .command) : nil)
+                    .disabled(!isAnswered(question))
+                    .help((last ? "Enviar respuestas" : "Siguiente") + " (⌘↩)")
+            }
+        }
+    }
+
+    private func progress(_ questions: [ChatInputQuestion], _ index: Int) -> some View {
+        // You can go back, or forward only over what is already answered.
+        let reachable = questions.firstIndex { !isAnswered($0) } ?? questions.count - 1
+        return HStack(spacing: 5) {
+            ForEach(Array(questions.enumerated()), id: \.element.id) { i, q in
+                Button { go(i) } label: {
+                    Capsule()
+                        .fill(i == index ? JackPalette.accent : (isAnswered(q) ? JackPalette.accent.opacity(0.45) : JackPalette.panelStrong))
+                        .frame(height: 4)
+                        .padding(.vertical, 4)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(i > reachable)
+            }
+            Text("\(index + 1) de \(questions.count)")
+                .font(.system(size: 10.5, weight: .medium)).monospacedDigit().foregroundStyle(JackPalette.muted)
+                .padding(.leading, 4)
+        }
+    }
+
+    private func go(_ index: Int) { withAnimation(.easeOut(duration: 0.15)) { step = index } }
+
+    private func isAnswered(_ question: ChatInputQuestion) -> Bool { !(finalAnswers[question.id] ?? "").isEmpty }
+
+    private func questionView(_ question: ChatInputQuestion) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                if !question.header.isEmpty {
+                    Text(question.header.uppercased())
+                        .font(.system(size: 9, weight: .bold)).tracking(0.5)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(JackPalette.panelStrong, in: Capsule())
+                        .foregroundStyle(JackPalette.muted)
+                }
+                Text(question.question).font(.system(size: 12.5, weight: .medium))
+            }
+            if let options = question.options, !options.isEmpty {
+                ForEach(options, id: \.label) { option in
+                    optionRow(option, question: question)
+                }
+            }
+            let binding = Binding(get: { answers[question.id] ?? "" }, set: { answers[question.id] = $0 })
+            if question.isSecret == true {
+                SecureField("Respuesta", text: binding).textFieldStyle(.roundedBorder)
+            } else {
+                TextField(question.options?.isEmpty == false ? "Otra respuesta" : "Escribe tu respuesta", text: binding)
+                    .textFieldStyle(.roundedBorder)
             }
         }
     }
