@@ -34,14 +34,14 @@ struct CodeOSHomeView: View {
                             .frame(width: size.width, height: size.height)
                             .clipped()
                             .overlay {
-                                LinearGradient(stops: [.init(color: .black.opacity(0.78), location: 0), .init(color: .black.opacity(0.35), location: 0.32), .init(color: .clear, location: 0.58)],
+                                LinearGradient(stops: [.init(color: .canvas.opacity(0.78), location: 0), .init(color: .canvas.opacity(0.35), location: 0.32), .init(color: .clear, location: 0.58)],
                                                startPoint: .leading, endPoint: .trailing)
                             }
                             .overlay {
-                                LinearGradient(stops: [.init(color: .clear, location: 0.55), .init(color: .black.opacity(0.6), location: 1)], startPoint: .top, endPoint: .bottom)
+                                LinearGradient(stops: [.init(color: .clear, location: 0.55), .init(color: .canvas.opacity(0.6), location: 1)], startPoint: .top, endPoint: .bottom)
                             }
                             .overlay {
-                                LinearGradient(colors: [.black.opacity(0.35), .clear], startPoint: .top, endPoint: .init(x: 0.5, y: 0.2))
+                                LinearGradient(colors: [.canvas.opacity(0.35), .clear], startPoint: .top, endPoint: .init(x: 0.5, y: 0.2))
                             }
                     } else {
                         ZStack(alignment: .trailing) {
@@ -85,36 +85,53 @@ struct CodeOSHomeView: View {
             HStack(spacing: 30 * u) {
                 counter("bolt.fill", model.allProjects.filter(\.isLive).count, u)
                 counter("clock.fill", model.allProjects.filter { CodeOSCategory.today.accepts($0) }.count, u)
+                newProjectButton(u)
                 profileBadge(u)
             }
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(.ink)
         .padding(.horizontal, 90 * u)
         .padding(.top, 52 * u)
     }
 
-    /// Who is playing on this Mac and what is left of their share of the Claude quota. Clicking it opens the quota panel.
+    /// Who is working on this Mac and what is left of their share of the Claude quota. Clicking it opens the quota panel.
     private func profileBadge(_ u: CGFloat) -> some View {
         let profile = model.quota.current
         let remaining = model.quota.ownRemaining
         return HStack(spacing: 14 * u) {
             Circle().fill(LinearGradient(colors: [Color(hue: profile?.hue ?? 0.6, saturation: 0.65, brightness: 0.95), Color(hue: profile?.hue ?? 0.6, saturation: 0.8, brightness: 0.45)], startPoint: .topLeading, endPoint: .bottomTrailing))
                 .frame(width: 56 * u, height: 56 * u)
-                .overlay(Text(String(profile?.name.first ?? "J")).font(.system(size: 26 * u, weight: .bold)))
+                .overlay(Text(String(profile?.name.first ?? "J")).font(.system(size: 26 * u, weight: .bold)).foregroundStyle(.white))
             VStack(alignment: .leading, spacing: 2 * u) {
-                Text(profile?.name ?? "Jugador").font(.system(size: 26 * u, weight: .semibold))
+                Text(profile?.name ?? "Perfil").font(.system(size: 26 * u, weight: .semibold))
                 if !model.quota.active {
                     Label("En pausa", systemImage: "pause.fill").font(.system(size: 17 * u, weight: .medium)).foregroundStyle(.orange)
                 } else if let remaining {
                     Label(remaining <= 0 ? "Sin cuota" : "Queda \(Int(remaining.rounded())) %", systemImage: "gauge.with.dots.needle.33percent")
-                        .font(.system(size: 17 * u, weight: .medium)).foregroundStyle(remaining <= 0 ? .red : .white.opacity(0.75))
+                        .font(.system(size: 17 * u, weight: .medium)).foregroundStyle(remaining <= 0 ? .red : .ink.opacity(0.75))
                 } else {
-                    Label("\(model.allProjects.count) proyectos", systemImage: "folder.fill").font(.system(size: 17 * u, weight: .medium)).foregroundStyle(.white.opacity(0.75))
+                    Label("\(model.allProjects.count) proyectos", systemImage: "folder.fill").font(.system(size: 17 * u, weight: .medium)).foregroundStyle(.ink.opacity(0.75))
                 }
             }
         }
         .contentShape(Rectangle())
         .onTapGesture { model.toggleQuotaPanel() }
+    }
+
+    /// Starts a project in a folder of the computer, existing or new (key N).
+    private func newProjectButton(_ u: CGFloat) -> some View {
+        Button { model.openPicker() } label: {
+            HStack(spacing: 10 * u) {
+                Image(systemName: "plus").font(.system(size: 20 * u, weight: .bold))
+                Text("NUEVO PROYECTO").font(.system(size: 17 * u, weight: .heavy)).tracking(1.5 * u)
+                Text("N").font(.system(size: 13 * u, weight: .bold)).padding(.horizontal, 8 * u).padding(.vertical, 2 * u)
+                    .overlay(Capsule().strokeBorder(.ink.opacity(0.6), lineWidth: 1.5 * u))
+            }
+            .padding(.horizontal, 20 * u).padding(.vertical, 11 * u)
+            .background(.ink.opacity(0.16), in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     private func counter(_ symbol: String, _ count: Int, _ u: CGFloat) -> some View {
@@ -140,7 +157,7 @@ struct CodeOSHomeView: View {
             }
             Button { model.shiftCategory(1) } label: { keycap("E", u) }.buttonStyle(.plain)
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(.ink)
         .animation(.easeOut(duration: 0.2), value: model.category)
         .offset(x: 120 * u, y: 150 * u)
     }
@@ -148,8 +165,8 @@ struct CodeOSHomeView: View {
     private func keycap(_ label: String, _ u: CGFloat) -> some View {
         Text(label).font(.system(size: 15 * u, weight: .bold))
             .padding(.horizontal, 12 * u).padding(.vertical, 4 * u)
-            .overlay(Capsule().strokeBorder(.white.opacity(0.55), lineWidth: 1.6 * u))
-            .foregroundStyle(.white.opacity(0.7))
+            .overlay(Capsule().strokeBorder(.ink.opacity(0.55), lineWidth: 1.6 * u))
+            .foregroundStyle(.ink.opacity(0.7))
     }
 
     // MARK: Info
@@ -159,9 +176,18 @@ struct CodeOSHomeView: View {
             VStack(alignment: .leading, spacing: 14 * u) {
                 Text("Todos los proyectos").font(.system(size: 62 * u, weight: .heavy)).lineLimit(1)
                 Text("\(model.allProjects.count) proyectos en una cuadrícula")
-                    .font(.system(size: 23 * u, weight: .semibold)).foregroundStyle(.white.opacity(0.75))
+                    .font(.system(size: 23 * u, weight: .semibold)).foregroundStyle(.ink.opacity(0.75))
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(.ink)
+            .frame(width: size.width * 0.5, alignment: .leading)
+            .offset(x: 190 * u, y: size.height - 280 * u - 130 * u - 360 * u)
+        } else if model.loaded, model.focused == nil, model.focus == model.visible.count + 1 {
+            VStack(alignment: .leading, spacing: 14 * u) {
+                Text("Nuevo proyecto").font(.system(size: 62 * u, weight: .heavy)).lineLimit(1)
+                Text("En una carpeta que ya existe o en una nueva")
+                    .font(.system(size: 23 * u, weight: .semibold)).foregroundStyle(.ink.opacity(0.75))
+            }
+            .foregroundStyle(.ink)
             .frame(width: size.width * 0.5, alignment: .leading)
             .offset(x: 190 * u, y: size.height - 280 * u - 130 * u - 360 * u)
         } else if let project = model.focused {
@@ -170,13 +196,13 @@ struct CodeOSHomeView: View {
                     .font(.system(size: 62 * u, weight: .heavy)).lineLimit(1)
                     .shadow(color: .black.opacity(0.5), radius: 12 * u)
                 Label(project.ago, systemImage: project.isLive ? "bolt.fill" : "clock")
-                    .font(.system(size: 23 * u, weight: .semibold)).foregroundStyle(project.isLive ? Color.cyan : .white.opacity(0.75))
+                    .font(.system(size: 23 * u, weight: .semibold)).foregroundStyle(project.isLive ? Color.cyan : .ink.opacity(0.75))
                 if !project.title.isEmpty {
                     Text("«\(project.title)»")
-                        .font(.system(size: 20 * u)).foregroundStyle(.white.opacity(0.7)).lineLimit(2)
+                        .font(.system(size: 20 * u)).foregroundStyle(.ink.opacity(0.7)).lineLimit(2)
                 }
                 Text(project.id)
-                    .font(.system(size: 17 * u, design: .monospaced)).foregroundStyle(.white.opacity(0.55))
+                    .font(.system(size: 17 * u, design: .monospaced)).foregroundStyle(.ink.opacity(0.55))
                     .lineLimit(1).truncationMode(.head)
                 Button { model.openFocused() } label: {
                     HStack(spacing: 12 * u) {
@@ -184,17 +210,17 @@ struct CodeOSHomeView: View {
                         Text("Abrir proyecto").fontWeight(.bold)
                     }
                     .font(.system(size: 23 * u))
-                    .foregroundStyle(.black)
+                    .foregroundStyle(.canvas)
                     .padding(.horizontal, 36 * u).padding(.vertical, 16 * u)
-                    .background(.white, in: Capsule())
+                    .background(.ink, in: Capsule())
                 }
                 .buttonStyle(.plain)
                 .padding(.top, 10 * u)
                 if let notice = model.notice {
-                    Text(notice).font(.system(size: 17 * u, weight: .medium)).foregroundStyle(.white.opacity(0.8)).padding(.top, 6 * u)
+                    Text(notice).font(.system(size: 17 * u, weight: .medium)).foregroundStyle(.ink.opacity(0.8)).padding(.top, 6 * u)
                 }
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(.ink)
             .frame(width: size.width * 0.5, alignment: .leading)
             .offset(x: 190 * u, y: size.height - 280 * u - 130 * u - 360 * u)
             .id(project.id)
@@ -232,9 +258,15 @@ struct CodeOSHomeView: View {
                     .frame(width: all.side, height: all.side)
                     .offset(x: all.x, y: centerY - all.side / 2)
                     .onTapGesture { if model.focus == projects.count { model.openGrid() } else { model.moveFocus(projects.count - model.focus) } }
-                Text((model.focused?.name ?? "Ver todos").uppercased())
+                // After it, the tile that starts a project in a folder.
+                let add = place(projects.count + 1)
+                CodeOSNewProjectTile(focused: model.focus == projects.count + 1, u: u)
+                    .frame(width: add.side, height: add.side)
+                    .offset(x: add.x, y: centerY - add.side / 2)
+                    .onTapGesture { if model.focus == projects.count + 1 { model.openPicker() } else { model.moveFocus(projects.count + 1 - model.focus) } }
+                Text((model.focused?.name ?? (model.focus == projects.count ? "Ver todos" : "Nuevo proyecto")).uppercased())
                     .font(.system(size: 16 * u, weight: .heavy)).tracking(2 * u)
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(.ink.opacity(0.6))
                     .offset(x: baseX, y: centerY + big / 2 + 18 * u)
             }
         }
@@ -264,10 +296,10 @@ struct CodeOSHomeView: View {
         Button(action: action) {
             HStack(spacing: 12 * u) {
                 Text(key).font(.system(size: 15 * u, weight: .bold)).padding(.horizontal, 12 * u).frame(minWidth: 34 * u, minHeight: 34 * u)
-                    .overlay(Capsule().strokeBorder(.white.opacity(0.9), lineWidth: 2 * u))
+                    .overlay(Capsule().strokeBorder(.ink.opacity(0.9), lineWidth: 2 * u))
                 Text(label).font(.system(size: 17 * u, weight: .bold)).tracking(1.5 * u)
             }
-            .foregroundStyle(.white.opacity(0.9))
+            .foregroundStyle(.ink.opacity(0.9))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -284,7 +316,7 @@ struct CodeOSTile: View {
         CodeOSArtwork(project: project, art: art, corner: 7 * u)
             .overlay(alignment: .bottomTrailing) {
                 Image(systemName: "bolt.fill")
-                    .font(.system(size: 13 * u, weight: .bold)).foregroundStyle(.white)
+                    .font(.system(size: 13 * u, weight: .bold)).foregroundStyle(.ink)
                     .frame(width: 30 * u, height: 30 * u)
                     .background(Color.cyan, in: Circle())
                     .padding(10 * u)
@@ -307,13 +339,35 @@ struct CodeOSSeeAllTile: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 7 * u, style: .continuous).fill(.white.opacity(0.1))
+            RoundedRectangle(cornerRadius: 7 * u, style: .continuous).fill(.ink.opacity(0.1))
             VStack(spacing: 14 * u) {
                 Image(systemName: "square.grid.3x3.fill").font(.system(size: 54 * u))
                 Text("VER TODOS").font(.system(size: 17 * u, weight: .heavy)).tracking(2 * u)
                 Text("\(count)").font(.system(size: 15 * u, weight: .medium)).opacity(0.6)
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(.ink)
+        }
+        .focusRing(focused, u: u)
+        .shadow(color: .black.opacity(focused ? 0.5 : 0.2), radius: focused ? 24 * u : 8 * u, y: 10 * u)
+        .brightness(focused ? 0 : -0.1)
+    }
+}
+
+/// The tile after "see all": starts a project in a folder, existing or new.
+struct CodeOSNewProjectTile: View {
+    let focused: Bool
+    let u: CGFloat
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 7 * u, style: .continuous).fill(.ink.opacity(0.1))
+            RoundedRectangle(cornerRadius: 7 * u, style: .continuous).strokeBorder(.ink.opacity(0.35), style: StrokeStyle(lineWidth: 2 * u, dash: [8 * u, 6 * u]))
+            VStack(spacing: 14 * u) {
+                Image(systemName: "plus").font(.system(size: 54 * u, weight: .light))
+                Text("NUEVO").font(.system(size: 17 * u, weight: .heavy)).tracking(2 * u)
+                Text("PROYECTO").font(.system(size: 15 * u, weight: .medium)).tracking(1 * u).opacity(0.6)
+            }
+            .foregroundStyle(.ink)
         }
         .focusRing(focused, u: u)
         .shadow(color: .black.opacity(focused ? 0.5 : 0.2), radius: focused ? 24 * u : 8 * u, y: 10 * u)
@@ -326,7 +380,7 @@ extension View {
     func focusRing(_ focused: Bool, u: CGFloat, corner: CGFloat = 7) -> some View {
         let shape = RoundedRectangle(cornerRadius: corner * u, style: .continuous)
         return self
-            .overlay { shape.strokeBorder(.white.opacity(focused ? 0.75 : 0), lineWidth: 10 * u).blur(radius: 9 * u) }
-            .overlay { shape.strokeBorder(.white.opacity(focused ? 1 : 0.08), lineWidth: focused ? 3 * u : 1.5 * u) }
+            .overlay { shape.strokeBorder(.ink.opacity(focused ? 0.75 : 0), lineWidth: 10 * u).blur(radius: 9 * u) }
+            .overlay { shape.strokeBorder(.ink.opacity(focused ? 1 : 0.08), lineWidth: focused ? 3 * u : 1.5 * u) }
     }
 }

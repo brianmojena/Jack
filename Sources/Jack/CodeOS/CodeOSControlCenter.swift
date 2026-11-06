@@ -3,18 +3,19 @@ import SwiftUI
 /// The PlayStation "control center": a panel that slides up with the agents on top and the projects as cards below.
 struct CodeOSControlCenter: View {
     @ObservedObject var model: CodeOSModel
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         GeometryReader { geo in
             let u = max(geo.size.width / 2000, 0.45)
             ZStack(alignment: .bottom) {
-                Color.black.opacity(0.4).ignoresSafeArea()
+                Color.canvas.opacity(0.4).ignoresSafeArea()
                     .onTapGesture { model.closeControlCenter() }
                 VStack(alignment: .leading, spacing: 26 * u) {
                     agentsRow(u)
                     Text("PROYECTOS")
                         .font(.system(size: 16 * u, weight: .heavy)).tracking(2.5 * u)
-                        .foregroundStyle(.white.opacity(0.55))
+                        .foregroundStyle(.ink.opacity(0.55))
                     projectsRow(u)
                 }
                 .padding(.horizontal, 90 * u)
@@ -24,7 +25,7 @@ struct CodeOSControlCenter: View {
                 .background {
                     ZStack {
                         Rectangle().fill(.ultraThinMaterial)
-                        LinearGradient(colors: [.black.opacity(0.35), .black.opacity(0.7)], startPoint: .top, endPoint: .bottom)
+                        LinearGradient(colors: [.canvas.opacity(0.35), .canvas.opacity(0.7)], startPoint: .top, endPoint: .bottom)
                     }
                     .clipShape(UnevenRoundedRectangle(topLeadingRadius: 34 * u, topTrailingRadius: 34 * u))
                     .ignoresSafeArea()
@@ -39,16 +40,16 @@ struct CodeOSControlCenter: View {
                 let focused = model.ccRow == 0 && model.ccCol == index
                 VStack(spacing: 12 * u) {
                     ZStack {
-                        Circle().fill(.white.opacity(model.agent == agent ? 0.95 : 0.16))
+                        Circle().fill(.ink.opacity(model.agent == agent ? 0.95 : 0.16))
                         CodeOSAgentGlyph(agent: agent)
                             .padding(22 * u)
-                            .foregroundStyle(model.agent == agent ? .black : .white)
+                            .foregroundStyle(model.agent == agent ? .canvas : .ink)
                     }
                     .frame(width: 92 * u, height: 92 * u)
-                    .overlay(Circle().strokeBorder(.white, lineWidth: focused ? 4 * u : 0).padding(-6 * u))
+                    .overlay(Circle().strokeBorder(.ink, lineWidth: focused ? 4 * u : 0).padding(-6 * u))
                     .scaleEffect(focused ? 1.12 : 1)
                     Text(agent.rawValue).font(.system(size: 16 * u, weight: .semibold))
-                        .foregroundStyle(.white.opacity(focused ? 1 : 0.55))
+                        .foregroundStyle(.ink.opacity(focused ? 1 : 0.55))
                 }
                 .contentShape(Rectangle())
                 .onTapGesture { model.selectControl(row: 0, col: index) }
@@ -57,26 +58,37 @@ struct CodeOSControlCenter: View {
             VStack(spacing: 12 * u) {
                 Image(systemName: model.neutralGlass ? "circle.lefthalf.filled" : "paintpalette.fill").font(.system(size: 34 * u, weight: .medium))
                     .frame(width: 92 * u, height: 92 * u)
-                    .background(Circle().fill(.white.opacity(0.16)))
-                    .overlay(Circle().strokeBorder(.white, lineWidth: glassFocused ? 4 * u : 0).padding(-6 * u))
+                    .background(Circle().fill(.ink.opacity(0.16)))
+                    .overlay(Circle().strokeBorder(.ink, lineWidth: glassFocused ? 4 * u : 0).padding(-6 * u))
                     .scaleEffect(glassFocused ? 1.12 : 1)
-                Text(model.neutralGlass ? "Cristal: neutro" : "Cristal: color").font(.system(size: 16 * u, weight: .semibold)).foregroundStyle(.white.opacity(glassFocused ? 1 : 0.55))
+                Text(model.neutralGlass ? "Cristal: neutro" : "Cristal: color").font(.system(size: 16 * u, weight: .semibold)).foregroundStyle(.ink.opacity(glassFocused ? 1 : 0.55))
             }
             .contentShape(Rectangle())
             .onTapGesture { model.selectControl(row: 0, col: CodeOSAgent.allCases.count) }
-            let exitFocused = model.ccRow == 0 && model.ccCol == CodeOSAgent.allCases.count + 1
+            let appearanceFocused = model.ccRow == 0 && model.ccCol == CodeOSAgent.allCases.count + 1
             VStack(spacing: 12 * u) {
-                Image(systemName: "power").font(.system(size: 34 * u, weight: .medium))
+                Image(systemName: model.appearance.symbol).font(.system(size: 34 * u, weight: .medium))
                     .frame(width: 92 * u, height: 92 * u)
-                    .background(Circle().fill(.white.opacity(0.16)))
-                    .overlay(Circle().strokeBorder(.white, lineWidth: exitFocused ? 4 * u : 0).padding(-6 * u))
-                    .scaleEffect(exitFocused ? 1.12 : 1)
-                Text("Salir de CodeOS").font(.system(size: 16 * u, weight: .semibold)).foregroundStyle(.white.opacity(exitFocused ? 1 : 0.55))
+                    .background(Circle().fill(.ink.opacity(0.16)))
+                    .overlay(Circle().strokeBorder(.ink, lineWidth: appearanceFocused ? 4 * u : 0).padding(-6 * u))
+                    .scaleEffect(appearanceFocused ? 1.12 : 1)
+                Text(model.appearance.label(resolved: colorScheme)).font(.system(size: 16 * u, weight: .semibold)).foregroundStyle(.ink.opacity(appearanceFocused ? 1 : 0.55))
             }
             .contentShape(Rectangle())
             .onTapGesture { model.selectControl(row: 0, col: CodeOSAgent.allCases.count + 1) }
+            let exitFocused = model.ccRow == 0 && model.ccCol == CodeOSAgent.allCases.count + 2
+            VStack(spacing: 12 * u) {
+                Image(systemName: "power").font(.system(size: 34 * u, weight: .medium))
+                    .frame(width: 92 * u, height: 92 * u)
+                    .background(Circle().fill(.ink.opacity(0.16)))
+                    .overlay(Circle().strokeBorder(.ink, lineWidth: exitFocused ? 4 * u : 0).padding(-6 * u))
+                    .scaleEffect(exitFocused ? 1.12 : 1)
+                Text("Salir de CodeOS").font(.system(size: 16 * u, weight: .semibold)).foregroundStyle(.ink.opacity(exitFocused ? 1 : 0.55))
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { model.selectControl(row: 0, col: CodeOSAgent.allCases.count + 2) }
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(.ink)
         .animation(.spring(response: 0.3, dampingFraction: 0.75), value: model.ccCol)
         .animation(.spring(response: 0.3, dampingFraction: 0.75), value: model.ccRow)
     }
@@ -93,15 +105,15 @@ struct CodeOSControlCenter: View {
                             VStack(alignment: .leading, spacing: 6 * u) {
                                 Text(project.name).font(.system(size: 22 * u, weight: .bold)).lineLimit(1)
                                 Label(project.ago, systemImage: project.isLive ? "bolt.fill" : "clock")
-                                    .font(.system(size: 14 * u, weight: .medium)).foregroundStyle(project.isLive ? Color.cyan : .white.opacity(0.6))
+                                    .font(.system(size: 14 * u, weight: .medium)).foregroundStyle(project.isLive ? Color.cyan : .ink.opacity(0.6))
                             }
                             Spacer(minLength: 0)
                         }
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.ink)
                         .padding(16 * u)
                         .frame(width: 360 * u, height: 136 * u)
-                        .background(.white.opacity(focused ? 0.22 : 0.1), in: RoundedRectangle(cornerRadius: 18 * u, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 18 * u, style: .continuous).strokeBorder(.white, lineWidth: focused ? 4 * u : 0))
+                        .background(.ink.opacity(focused ? 0.22 : 0.1), in: RoundedRectangle(cornerRadius: 18 * u, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 18 * u, style: .continuous).strokeBorder(.ink, lineWidth: focused ? 4 * u : 0))
                         .scaleEffect(focused ? 1.05 : 1)
                         .id(index)
                         .onTapGesture { model.moveControl(dx: index - model.ccCol, dy: model.ccRow == 1 ? 0 : 1); model.activateControl() }

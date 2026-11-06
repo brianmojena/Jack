@@ -146,6 +146,7 @@
 		6A89D2DA42A687D07F5F2C3F /* SimulatorPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A3D7246F7BBDA7A8018807 /* SimulatorPanel.swift */; };
 		6B19A3C12DEF7AE66729AA83 /* OfficeChessGame.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D025C650A4072CEEFE9A0C3 /* OfficeChessGame.swift */; };
 		6C0BA18694B6B9295CA04ADA /* OfficeNarrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA6D4C3C0E3982C22F2F25B1 /* OfficeNarrator.swift */; };
+		6D6E50A86ACBF482DAA29570 /* CodeOSRemovalDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78B9A61DC67EED25FD44126E /* CodeOSRemovalDialog.swift */; };
 		6E34413A8520410627E235EB /* FRANKLIN.usdz in Resources */ = {isa = PBXBuildFile; fileRef = FE98510172BA77F6A01641E5 /* FRANKLIN.usdz */; };
 		6E48741064D54833FC2D8A21 /* OfficeLiveScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F734741C87233B79689516 /* OfficeLiveScreen.swift */; };
 		6E931F04DF68F7A53F748B37 /* Avatar_CH31.png in Resources */ = {isa = PBXBuildFile; fileRef = 3459226D16C2F0236403CB33 /* Avatar_CH31.png */; };
@@ -241,6 +242,7 @@
 		B2B738782CA7D19B82A2B3DA /* ChatModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8E5B74C47ED76F7F4E3175D /* ChatModels.swift */; };
 		B2D9FD0F4757AF1C23431935 /* JackPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA7B63BFEAEFC1E0B83AC932 /* JackPalette.swift */; };
 		B3D592FF705AF382D9633262 /* VoiceTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = B28C9861FC67C38346F78797 /* VoiceTranscriber.swift */; };
+		B3DCBABD2B0E3F1EEF3F383D /* CodeOSTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95F663E2869EE06622D10588 /* CodeOSTheme.swift */; };
 		B6D984691FF284FB30D09A8F /* CodeOSSound.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA74E41BD3E7798FCAFF432C /* CodeOSSound.swift */; };
 		B83EE50B4BB0FEC00596D8CA /* OfficeCoffee.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D815300C60870974A7029D0 /* OfficeCoffee.swift */; };
 		B869686F27F6CFF476390BEA /* OfficeProbe_chess.exr in Resources */ = {isa = PBXBuildFile; fileRef = 0B3D2FCDB3BB86E41638DC95 /* OfficeProbe_chess.exr */; };
@@ -301,6 +303,7 @@
 		E9D598D461483F2370503702 /* OfficeChessSet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C4841202DC0C533350F7893 /* OfficeChessSet.swift */; };
 		E9D72567F7366ABEB63F3339 /* NotebookPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE392CC548349392081A80A6 /* NotebookPanel.swift */; };
 		EA5AF718CED48B60FEF2D5CF /* OfficeInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE36C499F0CD0494F65F0521 /* OfficeInput.swift */; };
+		EA8E2312D34B47D610054009 /* CodeOSFolderPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2827C5DBB15B2D2EA0CD77D /* CodeOSFolderPicker.swift */; };
 		EB4769F610D6F7890CBE5D6D /* OfficeProbe_sofa.exr in Resources */ = {isa = PBXBuildFile; fileRef = 4D62294F7536095356FAA42A /* OfficeProbe_sofa.exr */; };
 		EC04FA625364509E11174352 /* MarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BF3FCA24BA069D694B0B6F5 /* MarkdownText.swift */; };
 		EC2FDDB9F5C92E0F87CD45CC /* Sounds in Resources */ = {isa = PBXBuildFile; fileRef = AB6534A56549DFA1F449F357 /* Sounds */; };
@@ -499,6 +502,7 @@
 		7099A2B3636CAE85AFECF7D0 /* GitPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitPanel.swift; sourceTree = "<group>"; };
 		751CF530CDA44A89E3355D46 /* JackCoreShims.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JackCoreShims.swift; sourceTree = "<group>"; };
 		76103D558313260D9DDCFE3B /* ChatStore+OfficeHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatStore+OfficeHost.swift"; sourceTree = "<group>"; };
+		78B9A61DC67EED25FD44126E /* CodeOSRemovalDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeOSRemovalDialog.swift; sourceTree = "<group>"; };
 		78C11E2375D0EEFC17C10123 /* CodeOSQuotaCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeOSQuotaCoordinator.swift; sourceTree = "<group>"; };
 		7A561D763A0E7B6F2E944330 /* CodeOSKeys.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeOSKeys.swift; sourceTree = "<group>"; };
 		7D602CBF657553B31FAB243B /* OfficeShower.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeShower.swift; sourceTree = "<group>"; };
@@ -531,6 +535,7 @@
 		8F6561788FB990BD803A0FB9 /* ProgressViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressViews.swift; sourceTree = "<group>"; };
 		9058B4C83D52331892F608A0 /* WorktreeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorktreeService.swift; sourceTree = "<group>"; };
 		94A395B75510E22A65D43219 /* VoiceDictationButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceDictationButton.swift; sourceTree = "<group>"; };
+		95F663E2869EE06622D10588 /* CodeOSTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeOSTheme.swift; sourceTree = "<group>"; };
 		961D65BF09CA18DC77CB3C3D /* OfficeColleagueView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeColleagueView.swift; sourceTree = "<group>"; };
 		96265CFED9209661366D40C0 /* AgentPanes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPanes.swift; sourceTree = "<group>"; };
 		96983360D5027E3E66961F25 /* OfficeInspiration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeInspiration.swift; sourceTree = "<group>"; };
@@ -546,6 +551,7 @@
 		9F03DC36A276F7393F2A6E07 /* OfficePostProcess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficePostProcess.swift; sourceTree = "<group>"; };
 		9F335A04485E5B6B54EAEEDB /* CodeOSCoverWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeOSCoverWriter.swift; sourceTree = "<group>"; };
 		A093DD8DC6081C7E5DB0FA3D /* StatusBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBar.swift; sourceTree = "<group>"; };
+		A2827C5DBB15B2D2EA0CD77D /* CodeOSFolderPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeOSFolderPicker.swift; sourceTree = "<group>"; };
 		A3A3D7246F7BBDA7A8018807 /* SimulatorPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatorPanel.swift; sourceTree = "<group>"; };
 		A513FA72943E495D585C29AB /* JackSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JackSidebar.swift; sourceTree = "<group>"; };
 		A5DA957BF049BAF361BA307D /* OfficeInterfaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeInterfaceView.swift; sourceTree = "<group>"; };
@@ -788,6 +794,7 @@
 			children = (
 				C9B57B4402676E0C3DC3A25D /* CodeOSControlCenter.swift */,
 				E4506F7C4ABABAAAE7E1CE5B /* CodeOSCovers.swift */,
+				A2827C5DBB15B2D2EA0CD77D /* CodeOSFolderPicker.swift */,
 				8B9FF5D801E87D00459F6C1C /* CodeOSFramework.swift */,
 				6BD4A6056435F3477F2BF01F /* CodeOSGridView.swift */,
 				0BB65EE5A201EAD7009FE137 /* CodeOSHomeView.swift */,
@@ -796,9 +803,11 @@
 				8D186CCFB7E87C05455C56AD /* CodeOSModel.swift */,
 				C234DD653EA816B862D7A5B6 /* CodeOSProfilesView.swift */,
 				78C11E2375D0EEFC17C10123 /* CodeOSQuotaCoordinator.swift */,
+				78B9A61DC67EED25FD44126E /* CodeOSRemovalDialog.swift */,
 				84ACDDF82F3FC9BAB63BF15B /* CodeOSRootView.swift */,
 				B212B0A9B3568681BA198957 /* CodeOSSessionView.swift */,
 				DA74E41BD3E7798FCAFF432C /* CodeOSSound.swift */,
+				95F663E2869EE06622D10588 /* CodeOSTheme.swift */,
 			);
 			path = CodeOS;
 			sourceTree = "<group>";
@@ -1386,6 +1395,7 @@
 				8CFA9AFD04527815E8EC6FC0 /* ClaudeSessionPicker.swift in Sources */,
 				77B471556E73B54194C14BCA /* CodeOSControlCenter.swift in Sources */,
 				7ACACF06DA9AAA621380149F /* CodeOSCovers.swift in Sources */,
+				EA8E2312D34B47D610054009 /* CodeOSFolderPicker.swift in Sources */,
 				AEB42BD2B7F73D7B7FFFC3B6 /* CodeOSFramework.swift in Sources */,
 				110277F9DBA65AE493EF5520 /* CodeOSGridView.swift in Sources */,
 				C2E273C4551A0395957BB993 /* CodeOSHomeView.swift in Sources */,
@@ -1394,9 +1404,11 @@
 				E2323A48216D9273326541A1 /* CodeOSModel.swift in Sources */,
 				641A89CC3E0310B725D9B2B3 /* CodeOSProfilesView.swift in Sources */,
 				5BDF5A671FF2F8E6EA65CD8D /* CodeOSQuotaCoordinator.swift in Sources */,
+				6D6E50A86ACBF482DAA29570 /* CodeOSRemovalDialog.swift in Sources */,
 				6229D401A643831DE768B902 /* CodeOSRootView.swift in Sources */,
 				975DFC455AAFA1DFA98D3E6A /* CodeOSSessionView.swift in Sources */,
 				B6D984691FF284FB30D09A8F /* CodeOSSound.swift in Sources */,
+				B3DCBABD2B0E3F1EEF3F383D /* CodeOSTheme.swift in Sources */,
 				F4C4F1A3CBF9BF0DD8CEB3FB /* ContextPanelView.swift in Sources */,
 				531EA1998B5E7521E31CEC85 /* CustomizationAppearance.swift in Sources */,
 				0B9EADBC19694EDE76F0B47D /* CustomizationSettingsView.swift in Sources */,

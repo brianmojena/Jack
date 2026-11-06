@@ -125,9 +125,9 @@ struct CodeOSLine: Identifiable {
 
     private let store: ChatStore
     private let sound = CodeOSSound.shared
-    private static let samples = ["Jack", "BuildCloud", "Financia", "Revolico", "Portfolio", "Sandbox"].map { CodeOSProject(path: "/Users/demo/\($0)") }
+    private static let samples = ["Jack", "BuildCloud", "Financia", "Revolico", "Portfolio", "Sandbox"].map { CodeOSProject(path: samplePrefix + $0) }
     /// Row 0 of the control center: the three agents, the glass mode and "leave CodeOS".
-    static let controlItems = CodeOSAgent.allCases.count + 2
+    static let controlItems = CodeOSAgent.allCases.count + 3
 
     /// Shared-account profiles and quota. Its changes also refresh the views that watch the model.
     let quota: CodeOSQuotaCoordinator
@@ -140,10 +140,19 @@ struct CodeOSLine: Identifiable {
     @Published private(set) var quotaPanel = false
     @Published private(set) var editingCode = false
 
+    /// The folder browser for starting a project in an existing or a new folder.
+    let picker = CodeOSFolderPicker()
+    private var pickerObserver: AnyCancellable?
+    @Published private(set) var pickerVisible = false
+    private static let addedKey = "codeOSAddedProjects"
+    private static let samplePrefix = "/Users/demo/"
+
     init(store: ChatStore) {
         self.store = store
         quota = CodeOSQuotaCoordinator(store: store)
         quotaObserver = quota.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        pickerObserver = picker.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        picker.onOpen = { [weak self] path in self?.addProject(path: path) }
         Task { await load() }
     }
 
@@ -171,7 +180,17 @@ struct CodeOSLine: Identifiable {
             }
             return projects
         }.value
-        catalog = found.isEmpty ? Self.samples : found
+        // Folders the user started projects in from CodeOS, which Claude Code may not have sessions for yet.
+        let added = UserDefaults.standard.dictionary(forKey: Self.addedKey) as? [String: Double] ?? [:]
+        var merged = found
+        for (path, time) in added where !found.contains(where: { $0.id == path }) {
+            var isDirectory: ObjCBool = false
+            if FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue {
+                merged.append(CodeOSProject(path: path, updatedAt: Date(timeIntervalSince1970: time)))
+            }
+        }
+        merged.sort { $0.updatedAt > $1.updatedAt }
+        catalog = merged.isEmpty ? Self.samples : merged
         loaded = true
         for project in catalog { if let cover = CodeOSCoverStore.existing(for: project) { covers[project.id] = cover } }
         await loadArt()
@@ -202,7 +221,7 @@ struct CodeOSLine: Identifiable {
 
     func moveFocus(_ delta: Int) {
         // One past the last project is the "see all" tile, once the projects are there.
-        let target = min(max(focus + delta, 0), loaded ? visible.count : 0)
+        let target = min(max(focus + delta, 0), loaded ? visible.count + 1 : 0)
         guard target != focus else { return }
         focus = target
         sound.move(forward: delta > 0)
@@ -229,6 +248,7 @@ struct CodeOSLine: Identifiable {
     func openFocused() {
         guard let focused else {
             if loaded, focus == visible.count { openGrid() }
+            if loaded, focus == visible.count + 1 { openPicker() }
             return
         }
         launch(focused)
@@ -237,8 +257,38 @@ struct CodeOSLine: Identifiable {
     /// Takes the focused project off the list. It stays in the grid's hidden set, where it can be put back.
     func removeFocused() {
         guard let project = focused else { return }
+        askToRemove(project)
+    }
+
+    /// Removing a project asks first. The choice starts on "Cancelar", so a stray Enter keeps the project.
+    @Published private(set) var pendingRemoval: CodeOSProject?
+    @Published private(set) var removalConfirmed = false
+
+    private func askToRemove(_ project: CodeOSProject) {
+        pendingRemoval = project
+        removalConfirmed = false
+        sound.play(.panel)
+    }
+
+    func chooseRemoval(_ remove: Bool) {
+        guard pendingRemoval != nil, remove != removalConfirmed else { return }
+        removalConfirmed = remove
+        sound.move(forward: remove)
+    }
+
+    func cancelRemoval() {
+        guard pendingRemoval != nil else { return }
+        pendingRemoval = nil
+        sound.play(.panelClose)
+    }
+
+    func answerRemoval() {
+        guard let project = pendingRemoval else { return }
+        guard removalConfirmed else { cancelRemoval(); return }
+        pendingRemoval = nil
         hide(project)
         focus = min(focus, visible.count)
+        gridFocus = min(gridFocus, max(gridProjects.count - 1, 0))
         notify("«\(project.name)» quitado de la lista. En «Ver todos», H muestra los quitados.")
     }
 
@@ -252,6 +302,44 @@ struct CodeOSLine: Identifiable {
         hidden.remove(project.id)
         UserDefaults.standard.set(Array(hidden), forKey: hiddenKey)
         sound.play(.select)
+    }
+
+    // MARK: New project
+
+    func openPicker() {
+        guard loaded, !pickerVisible, !controlCenter else { return }
+        picker.start(near: allProjects.map(\.id))
+        pickerVisible = true
+        sound.play(.panel)
+    }
+
+    func closePicker() {
+        guard pickerVisible else { return }
+        if picker.creating { picker.cancelCreating(); return }
+        picker.stop()
+        pickerVisible = false
+        sound.play(.panelClose)
+    }
+
+    /// Opens a folder as a project: one already on the list is simply launched; a new one is added to it (and remembered).
+    func addProject(path: String) {
+        picker.stop()
+        pickerVisible = false
+        gridVisible = false
+        if let known = catalog.first(where: { $0.id == path }) {
+            if hidden.contains(known.id) { restore(known) }
+            launch(known)
+            return
+        }
+        let project = CodeOSProject(path: path, updatedAt: .now)
+        catalog.removeAll { $0.id.hasPrefix(Self.samplePrefix) }
+        catalog.insert(project, at: 0)
+        var added = UserDefaults.standard.dictionary(forKey: Self.addedKey) as? [String: Double] ?? [:]
+        added[path] = Date.now.timeIntervalSince1970
+        UserDefaults.standard.set(added, forKey: Self.addedKey)
+        if let cover = CodeOSCoverStore.existing(for: project) { covers[project.id] = cover }
+        launch(project)
+        Task { await loadArt(for: project) }
     }
 
     // MARK: Grid ("see all")
@@ -294,8 +382,12 @@ struct CodeOSLine: Identifiable {
     func toggleGridHidden() {
         guard gridProjects.indices.contains(gridFocus) else { return }
         let project = gridProjects[gridFocus]
-        if hidden.contains(project.id) { restore(project) } else { hide(project) }
-        gridFocus = min(gridFocus, max(gridProjects.count - 1, 0))
+        if hidden.contains(project.id) {
+            restore(project)
+            gridFocus = min(gridFocus, max(gridProjects.count - 1, 0))
+        } else {
+            askToRemove(project)
+        }
     }
 
     func toggleShowHidden() {
@@ -372,6 +464,8 @@ struct CodeOSLine: Identifiable {
             sound.play(.select)
         } else if ccCol == CodeOSAgent.allCases.count {
             toggleGlassMode()
+        } else if ccCol == CodeOSAgent.allCases.count + 1 {
+            cycleAppearance()
         } else {
             exit()
         }
@@ -475,6 +569,15 @@ struct CodeOSLine: Identifiable {
         neutralGlass ? Color(red: 0.07, green: 0.08, blue: 0.12) : tint(project)
     }
 
+    /// Follow the system, or force dark or light. Remembered between runs.
+    @Published private(set) var appearance = CodeOSAppearance(rawValue: UserDefaults.standard.string(forKey: "codeOSAppearance") ?? "") ?? .system
+
+    func cycleAppearance() {
+        appearance = appearance.next
+        UserDefaults.standard.set(appearance.rawValue, forKey: "codeOSAppearance")
+        sound.play(.tab)
+    }
+
     func toggleGlassMode() {
         neutralGlass.toggle()
         UserDefaults.standard.set(neutralGlass, forKey: "codeOSNeutralGlass")
@@ -510,23 +613,25 @@ struct CodeOSLine: Identifiable {
     // MARK: Artwork
 
     private func loadArt() async {
-        for project in catalog {
-            let urls = await Task.detached(priority: .utility) { CodeOSIconFinder.candidates(in: project.id) }.value
-            var found = false
-            for url in urls {
-                guard let image = NSImage(contentsOf: url), image.size.width >= 24, image.isRoughlySquare else { continue }
-                let fingerprint = (try? Data(contentsOf: url))?.hashValue ?? 0
-                art[project.id] = Art(image: image, tint: image.codeOSTint() ?? project.color, fingerprint: fingerprint)
-                found = true
-                break
-            }
-            // No icon of its own: the logo of the framework it is built with.
-            if !found, let logo = await CodeOSFramework.logo(for: project.id) {
-                let seed = logo.slug.utf8.reduce(5381) { ($0 &* 33) &+ Int($1) }
-                art[project.id] = Art(image: logo.image, tint: logo.tint, framework: logo.name, fingerprint: seed)
-            }
-            markShared()
+        for project in catalog { await loadArt(for: project) }
+    }
+
+    private func loadArt(for project: CodeOSProject) async {
+        let urls = await Task.detached(priority: .utility) { CodeOSIconFinder.candidates(in: project.id) }.value
+        var found = false
+        for url in urls {
+            guard let image = NSImage(contentsOf: url), image.size.width >= 24, image.isRoughlySquare else { continue }
+            let fingerprint = (try? Data(contentsOf: url))?.hashValue ?? 0
+            art[project.id] = Art(image: image, tint: image.codeOSTint() ?? project.color, fingerprint: fingerprint)
+            found = true
+            break
         }
+        // No icon of its own: the logo of the framework it is built with.
+        if !found, let logo = await CodeOSFramework.logo(for: project.id) {
+            let seed = logo.slug.utf8.reduce(5381) { ($0 &* 33) &+ Int($1) }
+            art[project.id] = Art(image: logo.image, tint: logo.tint, framework: logo.name, fingerprint: seed)
+        }
+        markShared()
     }
 
     /// Projects whose pictures are the same (two FastAPI backends) are flagged, and their tiles show the project's name too.

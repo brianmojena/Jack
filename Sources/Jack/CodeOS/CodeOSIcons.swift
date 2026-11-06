@@ -144,7 +144,7 @@ struct CodeOSAgentGlyph: View {
     let agent: CodeOSAgent
     var body: some View {
         if let image = CodeOSAgentLogo.image(agent) {
-            Image(nsImage: image).resizable().scaledToFit()
+            Image(nsImage: image).renderingMode(.template).resizable().scaledToFit()
         } else {
             Image(systemName: "terminal.fill").resizable().scaledToFit()
         }

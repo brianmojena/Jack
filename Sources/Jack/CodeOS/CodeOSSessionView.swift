@@ -38,11 +38,11 @@ struct CodeOSSessionView: View {
             CodeOSArtwork(project: project, art: art, corner: 34)
                 .frame(width: 220, height: 220)
                 .shadow(color: tint.opacity(0.6), radius: 50)
-            Text(project.name).font(.system(size: 34, weight: .heavy)).foregroundStyle(.white)
+            Text(project.name).font(.system(size: 34, weight: .heavy)).foregroundStyle(.ink)
             VStack(spacing: 10) {
-                Capsule().fill(.white.opacity(0.18)).frame(width: 300, height: 5)
-                    .overlay(alignment: .leading) { Capsule().fill(.white).frame(width: 300 * progress, height: 5) }
-                Text("Abriendo \(model.agent.rawValue)…").font(.system(size: 14, weight: .medium)).foregroundStyle(.white.opacity(0.6))
+                Capsule().fill(.ink.opacity(0.18)).frame(width: 300, height: 5)
+                    .overlay(alignment: .leading) { Capsule().fill(.ink).frame(width: 300 * progress, height: 5) }
+                Text("Abriendo \(model.agent.rawValue)…").font(.system(size: 14, weight: .medium)).foregroundStyle(.ink.opacity(0.6))
             }
         }
     }
@@ -67,7 +67,7 @@ struct CodeOSSessionView: View {
             }
             .frame(width: 300)
             .clipShape(pane)
-            .overlay(pane.strokeBorder(.white.opacity(0.14), lineWidth: 1))
+            .overlay(pane.strokeBorder(.ink.opacity(0.14), lineWidth: 1))
             // Header, tools bar, chat and panes are one view: the tools act on the panes beside the chat.
             MainWindowView(store: store, workspace: workspace, memory: memory, batterySaver: batterySaver, updateChecker: updateChecker, embedded: .chat,
                            embeddedProjectPath: project.id, embeddedHeader: AnyView(header))
@@ -90,7 +90,7 @@ struct CodeOSSessionView: View {
             CodeOSArtwork(project: project, art: art, corner: 11).frame(width: 46, height: 46)
             VStack(alignment: .leading, spacing: 2) {
                 Text(project.name).font(.system(size: 21, weight: .bold))
-                Text(project.id).font(.system(size: 11, design: .monospaced)).foregroundStyle(.white.opacity(0.5)).lineLimit(1).truncationMode(.head)
+                Text(project.id).font(.system(size: 11, design: .monospaced)).foregroundStyle(.ink.opacity(0.5)).lineLimit(1).truncationMode(.head)
             }
             Spacer()
             if model.quota.current != nil {
@@ -107,7 +107,7 @@ struct CodeOSSessionView: View {
                 .onTapGesture { model.toggleQuotaPanel() }
             }
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(.ink)
         .padding(.horizontal, 6).padding(.vertical, 2)
     }
 
