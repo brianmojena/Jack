@@ -43,6 +43,7 @@
 		1BF9A3E36EE8C3A22FAED9ED /* Poker.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0B96659DFE2D6C91137CF16 /* Poker.swift */; };
 		1CBA15934CD2A42A0EA8BA8C /* StellarOllama.swift in Sources */ = {isa = PBXBuildFile; fileRef = A876B8D68DB87F9B72220174 /* StellarOllama.swift */; };
 		1D800C23AAC1D146F406F585 /* OfficeCoffee.usdz in Resources */ = {isa = PBXBuildFile; fileRef = FA3913908EAAFE4B49420F97 /* OfficeCoffee.usdz */; };
+		1DA59F73108366746A7B0491 /* CodeOSUpdateBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B12A5E1728A36E180F65868 /* CodeOSUpdateBanner.swift */; };
 		1E413BE4FA305A05CFCDA372 /* BrowserPick.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99043DC6E87DB144C2ECE631 /* BrowserPick.swift */; };
 		1E4B9916484367A33AC3D959 /* ChatUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D0A660EF197200211C217B4 /* ChatUsage.swift */; };
 		1E71710EE3FCDE5449D84BBD /* OfficeLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E5C4FA969B19D4A4E474A64 /* OfficeLayout.swift */; };
@@ -397,6 +398,7 @@
 		17C8EF45B0037C8560493285 /* FlowPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowPanel.swift; sourceTree = "<group>"; };
 		19DB586343084F37D7CD7B3A /* OfficeDisplays.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeDisplays.swift; sourceTree = "<group>"; };
 		1ABE22C8EB6AC06EEB29920D /* ServerViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerViews.swift; sourceTree = "<group>"; };
+		1B12A5E1728A36E180F65868 /* CodeOSUpdateBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeOSUpdateBanner.swift; sourceTree = "<group>"; };
 		1D804F6903E93D790E25E568 /* OfficeSofaTalk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeSofaTalk.swift; sourceTree = "<group>"; };
 		1F423DD30951E6CA1861E4D6 /* MacLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacLink.swift; sourceTree = "<group>"; };
 		1F48DF4EF23F5BEDC6454518 /* OfficeChessHumanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeChessHumanView.swift; sourceTree = "<group>"; };
@@ -740,6 +742,7 @@
 				B212B0A9B3568681BA198957 /* CodeOSSessionView.swift */,
 				DA74E41BD3E7798FCAFF432C /* CodeOSSound.swift */,
 				95F663E2869EE06622D10588 /* CodeOSTheme.swift */,
+				1B12A5E1728A36E180F65868 /* CodeOSUpdateBanner.swift */,
 			);
 			path = CodeOS;
 			sourceTree = "<group>";
@@ -1289,6 +1292,7 @@
 				975DFC455AAFA1DFA98D3E6A /* CodeOSSessionView.swift in Sources */,
 				B6D984691FF284FB30D09A8F /* CodeOSSound.swift in Sources */,
 				B3DCBABD2B0E3F1EEF3F383D /* CodeOSTheme.swift in Sources */,
+				1DA59F73108366746A7B0491 /* CodeOSUpdateBanner.swift in Sources */,
 				F4C4F1A3CBF9BF0DD8CEB3FB /* ContextPanelView.swift in Sources */,
 				051E30A12B62E96A652522D3 /* FileExplorer.swift in Sources */,
 				7115EB2F2F1B010FA082BF0D /* FlowPanel.swift in Sources */,
