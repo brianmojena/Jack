@@ -9,7 +9,8 @@ struct CodeOSRootView: View {
     let workspace: WorkspaceSessions
     let memory: WindowMemory
     let batterySaver: BatterySaver
-    let updateChecker: UpdateChecker
+    @ObservedObject var updateChecker: UpdateChecker
+    @State private var updateError: String?
 
     init(store: ChatStore, workspace: WorkspaceSessions, memory: WindowMemory, batterySaver: BatterySaver, updateChecker: UpdateChecker) {
         self.store = store
@@ -43,6 +44,11 @@ struct CodeOSRootView: View {
                 CodeOSHomeView(model: model)
                     .transition(.opacity)
             }
+            VStack {
+                CodeOSUpdateBanner(checker: updateChecker, error: updateError)
+                Spacer()
+            }
+            .allowsHitTesting(false)
             if model.gridVisible {
                 CodeOSGridView(model: model)
                     .transition(.opacity)
@@ -64,6 +70,7 @@ struct CodeOSRootView: View {
                     .transition(.opacity.combined(with: .scale(scale: 1.04)))
             }
         }
+        .animation(.easeOut(duration: 0.3), value: updateChecker.available?.version.description)
         .animation(.easeInOut(duration: 0.45), value: model.open?.id)
         .animation(.spring(response: 0.42, dampingFraction: 0.86), value: model.controlCenter)
         .animation(.easeOut(duration: 0.25), value: model.gridVisible)
@@ -104,9 +111,33 @@ struct CodeOSRootView: View {
         .animation(.easeInOut(duration: 0.7), value: focus?.id)
     }
 
+    /// Installs the new version and restarts Jack, or downloads the zip when Jack cannot replace itself where it is.
+    private func applyUpdate() {
+        guard updateChecker.status != .downloading, updateChecker.status != .installing else { return }
+        updateError = nil
+        Task {
+            do {
+                if updateChecker.canInstallInPlace {
+                    try await updateChecker.install()
+                    // The helper waits for Jack to quit, replaces it and opens the new version.
+                    NSApp.terminate(nil)
+                } else {
+                    let file = try await updateChecker.download()
+                    NSWorkspace.shared.activateFileViewerSelecting([file])
+                }
+            } catch {
+                updateError = error.localizedDescription
+            }
+        }
+    }
+
     private func handle(_ key: CodeOSKey) -> Bool {
         if key == .fullScreen {
             if let window = NSApp.keyWindow { CodeOSWindow.toggleFullScreen(window) }
+            return true
+        }
+        if key == .update, model.quota.current != nil, updateChecker.available != nil {
+            applyUpdate()
             return true
         }
         // Profile screen: nothing else is on until a profile is chosen.

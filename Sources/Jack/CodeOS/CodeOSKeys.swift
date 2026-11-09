@@ -3,7 +3,7 @@ import SwiftUI
 
 /// What a key press means to the console. Keyboard only: there is no controller support.
 enum CodeOSKey {
-    case left, right, up, down, confirm, back, controlCenter, previousCategory, nextCategory, fullScreen, generate, remove, showAll, toggleHidden, quota, toggleActive, requestQuota, accept, decline, groupCode, changeProfile, newProject, explore
+    case left, right, up, down, confirm, back, controlCenter, previousCategory, nextCategory, fullScreen, generate, remove, showAll, toggleHidden, quota, toggleActive, requestQuota, accept, decline, groupCode, changeProfile, newProject, explore, update
 }
 
 /// Reads the keyboard through an app-level monitor, so the window does not depend on SwiftUI's focus
@@ -60,6 +60,7 @@ struct CodeOSKeyCatcher: NSViewRepresentable {
                 // ⌃⌘F, the system's own shortcut, for full screen when the plain F belongs to the terminal.
                 if event.modifierFlags.contains(.control), event.charactersIgnoringModifiers?.lowercased() == "f" { return .fullScreen }
                 if event.charactersIgnoringModifiers == "u", !event.modifierFlags.contains(.shift) { return .quota }
+                if event.modifierFlags.contains(.shift), event.charactersIgnoringModifiers?.lowercased() == "u" { return .update }
                 // ⌘⇧H ("Home") goes back to the shelf even while typing in the chat; ⌘⎋ does too.
                 if event.modifierFlags.contains(.shift), event.charactersIgnoringModifiers?.lowercased() == "h" { return .back }
                 return event.keyCode == 53 ? .back : nil
@@ -88,6 +89,7 @@ struct CodeOSKeyCatcher: NSViewRepresentable {
                 case "v": return .showAll
                 case "h": return .toggleHidden
                 case "u": return .quota
+                case "i": return .update
                 case "a": return .toggleActive
                 case "r": return .requestQuota
                 case "y": return .accept
