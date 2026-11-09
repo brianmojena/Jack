@@ -93,22 +93,44 @@ struct CodeOSSessionView: View {
                 Text(project.id).font(.system(size: 11, design: .monospaced)).foregroundStyle(.ink.opacity(0.5)).lineLimit(1).truncationMode(.head)
             }
             Spacer()
-            if model.quota.current != nil {
-                Group {
-                    if !model.quota.active {
-                        Label("En pausa", systemImage: "pause.fill")
-                    } else if let remaining = model.quota.ownRemaining {
-                        Label(remaining <= 0 ? "Sin cuota" : "Tu parte: \(Int(remaining.rounded())) %", systemImage: "gauge.with.dots.needle.33percent")
-                    }
-                }
-                .font(.system(size: 13, weight: .semibold))
-                .padding(.horizontal, 14).padding(.vertical, 9)
-                .codeOSGlass(tint: glass.opacity(model.neutralGlass ? 0.55 : 0.3), in: Capsule())
-                .onTapGesture { model.toggleQuotaPanel() }
-            }
+            if model.quota.current != nil { quotaPill }
         }
         .foregroundStyle(.ink)
         .padding(.horizontal, 6).padding(.vertical, 2)
+    }
+
+    /// The account's remaining limit, when the window resets and this profile's share, tap to open the quota panel.
+    private var quotaPill: some View {
+        let quota = model.quota
+        return TimelineView(.periodic(from: .now, by: 30)) { context in
+            HStack(spacing: 12) {
+                if !quota.active {
+                    Label("En pausa", systemImage: "pause.fill")
+                } else {
+                    if let used = quota.usedNow {
+                        Label("Límite: queda \(Int((100 - used).rounded())) %", systemImage: "gauge.with.dots.needle.33percent")
+                    }
+                    if let reset = quota.resetsAt, reset > context.date {
+                        Label("Se restablece en \(Self.countdown(to: reset, now: context.date))", systemImage: "clock")
+                    }
+                    if let remaining = quota.ownRemaining {
+                        Label(remaining <= 0 ? "Sin cuota" : "Tu parte: \(Int(remaining.rounded())) %", systemImage: "person.fill")
+                    }
+                }
+            }
+            .font(.system(size: 13, weight: .semibold))
+            .padding(.horizontal, 14).padding(.vertical, 9)
+            .codeOSGlass(tint: glass.opacity(model.neutralGlass ? 0.55 : 0.3), in: Capsule())
+            .contentShape(Capsule())
+            .onTapGesture { model.toggleQuotaPanel() }
+        }
+    }
+
+    private static func countdown(to reset: Date, now: Date) -> String {
+        let minutes = max(1, Int(ceil(reset.timeIntervalSince(now) / 60)))
+        let hours = minutes / 60, rest = minutes % 60
+        if hours == 0 { return "\(minutes) min" }
+        return rest == 0 ? "\(hours) h" : "\(hours) h \(rest) min"
     }
 
     // MARK: Opening

@@ -10,6 +10,8 @@ import SwiftUI
     @Published private(set) var active = true
     @Published private(set) var shares: [QuotaShare] = []
     @Published private(set) var usedNow: Double?
+    /// When the 5-hour window of the account resets, if the last reading says so.
+    @Published private(set) var resetsAt: Date?
     @Published private(set) var incoming: [QuotaRequest] = []
     @Published private(set) var peerCount = 0
     @Published private(set) var groupCode: String
@@ -211,6 +213,7 @@ import SwiftUI
         guard let current, let ownState = ownState() else { return }
         let window = fiveHourWindow()
         usedNow = window?.usedPercent
+        resetsAt = window?.resetsAt
         peerCount = peers.values.filter { Date().timeIntervalSince($0.updatedAt) < 20 }.count
         // Peers' `updatedAt` is their clock: use when it arrived instead.
         let fresh = peers.values
