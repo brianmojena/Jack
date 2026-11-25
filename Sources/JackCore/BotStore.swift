@@ -46,6 +46,10 @@ public struct BotRoutine: Identifiable, Codable, Equatable, Sendable {
         self.apiOnly = apiOnly; self.createdAt = createdAt; self.lastRunAt = lastRunAt
     }
 
+    /// An agent answers with only this when a scheduled run has nothing to report; the run then stays quiet.
+    public static let quietMarker = "[[no-update]]"
+    static let quietNote = "\n\n(Si no hay nada nuevo que contar, responde únicamente con \(quietMarker).)"
+
     /// Same rules as `Automation.nextRun`, which it borrows rather than copies.
     public func nextRun(calendar: Calendar = .current, now: Date = Date()) -> Date? {
         guard apiOnly != true else { return nil }

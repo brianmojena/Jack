@@ -216,7 +216,7 @@ enum AntigravityTerminalError: LocalizedError {
         let store = BotStore(directory: archive.directory)
         store.run = { [weak self] agent, routine in
             guard let self else { return .failure(.init("Jack se está cerrando")) }
-            return self.sendToBotAgent(routine.instruction, agent: agent)
+            return self.sendToBotAgent(routine.instruction + BotRoutine.quietNote, agent: agent)
         }
         store.deliver = { [weak self] agent, text in
             guard let self else { return .failure(.init("Jack se está cerrando")) }
@@ -1982,14 +1982,17 @@ enum AntigravityTerminalError: LocalizedError {
         let startIndex = turnMessageStartIndices.removeValue(forKey: id) ?? 0
         guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
         let messages = conversations[index].messages
-        if let last = messages.last(where: { ($0.role == "assistant" || $0.role == "error") && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+        let turnMessages = Array(messages.dropFirst(min(startIndex, messages.count)))
+        // A Jack Bot agent with nothing to report answers only the marker: no preview, no unread dot.
+        let quiet = conversations[index].botAgentID != nil
+            && turnMessages.last(where: { $0.role == "assistant" })?.text.trimmingCharacters(in: .whitespacesAndNewlines) == BotRoutine.quietMarker
+        if !quiet, let last = messages.last(where: { ($0.role == "assistant" || $0.role == "error") && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
             conversations[index].preview = Self.preview(of: last.text)
         }
-        let turnMessages = Array(messages.dropFirst(min(startIndex, messages.count)))
         if let reply = turnMessages.last(where: { $0.role == "assistant" && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
             lastReplies[id] = String(reply.text.prefix(24_000))
         }
-        if selectedID != id { conversations[index].hasUnread = true }
+        if selectedID != id, !quiet { conversations[index].hasUnread = true }
     }
 
     // MARK: Delegation

@@ -86,9 +86,11 @@ import XCTest
 
 @MainActor private final class RecordingDriver: ChatDriver {
     var prompts: [String] = []
+    var reply: String?
     func run(conversation: ChatConversation, prompt: String, onEvent: @escaping @MainActor (ChatEvent) -> Void) async throws {
         prompts.append(prompt)
         onEvent(.session(UUID().uuidString))
+        if let reply { onEvent(.text(id: UUID().uuidString, text: reply, replace: false)) }
         onEvent(.completed)
     }
     func respond(approvalID: String, allow: Bool) async throws {}
@@ -342,5 +344,37 @@ import XCTest
         store.bots.upsert(closed)
         api.refresh()
         XCTAssertFalse(FileManager.default.fileExists(atPath: tokenFile.path), "No agent allows scripts: the token must go")
+    }
+}
+
+@MainActor final class BotQuietRunTests: XCTestCase {
+    private func unread(after reply: String, bot: Bool) async throws -> Bool? {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("jack-bot-quiet-" + UUID().uuidString)
+        let store = ChatStore(archive: ChatArchive(directory: folder), preferences: nil, driverFactory: { _ in
+            let driver = RecordingDriver(); driver.reply = reply; return driver
+        })
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        let agent = BotAgent(name: "Ada", projectPath: NSTemporaryDirectory(), provider: .claude)
+        store.bots.upsert(agent)
+        let id = try XCTUnwrap(bot ? store.botConversation(for: agent) : store.create(projectPath: NSTemporaryDirectory(), provider: .claude, select: false))
+        store.send("hola", to: id)
+        for _ in 0..<100 where store.isBusy(id) || store.conversations.first(where: { $0.id == id })?.messages.contains(where: { $0.role == "assistant" }) != true {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        try await Task.sleep(nanoseconds: 100_000_000)
+        return store.conversations.first { $0.id == id }?.hasUnread
+    }
+
+    func testMarkerAnswerStaysQuietForABotAgent() async throws {
+        let quiet = try await unread(after: "[[no-update]]", bot: true)
+        XCTAssertNotEqual(quiet, true)
+    }
+    func testRealAnswerMarksTheBotAgentUnread() async throws {
+        let loud = try await unread(after: "Hay novedades", bot: true)
+        XCTAssertEqual(loud, true)
+    }
+    func testOrdinaryChatIgnoresTheMarker() async throws {
+        let ordinary = try await unread(after: "[[no-update]]", bot: false)
+        XCTAssertEqual(ordinary, true)
     }
 }
