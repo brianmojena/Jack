@@ -215,3 +215,132 @@ import XCTest
         XCTAssertTrue(unknown.1)
     }
 }
+
+@MainActor final class BotAPITests: XCTestCase {
+    private var folder = FileManager.default.temporaryDirectory
+    private var store: ChatStore!
+    private var api: BotAPI!
+    private var drivers: [RecordingDriver] = []
+
+    override func setUp() async throws {
+        folder = FileManager.default.temporaryDirectory.appendingPathComponent("jack-bot-api-" + UUID().uuidString)
+        store = ChatStore(archive: ChatArchive(directory: folder), preferences: nil, driverFactory: { [unowned self] _ in
+            let driver = RecordingDriver(); drivers.append(driver); return driver
+        })
+        // Standalone, so saving an agent does not open a real listener that would replace the port and token below.
+        api = BotAPI(store: store, directory: folder.appendingPathComponent("bot", isDirectory: true))
+        api.port = 4242; api.token = "secret"
+    }
+    override func tearDown() async throws {
+        api.stop(); store.shutdown(); try? FileManager.default.removeItem(at: folder)
+    }
+
+    private func request(_ method: String, _ path: String, body: [String: Any]? = nil, token: String = "secret",
+                         host: String = "127.0.0.1:4242", extra: [String: String] = [:]) async -> (Int, [String: Any]) {
+        var headers = ["host": host, "authorization": "Bearer " + token].merging(extra) { $1 }
+        if token.isEmpty { headers["authorization"] = nil }
+        let data = body.flatMap { try? JSONSerialization.data(withJSONObject: $0) } ?? Data()
+        let response = await api.handle(HTTPRequest(method: method, path: path, headers: headers, body: data))
+        return (response.status, (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any] ?? [:])
+    }
+    private func agent(scripts: Bool = true) -> BotAgent {
+        let agent = BotAgent(name: "Ada", projectPath: NSTemporaryDirectory(), provider: .claude, allowScripts: scripts)
+        store.bots.upsert(agent)
+        return agent
+    }
+    private func waitForStatus(_ delivery: String, _ wanted: String) async -> [String: Any] {
+        for _ in 0..<100 {
+            let (_, data) = await request("GET", "/v1/deliveries/" + delivery)
+            if data["status"] as? String == wanted { return data }
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        return [:]
+    }
+
+    func testRefusesBrowsersForeignHostsAndBadTokensBeforeAnythingElse() async {
+        _ = agent()
+        var result = await request("GET", "/v1/agents", extra: ["origin": "https://evil.example"])
+        XCTAssertEqual(result.0, 403, "A web page can reach loopback")
+        result = await request("GET", "/v1/agents", host: "evil.example")
+        XCTAssertEqual(result.0, 403)
+        result = await request("GET", "/v1/agents", token: "wrong")
+        XCTAssertEqual(result.0, 401)
+        result = await request("GET", "/v1/agents", token: "")
+        XCTAssertEqual(result.0, 401)
+        result = await request("GET", "/v1/agents")
+        XCTAssertEqual(result.0, 200)
+    }
+
+    func testOnlyAgentsWithScriptsOnAreListedAndReachable() async {
+        let open = agent()
+        let closed = BotAgent(name: "Bruno", projectPath: NSTemporaryDirectory(), provider: .claude)
+        store.bots.upsert(closed)
+        let listed = await request("GET", "/v1/agents")
+        XCTAssertEqual((listed.1["agents"] as? [[String: Any]])?.map { $0["name"] as? String }, ["Ada"])
+        let refused = await request("POST", "/v1/agents/bruno/messages", body: ["message": "hola"])
+        XCTAssertEqual(refused.0, 403)
+        XCTAssertTrue(drivers.isEmpty, "Nothing may start an agent that has scripts off")
+        let accepted = await request("POST", "/v1/agents/\(open.id.uuidString)/messages", body: ["message": "hola"])
+        XCTAssertEqual(accepted.0, 202)
+    }
+
+    func testMessageRunsAndTheDeliveryEndsDone() async throws {
+        _ = agent()
+        let (status, data) = await request("POST", "/v1/agents/ada/messages", body: ["message": "haz algo"])
+        XCTAssertEqual(status, 202)
+        let delivery = try XCTUnwrap(data["delivery_id"] as? String)
+        let done = await waitForStatus(delivery, "done")
+        XCTAssertEqual(done["status"] as? String, "done")
+        XCTAssertEqual(drivers.first?.prompts.count, 1)
+        XCTAssertTrue(drivers.first?.prompts.first?.contains("haz algo") == true)
+    }
+
+    func testSameRetryKeyDoesNotSendTwice() async throws {
+        _ = agent()
+        let first = await request("POST", "/v1/agents/ada/messages", body: ["message": "una vez", "id": "k1"])
+        let second = await request("POST", "/v1/agents/ada/messages", body: ["message": "una vez", "id": "k1"])
+        XCTAssertEqual(first.1["delivery_id"] as? String, second.1["delivery_id"] as? String)
+        XCTAssertEqual(second.1["status"] as? String, "duplicate")
+        _ = await waitForStatus(try XCTUnwrap(first.1["delivery_id"] as? String), "done")
+        XCTAssertEqual(drivers.flatMap(\.prompts).count, 1)
+    }
+
+    func testRoutineRunSendsItsInstructionWithThePayload() async throws {
+        let ada = agent()
+        store.bots.upsert(BotRoutine(agentID: ada.id, name: "Build", instruction: "Resume el fallo", startAt: Date(), apiOnly: true))
+        XCTAssertNil(store.bots.routines.first?.nextRun(), "An API-only routine has no schedule")
+        let (status, data) = await request("POST", "/v1/agents/ada/routines/build/run", body: ["payload": "exit 1"])
+        XCTAssertEqual(status, 202)
+        _ = await waitForStatus(try XCTUnwrap(data["delivery_id"] as? String), "done")
+        let prompt = try XCTUnwrap(drivers.first?.prompts.first)
+        XCTAssertTrue(prompt.contains("Resume el fallo") && prompt.contains("exit 1"))
+        let missing = await request("POST", "/v1/agents/ada/routines/nope/run", body: [:])
+        XCTAssertEqual(missing.0, 404)
+    }
+
+    func testAgentGetsAtMostThirtyScriptMessagesPerHour() async {
+        _ = agent()
+        var last = 0
+        for number in 0...BotAPI.runsPerHour { last = await request("POST", "/v1/agents/ada/messages", body: ["message": "m\(number)"]).0 }
+        XCTAssertEqual(last, 429)
+    }
+
+    func testRealListenerWritesPrivateFilesAndStopsWhenNoAgentAllowsScripts() async throws {
+        let ada = agent()
+        api.refresh()
+        let tokenFile = folder.appendingPathComponent("bot/token"), urlFile = folder.appendingPathComponent("bot/url")
+        for _ in 0..<100 where !FileManager.default.fileExists(atPath: tokenFile.path) { try await Task.sleep(nanoseconds: 50_000_000) }
+        func mode(_ url: URL) throws -> Int { try XCTUnwrap(FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? Int) }
+        XCTAssertEqual(try mode(tokenFile), 0o600)
+        XCTAssertEqual(try mode(folder.appendingPathComponent("bot")), 0o700)
+        var request = URLRequest(url: URL(string: try String(contentsOf: urlFile) + "/v1/agents")!)
+        request.setValue("Bearer " + (try String(contentsOf: tokenFile)), forHTTPHeaderField: "Authorization")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        XCTAssertTrue(String(decoding: data, as: UTF8.self).contains("Ada"))
+        var closed = ada; closed.allowScripts = false
+        store.bots.upsert(closed)
+        api.refresh()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: tokenFile.path), "No agent allows scripts: the token must go")
+    }
+}

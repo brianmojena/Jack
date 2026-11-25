@@ -508,12 +508,12 @@ struct HTTPResponse {
     var contentType: String?
 
     static func status(_ code: Int) -> HTTPResponse { HTTPResponse(status: code) }
-    static func json(_ value: Any) -> HTTPResponse {
-        HTTPResponse(status: 200, body: (try? JSONSerialization.data(withJSONObject: value)) ?? Data(), contentType: "application/json")
+    static func json(_ value: Any, status: Int = 200) -> HTTPResponse {
+        HTTPResponse(status: status, body: (try? JSONSerialization.data(withJSONObject: value)) ?? Data(), contentType: "application/json")
     }
 
     var data: Data {
-        let reason = [200: "OK", 202: "Accepted", 400: "Bad Request", 401: "Unauthorized", 404: "Not Found", 405: "Method Not Allowed", 413: "Payload Too Large", 503: "Service Unavailable"][status] ?? "Status"
+        let reason = [200: "OK", 202: "Accepted", 400: "Bad Request", 401: "Unauthorized", 403: "Forbidden", 404: "Not Found", 405: "Method Not Allowed", 413: "Payload Too Large", 429: "Too Many Requests", 503: "Service Unavailable"][status] ?? "Status"
         var head = "HTTP/1.1 \(status) \(reason)\r\nContent-Length: \(body.count)\r\nConnection: keep-alive\r\n"
         if let contentType { head += "Content-Type: \(contentType)\r\n" }
         if status == 405 { head += "Allow: POST, DELETE\r\n" }

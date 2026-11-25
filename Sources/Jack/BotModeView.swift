@@ -235,6 +235,7 @@ struct BotModeView<Chat: View>: View {
     }
 
     private func summary(_ routine: BotRoutine) -> String {
+        if routine.apiOnly == true { return "Solo por API local" + (routine.lastRunAt.map { " · última: \($0.formatted(date: .abbreviated, time: .shortened))" } ?? "") }
         let time = routine.startAt.formatted(date: .omitted, time: .shortened)
         var text: String
         switch routine.frequency {
@@ -289,6 +290,11 @@ private struct BotAgentEditor: View {
                 .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: JackPalette.radius(6)))
             Text("Las instrucciones acompañan a cada mensaje del agente. Su conversación es siempre la misma.")
                 .font(.system(size: 11)).foregroundStyle(JackPalette.faint)
+            Toggle("Permitir scripts locales (API y jack-bot)", isOn: $agent.allowScripts)
+            if agent.allowScripts {
+                Text("Un script de este Mac con el token de Jack puede escribirle hasta \(BotAPI.runsPerHour) veces por hora. Úsalo solo con scripts de confianza.")
+                    .font(.system(size: 11)).foregroundStyle(JackPalette.faint)
+            }
             HStack {
                 Spacer()
                 Button("Cancelar", action: onCancel).keyboardShortcut(.cancelAction)
@@ -330,13 +336,15 @@ private struct BotRoutineEditor: View {
             TextEditor(text: $routine.instruction).font(.system(size: 12.5))
                 .frame(height: 110).scrollContentBackground(.hidden)
                 .background(JackPalette.panel, in: RoundedRectangle(cornerRadius: JackPalette.radius(6)))
+            Toggle("Solo cuando un script la llame (webhook local)", isOn: Binding(get: { routine.apiOnly == true }, set: { routine.apiOnly = $0 ? true : nil }))
             Picker("Cuándo", selection: $routine.frequency) {
                 ForEach(AutomationFrequency.allCases) { Text($0.title).tag($0) }
-            }
-            switch routine.frequency {
-            case .once:
+            }.disabled(routine.apiOnly == true)
+            switch routine.apiOnly == true ? nil : routine.frequency {
+            case nil: EmptyView()
+            case .once?:
                 DatePicker("Fecha y hora", selection: $routine.startAt, displayedComponents: [.date, .hourAndMinute])
-            case .interval:
+            case .interval?:
                 HStack {
                     Stepper("Cada \(max(1, routine.intervalMinutes / unit))", value: Binding(
                         get: { max(1, routine.intervalMinutes / unit) }, set: { routine.intervalMinutes = $0 * unit }), in: 1...999)
@@ -347,9 +355,9 @@ private struct BotRoutineEditor: View {
                     }.labelsHidden().fixedSize()
                 }
                 DatePicker("Primera ejecución", selection: $routine.startAt, displayedComponents: [.date, .hourAndMinute])
-            case .daily, .weekdays:
+            case .daily?, .weekdays?:
                 DatePicker("Hora", selection: $routine.startAt, displayedComponents: .hourAndMinute)
-            case .weekly:
+            case .weekly?:
                 Picker("Día", selection: $routine.weekday) {
                     ForEach(1...7, id: \.self) { Text(Calendar.current.weekdaySymbols[$0 - 1].capitalized).tag($0) }
                 }

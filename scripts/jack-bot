@@ -1,0 +1,116 @@
+#!/usr/bin/env python3
+"""jack-bot: talk to Jack Bot agents from a terminal through Jack's local API.
+
+  jack-bot list
+  jack-bot run <agent> <message|-> [--wait] [--json] [--timeout 30m] [--id KEY]
+  jack-bot routine <agent> <routine> [payload|-] [--wait] [--json] [--timeout 30m] [--id KEY]
+  jack-bot status <delivery>
+
+Exit codes: 0 done, 1 failed or refused, 2 bad command line, 3 the agent waits for a person,
+4 the wait timed out (the agent keeps working), 5 Jack is not running or no agent allows scripts.
+"""
+import argparse, json, os, re, sys, time, urllib.error, urllib.request
+
+DIR = os.environ.get("JACK_BOT_DIR") or os.path.expanduser("~/Library/Application Support/Jack/Chats/bot")
+
+
+def finish(code, payload, as_json, text=None):
+    if as_json:
+        print(json.dumps({"ok": code == 0, "exitCode": code, **payload}))
+    elif text:
+        print(text, file=sys.stderr if code else sys.stdout)
+    sys.exit(code)
+
+
+def duration(text):
+    match = re.fullmatch(r"(\d+)\s*(s|m|h)?", text.strip())
+    if not match:
+        raise argparse.ArgumentTypeError("use 90s, 5m or 2h")
+    return int(match.group(1)) * {"s": 1, "m": 60, "h": 3600, None: 1}[match.group(2)]
+
+
+def call(method, path, body=None):
+    """The files are read each time, so a Jack that restarts during a wait is found again."""
+    try:
+        base = open(os.path.join(DIR, "url")).read().strip()
+        token = open(os.path.join(DIR, "token")).read().strip()
+    except OSError:
+        return 5, {"error": "Jack is not running, or no Jack Bot agent allows local scripts."}
+    request = urllib.request.Request(base + path, method=method, data=json.dumps(body).encode() if body is not None else None,
+                                     headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return 0, json.load(response)
+    except urllib.error.HTTPError as error:
+        try:
+            return 1, json.load(error)
+        except ValueError:
+            return 1, {"error": "HTTP %d" % error.code}
+    except (urllib.error.URLError, OSError):
+        return 5, {"error": "Jack did not answer. Is it running?"}
+
+
+def read_text(value):
+    return sys.stdin.read() if value == "-" else value
+
+
+def wait_for(delivery, timeout, as_json):
+    deadline = time.time() + timeout
+    while True:
+        code, data = call("GET", "/v1/deliveries/" + delivery)
+        if code:
+            finish(code, data, as_json, data.get("error"))
+        status = data.get("status")
+        if status == "done":
+            finish(0, data, as_json, data.get("answer", ""))
+        if status == "failed":
+            finish(1, data, as_json, data.get("error", "The turn failed."))
+        if status == "waiting":
+            finish(3, data, as_json, "The agent waits for a person: answer in Jack, then use `jack-bot status %s`." % delivery)
+        if time.time() >= deadline:
+            finish(4, {**data, "delivery_id": delivery}, as_json, "Timed out; the agent keeps working. Delivery %s." % delivery)
+        time.sleep(2)
+
+
+def main():
+    parser = argparse.ArgumentParser(prog="jack-bot", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("list")
+    for name in ("run", "routine"):
+        p = sub.add_parser(name)
+        p.add_argument("agent")
+        if name == "routine":
+            p.add_argument("routine")
+        p.add_argument("message", nargs="?" if name == "routine" else None, default="")
+        p.add_argument("--wait", action="store_true")
+        p.add_argument("--timeout", type=duration, default=1800)
+        p.add_argument("--id")
+    p = sub.add_parser("status"); p.add_argument("delivery")
+    for p in sub.choices.values():
+        p.add_argument("--json", action="store_true")
+    try:
+        args = parser.parse_args()
+    except SystemExit as exit:
+        sys.exit(2 if exit.code else 0)
+
+    if args.command == "list":
+        code, data = call("GET", "/v1/agents")
+        lines = ["%s\t%s%s" % (a["id"][:8], a["name"], "\t(working)" if a.get("busy") else "") for a in data.get("agents", [])]
+        finish(code, data, args.json, "\n".join(lines) or data.get("error", "No agents allow local scripts."))
+    if args.command == "status":
+        wait_for(args.delivery, 0, args.json)
+    if args.command == "run":
+        text = read_text(args.message)
+        code, data = call("POST", "/v1/agents/%s/messages" % urllib.request.quote(args.agent, safe=""), {"message": text, "id": args.id})
+    else:
+        code, data = call("POST", "/v1/agents/%s/routines/%s/run" % (urllib.request.quote(args.agent, safe=""), urllib.request.quote(args.routine, safe="")),
+                          {"payload": read_text(args.message), "id": args.id})
+    if code:
+        finish(code, data, args.json, data.get("error"))
+    if args.wait:
+        wait_for(data["delivery_id"], args.timeout, args.json)
+    finish(0, data, args.json, "%s (%s)" % (data["delivery_id"], data["status"]))
+
+
+if __name__ == "__main__":
+    main()

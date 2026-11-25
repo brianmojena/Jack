@@ -256,9 +256,19 @@ enum AntigravityTerminalError: LocalizedError {
         guard let id = botConversation(for: agent) else { return .failure(.init("la carpeta «\(agent.projectPath)» no existe")) }
         return sendIfAccepted(text, to: id) ? .success(id) : .failure(.init(errorMessage ?? "el agente no aceptó el mensaje"))
     }
+    /// The local API for scripts. Normal mode only: it exists once Jack Bot is used and never in Light.
+    private var botAPIServer: BotAPI?
+    var botAPI: BotAPI {
+        if let botAPIServer { return botAPIServer }
+        let api = BotAPI(store: self, directory: archive.directory.appendingPathComponent("bot", isDirectory: true))
+        api.observe(bots)
+        botAPIServer = api
+        return api
+    }
     /// Starts checking schedules in Normal; stops in Light.
     public func applySchedules() {
-        if lightModeEnabled { scheduleCenter?.stop(); botStore?.stop() } else { _ = bots; schedules.start(); bots.start() }
+        if lightModeEnabled { scheduleCenter?.stop(); botStore?.stop(); botAPIServer?.stop() }
+        else { _ = bots; schedules.start(); bots.start(); botAPI.refresh() }
     }
     /// Progress bars agents report with `jack-progress`; created on first use so tests don't watch the real folder.
     private var progressMonitor: ProgressMonitor?
@@ -1810,6 +1820,7 @@ enum AntigravityTerminalError: LocalizedError {
         asides.cancelAll()
         notebookWorkspace?.stop()
         remoteServer?.stop()
+        botStore?.stop(); botAPIServer?.stop()
         if lightModeEnabled { progressMonitor?.stop(); serverMonitor?.stop() }
         StellarRuntime.shutdown()
         for id in Array(pending.keys) { flush(id) }

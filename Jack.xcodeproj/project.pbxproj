@@ -91,6 +91,7 @@
 		399CD8D588217F962CE06C5D /* AgentTabs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3621003C5F85DF2D65EFC584 /* AgentTabs.swift */; };
 		39BB0D2D03AD2E0C0EDAE622 /* Office2DViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B75005054FFF98AFBB8AEFBC /* Office2DViewModel.swift */; };
 		3A98DB6BB839382897C29467 /* REMY.usdz in Resources */ = {isa = PBXBuildFile; fileRef = B33E00280F531F45985C9478 /* REMY.usdz */; };
+		3AE740F3A10CF567BD6411D8 /* BotAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A196B9026EF538CDB418289 /* BotAPI.swift */; };
 		3C0D7EA6A9CA6A2FE69DFD1F /* Office2DModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15BE7022D46569507378C76A /* Office2DModel.swift */; };
 		3C4146DD453ABC62AA5F00D1 /* CardKing.webp in Resources */ = {isa = PBXBuildFile; fileRef = DB0BA08D1073B0655703B88D /* CardKing.webp */; };
 		3D0F10FAFC3CC302DDBBC197 /* OfficeChessHumanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F48DF4EF23F5BEDC6454518 /* OfficeChessHumanView.swift */; };
@@ -470,6 +471,7 @@
 		3633D11E0EF5A076E63CAA21 /* Chess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chess.swift; sourceTree = "<group>"; };
 		3789D85F443A38492640A492 /* ClaudeSessionPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeSessionPicker.swift; sourceTree = "<group>"; };
 		39ED136E5E7B3612035F8AB0 /* IntegratedTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntegratedTools.swift; sourceTree = "<group>"; };
+		3A196B9026EF538CDB418289 /* BotAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotAPI.swift; sourceTree = "<group>"; };
 		3A2D55B9C6EA259E65841DBB /* OfficeBrain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeBrain.swift; sourceTree = "<group>"; };
 		3A74557C47C15953992E8937 /* JackLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JackLog.swift; sourceTree = "<group>"; };
 		3DCC822661DED49C89F2189E /* WaitingMessagesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaitingMessagesView.swift; sourceTree = "<group>"; };
@@ -732,6 +734,7 @@
 				C25E6C8DB178859ECD873C96 /* Artifacts.swift */,
 				2CFA10CB841F5A058AC09FE4 /* ArtifactTools.swift */,
 				69EA49D5639DCB0C821AF51E /* Blackjack.swift */,
+				3A196B9026EF538CDB418289 /* BotAPI.swift */,
 				8908F238BDF1D6E1AE5C91C9 /* BotStore.swift */,
 				12B4930A4B33E7823D2E9A74 /* BotTools.swift */,
 				D270EF82D7E479169076203B /* BrowserAddress.swift */,
@@ -1543,6 +1546,7 @@
 				961257F1331631473551DE16 /* ArtifactTools.swift in Sources */,
 				50B143FC44D72601C56EA034 /* Artifacts.swift in Sources */,
 				7B0C9B6813EA7D8AFDFE1AFF /* Blackjack.swift in Sources */,
+				3AE740F3A10CF567BD6411D8 /* BotAPI.swift in Sources */,
 				A48C20D5A6E9716804739E3D /* BotStore.swift in Sources */,
 				16B6069FEBA659E38ED506D6 /* BotTools.swift in Sources */,
 				7E295FDBE4DB448AD14EB38C /* BrowserAddress.swift in Sources */,

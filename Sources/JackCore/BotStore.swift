@@ -32,20 +32,23 @@ public struct BotRoutine: Identifiable, Codable, Equatable, Sendable {
     public var weekday: Int
     public var intervalMinutes: Int
     public var paused: Bool
+    /// Runs only when a script calls it through the local API: a local webhook, with no schedule.
+    public var apiOnly: Bool? = nil
     public var createdAt: Date
     public var lastRunAt: Date?
     public var lastError: String?
 
     public init(id: UUID = UUID(), agentID: UUID, name: String, instruction: String, frequency: AutomationFrequency = .daily,
-                startAt: Date, weekday: Int = 2, intervalMinutes: Int = 60, paused: Bool = false, createdAt: Date = Date(),
-                lastRunAt: Date? = nil) {
+                startAt: Date, weekday: Int = 2, intervalMinutes: Int = 60, paused: Bool = false, apiOnly: Bool? = nil,
+                createdAt: Date = Date(), lastRunAt: Date? = nil) {
         self.id = id; self.agentID = agentID; self.name = name; self.instruction = instruction; self.frequency = frequency
         self.startAt = startAt; self.weekday = weekday; self.intervalMinutes = max(1, intervalMinutes); self.paused = paused
-        self.createdAt = createdAt; self.lastRunAt = lastRunAt
+        self.apiOnly = apiOnly; self.createdAt = createdAt; self.lastRunAt = lastRunAt
     }
 
     /// Same rules as `Automation.nextRun`, which it borrows rather than copies.
     public func nextRun(calendar: Calendar = .current, now: Date = Date()) -> Date? {
+        guard apiOnly != true else { return nil }
         var schedule = Automation(name: name, prompt: instruction, projectPath: "", provider: .claude, frequency: frequency,
                                   startAt: startAt, weekday: weekday, intervalMinutes: intervalMinutes, enabled: !paused, createdAt: createdAt)
         schedule.lastRunAt = lastRunAt
