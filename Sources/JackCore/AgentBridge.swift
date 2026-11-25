@@ -191,6 +191,7 @@ public struct ChatDelegation: Equatable {
             let tools = (allowed.delegates ? delegationTools : []) + (allowed.images ? [Self.imageTool] : [])
                 + (allowed.notebooks && store?.lightModeEnabled == false ? Self.notebookTools : [])
                 + (allowed.normalMode && store?.lightModeEnabled == false ? Self.artifactTools + Self.integratedTools : [])
+                + (allowed.normalMode && store?.lightModeEnabled == false && store?.conversations.first(where: { $0.id == caller })?.botAgentID != nil ? Self.botTools : [])
             return Self.result(id: id, ["tools": tools])
         case "tools/call":
             let name = params["name"] as? String ?? ""
@@ -295,6 +296,12 @@ public struct ChatDelegation: Equatable {
                 return ("Browser and terminal tools are available only in Normal mode.", true)
             }
             return await host(name, arguments, parent)
+        }
+        if name.hasPrefix("bot_") || name.hasPrefix("channel_") {
+            guard permissions[caller]?.normalMode == true, !store.lightModeEnabled, parent.botAgentID != nil else {
+                return ("Jack Bot tools are available only to Jack Bot agents in Normal mode.", true)
+            }
+            return botCall(name, arguments: arguments, conversation: parent, store: store)
         }
         if name == "generate_image" { return await generateImage(arguments, caller: parent, store: store) }
         guard permissions[caller]?.delegates ?? true else { return ("Only the agent the user talks to can manage other agents.", true) }

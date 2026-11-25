@@ -36,6 +36,7 @@
 		1498D1DF8A8083084BF82604 /* JackDesign.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12A56C2DEDA3D8023FD61366 /* JackDesign.swift */; };
 		15322D1AC3D6B11097E60825 /* AntigravityIntegration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032BBF62CE8545A33F6498ED /* AntigravityIntegration.swift */; };
 		166A26F7D4105C984E303849 /* AsideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AA8C81C6A84E8DDF53B0226 /* AsideView.swift */; };
+		16B6069FEBA659E38ED506D6 /* BotTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12B4930A4B33E7823D2E9A74 /* BotTools.swift */; };
 		1758CFAF8C920737DFED7D85 /* JackCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A669F4C23030DFB614FB88C4 /* JackCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		17F9C1461750CA8598B240FC /* OfficeProbe_lounge.exr in Resources */ = {isa = PBXBuildFile; fileRef = 28754813E1E0999C9F8B3E4C /* OfficeProbe_lounge.exr */; };
 		181B816523B2326E4BA3522D /* OfficeChessHumanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F48DF4EF23F5BEDC6454518 /* OfficeChessHumanView.swift */; };
@@ -437,6 +438,7 @@
 		112E9D6E62140F40A3F29A21 /* AgentBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentBridge.swift; sourceTree = "<group>"; };
 		1251BF2E6E844341324EA9B2 /* OfficeStage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeStage.swift; sourceTree = "<group>"; };
 		12A56C2DEDA3D8023FD61366 /* JackDesign.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JackDesign.swift; sourceTree = "<group>"; };
+		12B4930A4B33E7823D2E9A74 /* BotTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotTools.swift; sourceTree = "<group>"; };
 		138D59F70F9CA07105FD1933 /* FileExplorer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileExplorer.swift; sourceTree = "<group>"; };
 		15BE7022D46569507378C76A /* Office2DModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Office2DModel.swift; sourceTree = "<group>"; };
 		16680F5C7DD7A00F229836B9 /* OfficeCardViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeCardViews.swift; sourceTree = "<group>"; };
@@ -731,6 +733,7 @@
 				2CFA10CB841F5A058AC09FE4 /* ArtifactTools.swift */,
 				69EA49D5639DCB0C821AF51E /* Blackjack.swift */,
 				8908F238BDF1D6E1AE5C91C9 /* BotStore.swift */,
+				12B4930A4B33E7823D2E9A74 /* BotTools.swift */,
 				D270EF82D7E479169076203B /* BrowserAddress.swift */,
 				99043DC6E87DB144C2ECE631 /* BrowserPick.swift */,
 				094C42C6DC4B76FE4E66E40D /* ChatArchive.swift */,
@@ -1541,6 +1544,7 @@
 				50B143FC44D72601C56EA034 /* Artifacts.swift in Sources */,
 				7B0C9B6813EA7D8AFDFE1AFF /* Blackjack.swift in Sources */,
 				A48C20D5A6E9716804739E3D /* BotStore.swift in Sources */,
+				16B6069FEBA659E38ED506D6 /* BotTools.swift in Sources */,
 				7E295FDBE4DB448AD14EB38C /* BrowserAddress.swift in Sources */,
 				1E413BE4FA305A05CFCDA372 /* BrowserPick.swift in Sources */,
 				02B83CB51FECD80B94438A2F /* ChatArchive.swift in Sources */,

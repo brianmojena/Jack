@@ -216,7 +216,11 @@ enum AntigravityTerminalError: LocalizedError {
         let store = BotStore(directory: archive.directory)
         store.run = { [weak self] agent, routine in
             guard let self else { return .failure(.init("Jack se está cerrando")) }
-            return self.deliverRoutine(routine, to: agent)
+            return self.sendToBotAgent(routine.instruction, agent: agent)
+        }
+        store.deliver = { [weak self] agent, text in
+            guard let self else { return .failure(.init("Jack se está cerrando")) }
+            return self.sendToBotAgent(text, agent: agent)
         }
         store.onError = { [weak self] in self?.errorMessage = $0 }
         botStore = store
@@ -246,11 +250,11 @@ enum AntigravityTerminalError: LocalizedError {
         }
         bots.remove(agent: agent.id)
     }
-    /// Writes a routine's instruction into its agent's own conversation.
-    private func deliverRoutine(_ routine: BotRoutine, to agent: BotAgent) -> Result<UUID, ScheduleCenter.ScheduleError> {
+    /// Writes a text into the agent's own conversation: a routine, another agent's message or a channel note.
+    public func sendToBotAgent(_ text: String, agent: BotAgent) -> Result<UUID, ScheduleCenter.ScheduleError> {
         errorMessage = nil
         guard let id = botConversation(for: agent) else { return .failure(.init("la carpeta «\(agent.projectPath)» no existe")) }
-        return sendIfAccepted(routine.instruction, to: id) ? .success(id) : .failure(.init(errorMessage ?? "el agente no aceptó el mensaje"))
+        return sendIfAccepted(text, to: id) ? .success(id) : .failure(.init(errorMessage ?? "el agente no aceptó el mensaje"))
     }
     /// Starts checking schedules in Normal; stops in Light.
     public func applySchedules() {

@@ -83,3 +83,135 @@ import XCTest
         XCTAssertTrue(store.routines.isEmpty)
     }
 }
+
+@MainActor private final class RecordingDriver: ChatDriver {
+    var prompts: [String] = []
+    func run(conversation: ChatConversation, prompt: String, onEvent: @escaping @MainActor (ChatEvent) -> Void) async throws {
+        prompts.append(prompt)
+        onEvent(.session(UUID().uuidString))
+        onEvent(.completed)
+    }
+    func respond(approvalID: String, allow: Bool) async throws {}
+    func stop() {}
+}
+
+@MainActor final class BotChannelTests: XCTestCase {
+    private func store() -> (BotStore, BotAgent, BotAgent, BotChannel, [String]) {
+        let bots = BotStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        let ada = BotAgent(name: "Ada", projectPath: "/tmp", provider: .claude)
+        let bruno = BotAgent(name: "Bruno", projectPath: "/tmp", provider: .codex)
+        bots.upsert(ada); bots.upsert(bruno)
+        let channel = BotChannel(name: "Equipo", memberIDs: [ada.id, bruno.id], ownerID: ada.id)
+        bots.upsert(channel)
+        return (bots, ada, bruno, channel, [])
+    }
+
+    func testUserMessageReachesOnlyTheOwner() {
+        let (bots, ada, _, channel, _) = store()
+        var heard: [String] = []
+        bots.deliver = { agent, _ in heard.append(agent.name); return .success(UUID()) }
+        XCTAssertNil(bots.post("haz el informe", inChannel: channel.id))
+        XCTAssertEqual(heard, [ada.name])
+        XCTAssertEqual(bots.channels.first?.messages.map(\.text), ["haz el informe"])
+    }
+
+    func testStoppedChannelKeepsHistoryButTellsNobody() {
+        let (bots, _, bruno, channel, _) = store()
+        var heard = 0
+        bots.deliver = { _, _ in heard += 1; return .success(UUID()) }
+        bots.setState(.stopped, for: channel.id)
+        XCTAssertNil(bots.post("hola", inChannel: channel.id))
+        XCTAssertEqual(heard, 0)
+        XCTAssertEqual(bots.channels.first?.messages.count, 1)
+        guard case .failure = bots.post("sigo", from: bruno.id, inChannel: channel.id) else { return XCTFail("A stopped channel must refuse agents") }
+    }
+
+    func testArchivedChannelRefusesTheUser() {
+        let (bots, _, _, channel, _) = store()
+        bots.setState(.archived, for: channel.id)
+        XCTAssertNotNil(bots.post("hola", inChannel: channel.id))
+        XCTAssertTrue(bots.channels.first?.messages.isEmpty == true)
+    }
+
+    func testDelegationReachesOnlyTheNamedMember() throws {
+        let (bots, ada, bruno, channel, _) = store()
+        var heard: [String] = []
+        bots.deliver = { agent, text in heard.append(agent.name + ": " + text); return .success(UUID()) }
+        guard case .success = bots.post("revisa esto", from: ada.id, inChannel: channel.id, delegateTo: bruno.id) else { return XCTFail() }
+        XCTAssertEqual(heard.count, 1)
+        XCTAssertTrue(try XCTUnwrap(heard.first).hasPrefix("Bruno"))
+        guard case .failure = bots.post("a mí", from: ada.id, inChannel: channel.id, delegateTo: ada.id) else { return XCTFail("No self-delegation") }
+        guard case .failure = bots.post("x", from: UUID(), inChannel: channel.id) else { return XCTFail("Non-members cannot post") }
+    }
+
+    func testReassignOnlyToMembersAndRemovingTheOwnerPassesTheTask() {
+        let (bots, ada, bruno, channel, _) = store()
+        bots.setOwner(UUID(), in: channel.id)
+        XCTAssertEqual(bots.channels.first?.ownerID, ada.id)
+        bots.setOwner(bruno.id, in: channel.id)
+        XCTAssertEqual(bots.channels.first?.ownerID, bruno.id)
+        bots.remove(agent: bruno.id)
+        XCTAssertEqual(bots.channels.first?.ownerID, ada.id)
+        bots.remove(agent: ada.id)
+        XCTAssertEqual(bots.channels.first?.state, .archived)
+    }
+
+    func testHistoryIsCapped() {
+        let (bots, ada, _, channel, _) = store()
+        bots.deliver = { _, _ in .success(UUID()) }
+        for number in 0..<(BotChannel.maxMessages + 5) { _ = bots.post("m\(number)", from: ada.id, inChannel: channel.id) }
+        XCTAssertEqual(bots.channels.first?.messages.count, BotChannel.maxMessages)
+        XCTAssertEqual(bots.channels.first?.messages.last?.text, "m\(BotChannel.maxMessages + 4)")
+    }
+
+    func testChannelsSurviveARestartAndOldFilesStillLoad() throws {
+        let (bots, _, _, _, _) = store()
+        // A file written before channels existed has no "channels" key.
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try Data(#"{"agents":[],"routines":[],"migrated":true}"#.utf8).write(to: dir.appendingPathComponent("jackbot.json"))
+        XCTAssertTrue(BotStore(directory: dir).migrated)
+        XCTAssertEqual(bots.channels.count, 1)
+    }
+
+    func testAgentLookupPrefersNameThenIDPrefix() {
+        let (bots, ada, _, _, _) = store()
+        XCTAssertEqual(bots.agents(matching: "ada").map(\.id), [ada.id])
+        XCTAssertEqual(bots.agents(matching: String(ada.id.uuidString.prefix(8))).map(\.id), [ada.id])
+        XCTAssertTrue(bots.agents(matching: "zzz").isEmpty)
+    }
+
+    func testBridgeToolsOnlyForBotAgentsAndDeliverIntoTheTeammate() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("jack-bot-tools-" + UUID().uuidString)
+        var drivers: [RecordingDriver] = []
+        let store = ChatStore(archive: ChatArchive(directory: folder), preferences: nil, driverFactory: { _ in
+            let driver = RecordingDriver(); drivers.append(driver); return driver
+        })
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        let ada = BotAgent(name: "Ada", projectPath: NSTemporaryDirectory(), provider: .claude)
+        let bruno = BotAgent(name: "Bruno", projectPath: NSTemporaryDirectory(), provider: .claude)
+        store.bots.upsert(ada); store.bots.upsert(bruno)
+        let adaChat = try XCTUnwrap(store.botConversation(for: ada))
+        let plain = try XCTUnwrap(store.create(projectPath: NSTemporaryDirectory(), provider: .claude))
+        let bridge = AgentBridge(store: store)
+
+        _ = try await bridge.delegation(for: adaChat)
+        _ = try await bridge.delegation(for: plain)
+        func toolNames(_ caller: UUID) async -> [String] {
+            let listed = await bridge.rpc(["jsonrpc": "2.0", "id": 1, "method": "tools/list"], caller: caller)
+            return ((listed?["result"] as? [String: Any])?["tools"] as? [[String: Any]])?.compactMap { $0["name"] as? String } ?? []
+        }
+        let botTools = await toolNames(adaChat)
+        XCTAssertTrue(botTools.contains("bot_send_message") && botTools.contains("channel_post"))
+        let plainTools = await toolNames(plain)
+        XCTAssertFalse(plainTools.contains("bot_send_message"))
+        let refused = await bridge.call("bot_list_agents", arguments: [:], caller: plain)
+        XCTAssertTrue(refused.1, "A normal chat must not use Jack Bot tools")
+        let sent = await bridge.call("bot_send_message", arguments: ["agent": "bruno", "message": "hola", "expects_reply": true], caller: adaChat)
+        XCTAssertFalse(sent.1, sent.0)
+        let brunoChat = try XCTUnwrap(store.bots.agents.first { $0.id == bruno.id }?.conversationID)
+        XCTAssertEqual(store.conversations.first { $0.id == brunoChat }?.botAgentID, bruno.id)
+        let unknown = await bridge.call("bot_send_message", arguments: ["agent": "nadie", "message": "hola"], caller: adaChat)
+        XCTAssertTrue(unknown.1)
+    }
+}

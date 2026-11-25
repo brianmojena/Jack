@@ -53,25 +53,56 @@ public struct BotRoutine: Identifiable, Codable, Equatable, Sendable {
     }
 }
 
+/// One line of a channel's shared history. `authorID` is nil when the user wrote it.
+public struct BotChannelMessage: Identifiable, Codable, Equatable, Sendable {
+    public var id: UUID
+    public var authorID: UUID?
+    public var text: String
+    public var at: Date
+    public init(id: UUID = UUID(), authorID: UUID?, text: String, at: Date = Date()) {
+        self.id = id; self.authorID = authorID; self.text = text; self.at = at
+    }
+}
+
+/// A shared thread with one task owner. Only the owner hears the user; the other members join by explicit delegation.
+public struct BotChannel: Identifiable, Codable, Equatable, Sendable {
+    public enum State: String, Codable, Sendable { case active, stopped, archived }
+    /// Older lines are dropped, so a long-lived channel stays small on disk.
+    public static let maxMessages = 200
+    public var id: UUID
+    public var name: String
+    public var memberIDs: [UUID]
+    public var ownerID: UUID
+    public var state: State
+    public var messages: [BotChannelMessage]
+
+    public init(id: UUID = UUID(), name: String, memberIDs: [UUID], ownerID: UUID, state: State = .active, messages: [BotChannelMessage] = []) {
+        self.id = id; self.name = name; self.memberIDs = memberIDs; self.ownerID = ownerID; self.state = state; self.messages = messages
+    }
+}
+
 /// Bot agents and their routines, saved beside the chats and checked while Jack runs.
 @MainActor public final class BotStore: ObservableObject {
     @Published public private(set) var agents: [BotAgent] = []
     @Published public private(set) var routines: [BotRoutine] = []
+    @Published public private(set) var channels: [BotChannel] = []
     /// Whether the old automations were already turned into agents and routines.
     public private(set) var migrated = false
     /// Sends a routine's instruction to its agent's conversation and returns that conversation, or why it could not.
     public var run: (BotAgent, BotRoutine) -> Result<UUID, ScheduleCenter.ScheduleError> = { _, _ in .failure(.init("Sin agente")) }
+    /// Puts a text into an agent's own conversation and returns that conversation, or why it could not.
+    public var deliver: (BotAgent, String) -> Result<UUID, ScheduleCenter.ScheduleError> = { _, _ in .failure(.init("Sin agente")) }
     public var onError: (String) -> Void = { _ in }
     private let url: URL
     private var ticker: Task<Void, Never>?
     private let writer = DispatchQueue(label: "dev.jack.bot.persistence", qos: .utility)
 
-    private struct Saved: Codable, Sendable { var agents: [BotAgent]; var routines: [BotRoutine]; var migrated: Bool }
+    private struct Saved: Codable, Sendable { var agents: [BotAgent]; var routines: [BotRoutine]; var migrated: Bool; var channels: [BotChannel]? }
 
     public init(directory: URL) {
         url = directory.appendingPathComponent("jackbot.json")
         if let data = try? Data(contentsOf: url), let saved = try? JSONDecoder().decode(Saved.self, from: data) {
-            agents = saved.agents; routines = saved.routines; migrated = saved.migrated
+            agents = saved.agents; routines = saved.routines; migrated = saved.migrated; channels = saved.channels ?? []
         }
     }
 
@@ -83,7 +114,91 @@ public struct BotRoutine: Identifiable, Codable, Equatable, Sendable {
     }
     /// Removes the agent and its routines. Its conversation stays, as a normal chat the caller decides about.
     public func remove(agent id: UUID) {
-        agents.removeAll { $0.id == id }; routines.removeAll { $0.agentID == id }; save()
+        agents.removeAll { $0.id == id }; routines.removeAll { $0.agentID == id }
+        for index in channels.indices where channels[index].memberIDs.contains(id) {
+            channels[index].memberIDs.removeAll { $0 == id }
+            if let next = channels[index].memberIDs.first { if channels[index].ownerID == id { channels[index].ownerID = next } }
+            else { channels[index].state = .archived }
+        }
+        save()
+    }
+
+    /// Agents whose name equals the reference, or else whose id starts with it (at least 4 characters).
+    public func agents(matching reference: String) -> [BotAgent] { Self.match(agents, reference, name: \.name) }
+    public func channels(matching reference: String) -> [BotChannel] { Self.match(channels, reference, name: \.name) }
+    private static func match<T: Identifiable>(_ items: [T], _ reference: String, name: KeyPath<T, String>) -> [T] where T.ID == UUID {
+        let key = reference.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !key.isEmpty else { return [] }
+        let byName = items.filter { $0[keyPath: name].lowercased() == key }
+        if byName.count == 1 || key.count < 4 { return byName }
+        let byID = items.filter { $0.id.uuidString.lowercased().hasPrefix(key) }
+        return byID.isEmpty ? byName : byID
+    }
+
+    // MARK: Channels
+
+    /// A channel needs its owner among its members and at least one member.
+    public func upsert(_ channel: BotChannel) {
+        guard channel.memberIDs.contains(channel.ownerID) else { return }
+        if let index = channels.firstIndex(where: { $0.id == channel.id }) { channels[index] = channel } else { channels.append(channel) }
+        save()
+    }
+    public func remove(channel id: UUID) { channels.removeAll { $0.id == id }; save() }
+    public func setState(_ state: BotChannel.State, for id: UUID) {
+        guard let index = channels.firstIndex(where: { $0.id == id }) else { return }
+        channels[index].state = state; save()
+    }
+    /// Hands the task to another member; a non-member is ignored.
+    public func setOwner(_ owner: UUID, in id: UUID) {
+        guard let index = channels.firstIndex(where: { $0.id == id }), channels[index].memberIDs.contains(owner) else { return }
+        channels[index].ownerID = owner; save()
+    }
+
+    /// The user writes in a channel; the owner hears it unless the channel is stopped. Returns why it was not delivered.
+    @discardableResult
+    public func post(_ text: String, inChannel id: UUID) -> String? {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, let index = channels.firstIndex(where: { $0.id == id }) else { return nil }
+        guard channels[index].state != .archived else { return "El canal está archivado." }
+        append(BotChannelMessage(authorID: nil, text: text), to: index)
+        guard channels[index].state == .active, let owner = agents.first(where: { $0.id == channels[index].ownerID }) else { return nil }
+        let note = "Canal «\(channels[index].name)». El usuario escribe:\n\(text)\n\nEres el dueño de esta tarea. Si necesitas a otro miembro, delégale con channel_post (delegate_to)."
+        if case .failure(let error) = deliver(owner, note) { return "No se pudo avisar a \(owner.name): \(error.message)" }
+        return nil
+    }
+
+    /// An agent writes in a channel it belongs to, and may hand work to another member.
+    public func post(_ text: String, from author: UUID, inChannel id: UUID, delegateTo target: UUID? = nil) -> Result<String, ScheduleCenter.ScheduleError> {
+        typealias Failure = ScheduleCenter.ScheduleError
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return .failure(Failure("El mensaje está vacío.")) }
+        guard let index = channels.firstIndex(where: { $0.id == id }), channels[index].memberIDs.contains(author) else {
+            return .failure(Failure("No eres miembro de ese canal."))
+        }
+        guard channels[index].state == .active else {
+            return .failure(Failure(channels[index].state == .stopped ? "El canal está detenido: no publiques hasta que el usuario lo reanude." : "El canal está archivado."))
+        }
+        var recipient: BotAgent?
+        if let target {
+            guard target != author, channels[index].memberIDs.contains(target), let agent = agents.first(where: { $0.id == target }) else {
+                return .failure(Failure("Solo puedes delegar en otro miembro del canal."))
+            }
+            recipient = agent
+        }
+        append(BotChannelMessage(authorID: author, text: text), to: index)
+        guard let recipient else { return .success("Publicado en el canal.") }
+        let name = agents.first(where: { $0.id == author })?.name ?? "un agente"
+        let note = "Canal «\(channels[index].name)». «\(name)» te delega:\n\(text)"
+        switch deliver(recipient, note) {
+        case .success: return .success("Publicado y delegado en \(recipient.name).")
+        case .failure(let error): return .failure(Failure("Publicado, pero no se pudo avisar a \(recipient.name): \(error.message)"))
+        }
+    }
+
+    private func append(_ message: BotChannelMessage, to index: Int) {
+        channels[index].messages.append(message)
+        if channels[index].messages.count > BotChannel.maxMessages { channels[index].messages.removeFirst(channels[index].messages.count - BotChannel.maxMessages) }
+        save()
     }
     public func upsert(_ routine: BotRoutine) {
         guard agents.contains(where: { $0.id == routine.agentID }) else { return }
@@ -164,7 +279,7 @@ public struct BotRoutine: Identifiable, Codable, Equatable, Sendable {
         save()
     }
 
-    private func snapshot() -> Saved { Saved(agents: agents, routines: routines, migrated: migrated) }
+    private func snapshot() -> Saved { Saved(agents: agents, routines: routines, migrated: migrated, channels: channels) }
 
     private nonisolated static func write(_ snapshot: Saved, to url: URL) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)

@@ -11,8 +11,12 @@ struct BotModeView<Chat: View>: View {
     @State private var selectedID: UUID?
     @State private var editingAgent: BotAgent?
     @State private var editingRoutine: BotRoutine?
+    @State private var selectedChannelID: UUID?
+    @State private var editingChannel: BotChannel?
 
-    private var selected: BotAgent? { bots.agents.first { $0.id == selectedID } ?? bots.agents.first }
+    private var selectedChannel: BotChannel? { bots.channels.first { $0.id == selectedChannelID } }
+    /// The agent shown, unless a channel is.
+    private var selected: BotAgent? { selectedChannel != nil ? nil : (bots.agents.first { $0.id == selectedID } ?? bots.agents.first) }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -32,6 +36,9 @@ struct BotModeView<Chat: View>: View {
                 // An existing conversation keeps its own folder and engine; only the pinned instructions follow the edit.
                 if saved.conversationID != nil { store.botConversation(for: saved) }
             } onCancel: { editingAgent = nil }
+        }
+        .sheet(item: $editingChannel) { channel in
+            BotChannelEditor(channel: channel, agents: bots.agents) { bots.upsert($0); selectedChannelID = $0.id; editingChannel = nil } onCancel: { editingChannel = nil }
         }
         .sheet(item: $editingRoutine) { routine in
             BotRoutineEditor(routine: routine) { bots.upsert($0); editingRoutine = nil } onCancel: { editingRoutine = nil }
@@ -71,9 +78,47 @@ struct BotModeView<Chat: View>: View {
                 .padding(16).frame(maxHeight: .infinity)
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 2) { ForEach(bots.agents) { agentRow($0) } }.padding(8)
+                    LazyVStack(spacing: 2) {
+                        ForEach(bots.agents) { agentRow($0) }
+                        channelsHeader
+                        ForEach(bots.channels.filter { $0.state != .archived }) { channelRow($0) }
+                    }.padding(8)
                 }
             }
+        }
+    }
+
+    private var channelsHeader: some View {
+        HStack {
+            Text("Canales").font(.system(size: 11, weight: .semibold)).foregroundStyle(JackPalette.muted)
+            Spacer()
+            Button { editingChannel = BotChannel(name: "", memberIDs: [], ownerID: UUID()) } label: { Image(systemName: "plus") }
+                .buttonStyle(.borderless).help("Crear un canal").disabled(bots.agents.count < 2)
+        }
+        .padding(.horizontal, 8).padding(.top, 14).padding(.bottom, 4)
+    }
+
+    private func channelRow(_ channel: BotChannel) -> some View {
+        Button { selectedChannelID = channel.id } label: {
+            HStack(spacing: 10) {
+                Image(systemName: channel.state == .stopped ? "pause.circle" : "number")
+                    .font(.system(size: 13, weight: .semibold)).foregroundStyle(JackPalette.muted).frame(width: 24)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(channel.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                    Text("\(channel.memberIDs.count) miembros" + (channel.state == .stopped ? " · detenido" : ""))
+                        .font(.system(size: 11)).foregroundStyle(JackPalette.muted)
+                }
+                Spacer(minLength: 4)
+            }
+            .padding(.horizontal, 8).padding(.vertical, 6).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(channel.id == selectedChannelID ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: JackPalette.radius(6)))
+        .contextMenu {
+            Button("Editar…", systemImage: "pencil") { editingChannel = channel }
+            Button("Archivar", systemImage: "archivebox") { bots.setState(.archived, for: channel.id); if selectedChannelID == channel.id { selectedChannelID = nil } }
+            Divider()
+            Button("Eliminar", systemImage: "trash", role: .destructive) { bots.remove(channel: channel.id); if selectedChannelID == channel.id { selectedChannelID = nil } }
         }
     }
 
@@ -82,7 +127,7 @@ struct BotModeView<Chat: View>: View {
         let working = conversation.map { store.statuses[$0.id]?.isActive == true } ?? false
         let routines = bots.routines(of: agent.id)
         return Button {
-            selectedID = agent.id; open(agent)
+            selectedID = agent.id; selectedChannelID = nil; open(agent)
         } label: {
             HStack(spacing: 10) {
                 providerGlyph(agent.provider, size: 24)
@@ -108,7 +153,9 @@ struct BotModeView<Chat: View>: View {
     // MARK: Conversation
 
     @ViewBuilder private var center: some View {
-        if let agent = selected {
+        if let channel = selectedChannel {
+            BotChannelView(bots: bots, channel: channel) { editingChannel = channel }
+        } else if let agent = selected {
             if let id = agent.conversationID, store.selectedID == id { chat() } else { emptyChat(agent) }
         } else {
             Color.clear
@@ -328,5 +375,126 @@ private struct BotRoutineEditor: View {
             let minutes = routine.intervalMinutes
             unit = minutes % 1440 == 0 ? 1440 : (minutes % 60 == 0 ? 60 : 1)
         }
+    }
+}
+
+/// A channel's shared history, with its task owner and the controls to stop, resume, reassign and archive it.
+private struct BotChannelView: View {
+    @ObservedObject var bots: BotStore
+    let channel: BotChannel
+    let onEdit: () -> Void
+    @State private var draft = ""
+    @State private var notice: String?
+
+    private func name(_ id: UUID?) -> String { id == nil ? "Tú" : (bots.agents.first { $0.id == id }?.name ?? "Agente eliminado") }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            Rectangle().fill(JackPalette.hairline).frame(height: 1)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 10) {
+                        ForEach(channel.messages) { message in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(name(message.authorID)).font(.system(size: 11.5, weight: .semibold))
+                                    .foregroundStyle(message.authorID == nil ? JackPalette.accent : JackPalette.secondaryText)
+                                Text(message.text).font(.system(size: 13)).textSelection(.enabled)
+                            }
+                            .id(message.id)
+                        }
+                    }
+                    .padding(20).frame(maxWidth: 760, alignment: .leading).frame(maxWidth: .infinity)
+                }
+                .onChange(of: channel.messages.last?.id) { _, last in if let last { proxy.scrollTo(last, anchor: .bottom) } }
+            }
+            if let notice { Text(notice).font(.system(size: 11.5)).foregroundStyle(JackPalette.red).padding(.horizontal, 20) }
+            composer
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "number").foregroundStyle(JackPalette.muted)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(channel.name).font(.system(size: 14, weight: .semibold))
+                Text("Dueño de la tarea: \(name(channel.ownerID))").font(.system(size: 11)).foregroundStyle(JackPalette.muted)
+            }
+            Spacer()
+            Menu("Reasignar") {
+                ForEach(channel.memberIDs, id: \.self) { id in
+                    Button(name(id) + (id == channel.ownerID ? "  ✓" : "")) { bots.setOwner(id, in: channel.id) }
+                }
+            }
+            .menuStyle(.borderlessButton).fixedSize()
+            if channel.state == .stopped {
+                Button("Reanudar", systemImage: "play.fill") { bots.setState(.active, for: channel.id) }
+            } else {
+                Button("Detener", systemImage: "pause.fill") { bots.setState(.stopped, for: channel.id) }
+            }
+            Button("Editar", systemImage: "pencil", action: onEdit)
+            Button("Archivar", systemImage: "archivebox") { bots.setState(.archived, for: channel.id) }
+        }
+        .labelStyle(.iconOnly).buttonStyle(.borderless)
+        .padding(.horizontal, 20).padding(.vertical, 12)
+    }
+
+    private var composer: some View {
+        HStack {
+            TextField(channel.state == .stopped ? "El canal está detenido: se guarda, pero nadie lo lee" : "Escribe al dueño de la tarea…", text: $draft)
+                .textFieldStyle(.roundedBorder).onSubmit(send)
+            Button("Enviar", action: send).disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        .padding(16)
+    }
+
+    private func send() {
+        notice = bots.post(draft, inChannel: channel.id)
+        draft = ""
+    }
+}
+
+private struct BotChannelEditor: View {
+    @State var channel: BotChannel
+    let agents: [BotAgent]
+    let onSave: (BotChannel) -> Void
+    let onCancel: () -> Void
+
+    private var valid: Bool {
+        !channel.name.trimmingCharacters(in: .whitespaces).isEmpty && channel.memberIDs.count >= 2 && channel.memberIDs.contains(channel.ownerID)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(channel.name.isEmpty ? "Nuevo canal" : "Editar canal").font(.headline)
+            TextField("Nombre", text: $channel.name)
+            Text("Miembros").font(.system(size: 11, weight: .medium)).foregroundStyle(JackPalette.muted)
+            ForEach(agents) { agent in
+                Toggle(agent.name, isOn: Binding(
+                    get: { channel.memberIDs.contains(agent.id) },
+                    set: { on in
+                        channel.memberIDs.removeAll { $0 == agent.id }
+                        if on { channel.memberIDs.append(agent.id) }
+                        if !channel.memberIDs.contains(channel.ownerID) { channel.ownerID = channel.memberIDs.first ?? channel.ownerID }
+                    }))
+            }
+            Picker("Dueño de la tarea", selection: $channel.ownerID) {
+                ForEach(agents.filter { channel.memberIDs.contains($0.id) }) { Text($0.name).tag($0.id) }
+            }
+            Text("Solo el dueño oye lo que escribes en el canal. Los demás miembros entran cuando el dueño les delega una tarea.")
+                .font(.system(size: 11)).foregroundStyle(JackPalette.faint)
+            HStack {
+                Spacer()
+                Button("Cancelar", action: onCancel).keyboardShortcut(.cancelAction)
+                Button("Guardar") {
+                    var saved = channel
+                    saved.name = saved.name.trimmingCharacters(in: .whitespaces)
+                    onSave(saved)
+                }
+                .keyboardShortcut(.defaultAction).disabled(!valid)
+            }
+        }
+        .textFieldStyle(.roundedBorder)
+        .padding(20).frame(width: 420)
     }
 }
