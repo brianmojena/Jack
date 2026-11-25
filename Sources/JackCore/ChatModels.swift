@@ -104,6 +104,8 @@ public struct ChatConversation: Identifiable, Codable, Equatable {
     public var pendingClaudeHistory: Bool? = nil
     /// Runs this agent on another machine over SSH instead of locally. Only Claude Code supports it.
     public var remote: ChatRemoteEndpoint? = nil
+    /// The Jack Bot agent this conversation belongs to; such chats live in Jack Bot, not in the sidebar.
+    public var botAgentID: UUID? = nil
     public init(id: UUID = UUID(), title: String = "Nuevo agente", projectPath: String, provider: ChatProvider = .codex, model: String? = nil, effort: String = "high", sessionID: String? = nil, messages: [ChatMessage] = [], updatedAt: Date = Date()) {
         self.id = id; self.title = title; self.projectPath = projectPath; self.provider = provider; self.model = model ?? provider.defaultModel; self.effort = effort; self.sessionID = sessionID; self.messages = messages; self.updatedAt = updatedAt
     }

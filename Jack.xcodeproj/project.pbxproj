@@ -99,7 +99,6 @@
 		43E4CAEBEC4284BB09E5681A /* MacLink+OfficeHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCA51C301D8FD6BFC4E5D57C /* MacLink+OfficeHost.swift */; };
 		44B4F16D5381EB7C963C74C8 /* OfficeDetail_Object_196.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 2B8F83AED770453EC6B722D7 /* OfficeDetail_Object_196.jpg */; };
 		4520EEB63ED5EB9698EA24AF /* OfficeCardFace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EA299C819B7DEF70F287174 /* OfficeCardFace.swift */; };
-		4554A60DE0E5512B0E29B1B4 /* AutomationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCFCEC6A2BE443EE8AB64111 /* AutomationsView.swift */; };
 		4634192947D42C964EB9182B /* jack-progress in Embed Dependencies */ = {isa = PBXBuildFile; fileRef = DE478C8255BAFA828A7913CE /* jack-progress */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		46BEEAA2D460A31E68C98C0D /* OfficeProbe_pcs.exr in Resources */ = {isa = PBXBuildFile; fileRef = 0B2FE592C14B9EA3B6569FDF /* OfficeProbe_pcs.exr */; };
 		46C682ED68BF1576075FDA88 /* CardBack.webp in Resources */ = {isa = PBXBuildFile; fileRef = 501CA45C7AE68C6639FF9DED /* CardBack.webp */; };
@@ -224,6 +223,7 @@
 		A3968B9B8F4009968A33775B /* OfficeRoom.usdz in Resources */ = {isa = PBXBuildFile; fileRef = B1D9F8E01DEDBA4586FAA1B0 /* OfficeRoom.usdz */; };
 		A39B7CF137522252F4D1A9C3 /* PlanFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D47B1B2C9E68EC321647E2E /* PlanFlow.swift */; };
 		A40B7AB179DFA51D7B604B03 /* OfficeCanvasRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 877ADF6023714BAEC92A7A3B /* OfficeCanvasRunner.swift */; };
+		A48C20D5A6E9716804739E3D /* BotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8908F238BDF1D6E1AE5C91C9 /* BotStore.swift */; };
 		A6EAD0B6BE57A908616CADB6 /* ClaudeModelMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B03454049D35D46D11E63CB /* ClaudeModelMenu.swift */; };
 		A7C01B5CFB2DE6E1A85996FD /* CardJoker.webp in Resources */ = {isa = PBXBuildFile; fileRef = 4046D90F75459E5B532ACE06 /* CardJoker.webp */; };
 		A7D328F4FA370B7E3C7FFB6F /* ChatProcess.swift in Sources */ = {isa = PBXBuildFile; fileRef = E229CF3EA3E5C8331E30BF2D /* ChatProcess.swift */; };
@@ -287,6 +287,7 @@
 		D77C400731E1A4E8AB577ABD /* ServerScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6085927C746749BAD3504F03 /* ServerScanner.swift */; };
 		D82CA4646059F1E30F8C6324 /* GIRL.usdz in Resources */ = {isa = PBXBuildFile; fileRef = A9273830B442B5862BFE6D2E /* GIRL.usdz */; };
 		D86D3A55AB8F38C5084377F4 /* OfficeMonitorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C25BE499120207FCBC7D15A9 /* OfficeMonitorView.swift */; };
+		D943E8A182C0DC73F433DE78 /* BotModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A72B6A361E6A5F241AE366A9 /* BotModeView.swift */; };
 		D96D2234A324FE3A3E06BAD7 /* StartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C1361476010EC1B422C026 /* StartView.swift */; };
 		D9BC01980D4186E943774370 /* ChatCommandViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1DA779938E07CE10645928A /* ChatCommandViews.swift */; };
 		DA22DA00E5F532C11E059AAC /* OfficeLiveScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F734741C87233B79689516 /* OfficeLiveScreen.swift */; };
@@ -533,6 +534,7 @@
 		87ADF96D61AB50CD5A3F2BDE /* OfficeChessRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeChessRoute.swift; sourceTree = "<group>"; };
 		87F75EF25C24256C43529DFF /* SimulatorDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatorDisplay.swift; sourceTree = "<group>"; };
 		8816FF36883C8E65FD124DC7 /* NewAgentSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewAgentSheet.swift; sourceTree = "<group>"; };
+		8908F238BDF1D6E1AE5C91C9 /* BotStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotStore.swift; sourceTree = "<group>"; };
 		89E0B4DD49D100A6788F4431 /* Avatar_GIRL.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = Avatar_GIRL.png; sourceTree = "<group>"; };
 		8A45A93DAF44DBBC83A60C50 /* ExecutableResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExecutableResolver.swift; sourceTree = "<group>"; };
 		8B9CC2E572A9B10D6495B50F /* CodeOSQuota.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeOSQuota.swift; sourceTree = "<group>"; };
@@ -568,6 +570,7 @@
 		A5DA957BF049BAF361BA307D /* OfficeInterfaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeInterfaceView.swift; sourceTree = "<group>"; };
 		A669F4C23030DFB614FB88C4 /* JackCore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = JackCore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		A7000AAC5B5D05A170361D0C /* OfficePersonas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficePersonas.swift; sourceTree = "<group>"; };
+		A72B6A361E6A5F241AE366A9 /* BotModeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotModeView.swift; sourceTree = "<group>"; };
 		A7920154A0C48A8B576E4954 /* Office2DScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Office2DScene.swift; sourceTree = "<group>"; };
 		A876B8D68DB87F9B72220174 /* StellarOllama.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StellarOllama.swift; sourceTree = "<group>"; };
 		A8AC5CBAB71E44192E8AF824 /* AttachmentViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentViews.swift; sourceTree = "<group>"; };
@@ -614,7 +617,6 @@
 		CA9AEFCAF5C3EB12827473A9 /* ClaudeSessions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeSessions.swift; sourceTree = "<group>"; };
 		CC084525C4D6CE0EBEF1CF88 /* JackApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JackApp.swift; sourceTree = "<group>"; };
 		CCABA0283CE71A5F4ED877AC /* JackRemoteProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JackRemoteProtocol.swift; sourceTree = "<group>"; };
-		CCFCEC6A2BE443EE8AB64111 /* AutomationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutomationsView.swift; sourceTree = "<group>"; };
 		CDDD94D4D38FF19A730E48F5 /* LightNewAgentSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LightNewAgentSheet.swift; sourceTree = "<group>"; };
 		D08E6CDC5CAE8387F825A794 /* OpenCodeCLI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodeCLI.swift; sourceTree = "<group>"; };
 		D25E338010A6DCE454E4B674 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
@@ -728,6 +730,7 @@
 				C25E6C8DB178859ECD873C96 /* Artifacts.swift */,
 				2CFA10CB841F5A058AC09FE4 /* ArtifactTools.swift */,
 				69EA49D5639DCB0C821AF51E /* Blackjack.swift */,
+				8908F238BDF1D6E1AE5C91C9 /* BotStore.swift */,
 				D270EF82D7E479169076203B /* BrowserAddress.swift */,
 				99043DC6E87DB144C2ECE631 /* BrowserPick.swift */,
 				094C42C6DC4B76FE4E66E40D /* ChatArchive.swift */,
@@ -983,8 +986,8 @@
 				61D2267782A3D3E8EBBD9FE6 /* ArtifactPanel.swift */,
 				6AA8C81C6A84E8DDF53B0226 /* AsideView.swift */,
 				A8AC5CBAB71E44192E8AF824 /* AttachmentViews.swift */,
-				CCFCEC6A2BE443EE8AB64111 /* AutomationsView.swift */,
 				EE20CBCE09336DFA3CA28709 /* BatterySaver.swift */,
+				A72B6A361E6A5F241AE366A9 /* BotModeView.swift */,
 				5019EA3818C709E8D20043A4 /* BrowserPicker.swift */,
 				E1DA779938E07CE10645928A /* ChatCommandViews.swift */,
 				504E39FB7DA22A1B9933C4A5 /* ChatMessageRow.swift */,
@@ -1403,8 +1406,8 @@
 				22D3BF00FE3AD394A5774F43 /* ArtifactPanel.swift in Sources */,
 				166A26F7D4105C984E303849 /* AsideView.swift in Sources */,
 				28AC8F651C192396167D8317 /* AttachmentViews.swift in Sources */,
-				4554A60DE0E5512B0E29B1B4 /* AutomationsView.swift in Sources */,
 				5D953693E66E01A72D9DB935 /* BatterySaver.swift in Sources */,
+				D943E8A182C0DC73F433DE78 /* BotModeView.swift in Sources */,
 				FDA0C86DE21F32B305B5F8F8 /* BrowserPicker.swift in Sources */,
 				D9BC01980D4186E943774370 /* ChatCommandViews.swift in Sources */,
 				8D901B967A33198662F4A94B /* ChatMessageRow.swift in Sources */,
@@ -1537,6 +1540,7 @@
 				961257F1331631473551DE16 /* ArtifactTools.swift in Sources */,
 				50B143FC44D72601C56EA034 /* Artifacts.swift in Sources */,
 				7B0C9B6813EA7D8AFDFE1AFF /* Blackjack.swift in Sources */,
+				A48C20D5A6E9716804739E3D /* BotStore.swift in Sources */,
 				7E295FDBE4DB448AD14EB38C /* BrowserAddress.swift in Sources */,
 				1E413BE4FA305A05CFCDA372 /* BrowserPick.swift in Sources */,
 				02B83CB51FECD80B94438A2F /* ChatArchive.swift in Sources */,

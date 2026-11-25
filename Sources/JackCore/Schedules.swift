@@ -16,7 +16,7 @@ public enum ScheduledMessageDelivery {
     case accepted, retry, discard
 }
 
-public enum AutomationFrequency: String, Codable, CaseIterable, Identifiable {
+public enum AutomationFrequency: String, Codable, CaseIterable, Identifiable, Sendable {
     case once, interval, daily, weekdays, weekly
     public var id: String { rawValue }
     public var title: String {
@@ -127,6 +127,13 @@ public struct Automation: Identifiable, Codable, Equatable {
         save()
     }
     public func removeAutomation(_ id: UUID) { automations.removeAll { $0.id == id }; save() }
+    /// Drops every automation once Jack Bot has them as routines. The file is copied to `schedules.json.bak` first.
+    public func removeAllAutomations() {
+        guard !automations.isEmpty else { return }
+        let backup = url.appendingPathExtension("bak")
+        if !FileManager.default.fileExists(atPath: backup.path) { try? FileManager.default.copyItem(at: url, to: backup) }
+        automations.removeAll(); save()
+    }
     public func setEnabled(_ enabled: Bool, for id: UUID) {
         guard let index = automations.firstIndex(where: { $0.id == id }) else { return }
         automations[index].enabled = enabled

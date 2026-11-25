@@ -186,9 +186,9 @@ struct JackSidebar: View {
     let onHide: () -> Void
     /// Bumped by ⌘F to focus the search field.
     let searchRequest: Int
-    /// Opens Automations mode; nil hides the entry.
-    var onShowAutomations: (() -> Void)? = nil
-    var automationsActive = false
+    /// Opens Jack Bot mode; nil hides the entry.
+    var onShowBot: (() -> Void)? = nil
+    var botActive = false
     var onShowArtifacts: (() -> Void)? = nil
     var artifactsActive = false
     var onShowOffice: (() -> Void)? = nil
@@ -271,9 +271,9 @@ struct JackSidebar: View {
             header
             VStack(spacing: 1) {
                 navButton("square.and.pencil", "Nuevo agente", shortcut: "⌘N") { onNewConversation(nil) }
-                if let onShowAutomations {
-                    navButton("clock.arrow.2.circlepath", "Automatizaciones", shortcut: "", action: onShowAutomations)
-                        .background(automationsActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: JackPalette.radius(6)))
+                if let onShowBot {
+                    navButton("person.2.wave.2", "Jack Bot", shortcut: "", action: onShowBot)
+                        .background(botActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: JackPalette.radius(6)))
                 }
                 if let onShowClaudeCloud {
                     navButton("cloud", "Claude Code Cloud", shortcut: "", action: onShowClaudeCloud)
@@ -358,9 +358,9 @@ struct JackSidebar: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 2) {
-                if let onShowAutomations {
-                    navButton("clock.arrow.2.circlepath", "Automatizaciones", shortcut: "", action: onShowAutomations)
-                        .background(automationsActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: JackPalette.radius(6)))
+                if let onShowBot {
+                    navButton("person.2.wave.2", "Jack Bot", shortcut: "", action: onShowBot)
+                        .background(botActive ? JackPalette.selection : .clear, in: RoundedRectangle(cornerRadius: JackPalette.radius(6)))
                 }
                 if let onShowClaudeCloud {
                     navButton("cloud", "Claude Code Cloud", shortcut: "", action: onShowClaudeCloud)
