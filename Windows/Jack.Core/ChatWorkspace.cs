@@ -1,20 +1,12 @@
 using System.Collections.ObjectModel;
 
+using System.Collections.ObjectModel;
+
+using System.Collections.ObjectModel;
+
+using System.Collections.ObjectModel;
+
 namespace Jack.Core;
-
-public enum ChatProvider { Codex, Claude, OpenCode }
-
-public sealed record ChatConversation(Guid Id, string Title, string ProjectPath, ChatProvider Provider)
-{
-    public string ProjectName => Path.GetFileName(ProjectPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)) is { Length: > 0 } name ? name : ProjectPath;
-
-    public string ProviderTitle => Provider switch
-    {
-        ChatProvider.Claude => "Claude Code",
-        ChatProvider.OpenCode => "OpenCode",
-        _ => "Codex"
-    };
-}
 
 public sealed class ChatWorkspace
 {
@@ -33,7 +25,7 @@ public sealed class ChatWorkspace
         if (!Path.IsPathFullyQualified(projectPath) || !Directory.Exists(projectPath))
             throw new ArgumentException("El proyecto debe ser una carpeta existente con ruta absoluta.", nameof(projectPath));
 
-        var conversation = new ChatConversation(Guid.NewGuid(), title.Trim(), Path.GetFullPath(projectPath), provider);
+        var conversation = new ChatConversation(Path.GetFullPath(projectPath), provider) { Title = title.Trim() };
         conversations.Add(conversation);
         return conversation;
     }

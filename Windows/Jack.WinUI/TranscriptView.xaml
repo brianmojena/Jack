@@ -1,0 +1,16 @@
+<UserControl
+    x:Class="Jack.WinUI.TranscriptView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer x:Name="Scroller" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+        <Grid x:Name="ContentColumn" HorizontalAlignment="Center" Padding="0,20,0,12">
+            <StackPanel Spacing="12">
+                <StackPanel x:Name="MessagesHost" Spacing="12" />
+                <StackPanel x:Name="WorkingHost" Orientation="Horizontal" Spacing="8" Margin="0,4,0,0" Visibility="Collapsed">
+                    <ProgressRing IsActive="True" Width="14" Height="14" />
+                    <TextBlock Text="Trabajando…" VerticalAlignment="Center" Style="{StaticResource JackCaption}" />
+                </StackPanel>
+            </StackPanel>
+        </Grid>
+    </ScrollViewer>
+</UserControl>

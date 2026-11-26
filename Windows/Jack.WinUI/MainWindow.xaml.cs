@@ -1,509 +1,636 @@
-using System.Collections.Specialized;
 using Jack.Core;
-using Microsoft.UI;
+using Microsoft.UI.Dispatching;
+using Microsoft.UI.Input;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using Windows.Storage.Pickers;
+using Windows.System;
+using Windows.UI.Core;
 
 namespace Jack.WinUI;
 
 public sealed partial class MainWindow : Window
 {
-    private const string DefaultModel = "Predeterminado";
-
-    // Modelo, esfuerzo y permisos que se muestran en el compositor. Todavía no llegan a ninguna CLI: viven en la ventana.
-    private sealed class AgentOptions
+    // Borrador del compositor de una conversación: el texto y los archivos adjuntos aún no enviados.
+    private sealed class Draft
     {
-        public string Model = DefaultModel;
-        public string Effort = "Alto";
-        public string Mode = "Auto";
+        public string Text = "";
+        public List<string> Files = new();
     }
 
-    private sealed record SidebarRow(Button Row, Microsoft.UI.Xaml.Shapes.Rectangle Indicator);
+    private readonly ChatStore store;
+    private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer refreshTimer;
+    private readonly Dictionary<Guid, Draft> drafts = new();
 
-    private readonly ChatWorkspace workspace = new();
-    private readonly Dictionary<Guid, IReadOnlyList<Turn>> demoTurns = [];
-    private readonly Dictionary<Guid, DateTime> created = [];
-    private readonly Dictionary<Guid, AgentOptions> options = [];
-    private readonly Dictionary<Guid, SidebarRow> rows = [];
-    private readonly Dictionary<Guid, TextBlock> subtitles = [];
-    private Guid? selectedId;
+    private Guid? shownId;
+    private Draft? draft;
+    private bool newMode;
+    private readonly Draft newDraft = new();
+    private Guid? comboOwner;
+    private string effortKey = "";
+    private string approvalKey = "";
+    private bool sendShowsStop;
+    private bool suppressCombos;
+    private bool suppressErrorBar;
 
     public MainWindow()
     {
         InitializeComponent();
         ExtendsContentIntoTitleBar = true;
+        try { AppWindow.SetIcon(System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "jack.ico")); } catch { }
         SetTitleBar(AppTitleBar);
-        AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Standard;
-        Root.ActualThemeChanged += (_, _) =>
-        {
-            ApplyCaptionColors();
-            RebuildSidebar();
-        };
-        ((INotifyCollectionChanged)workspace.Conversations).CollectionChanged += OnConversationsChanged;
-        var clock = DispatcherQueue.CreateTimer();
-        clock.Interval = TimeSpan.FromSeconds(30);
-        clock.Tick += (_, _) => UpdateSubtitles();
-        clock.Start();
         FitToScreen();
-        ApplyCaptionColors();
-        ShowConversation(null);
-        ApplyCaptureMode();
+        AppWindow.Changed += EnforceMinimumSize;
+        ApplyCaptureTheme();
+
+        // Un único store, creado en el hilo de interfaz: sus eventos llegan a este hilo.
+        store = new ChatStore(new ChatArchive(), new JsonPreferences());
+        refreshTimer = DispatcherQueue.CreateTimer();
+        refreshTimer.Interval = TimeSpan.FromMilliseconds(50);
+        refreshTimer.IsRepeating = false;
+        refreshTimer.Tick += (_, _) => Refresh();
+        store.Changed += ScheduleRefresh;
+
+        Sidebar.Attach(store);
+        Sidebar.NewAgentRequested += EnterNewMode;
+        ChatPresentation.FitColumn(ApprovalsHost, ApprovalsBox);
+        ChatPresentation.FitColumn(ComposerHost, ComposerBox, 780);
+        Closed += (_, _) => store.Shutdown();
+        NewFolder.KeyDown += (_, e) =>
+        {
+            if (e.Key == VirtualKey.Enter) { e.Handled = true; Composer.Focus(FocusState.Programmatic); }
+        };
+        ChatPresentation.FitColumn(NewChatPanel, NewChatBox, 560);
+        Sidebar.ConversationChosen += LeaveNewMode;
+
+        Refresh();
     }
 
-    // Botones de ventana transparentes con hover blanco 8 % (negro en claro).
-    private void ApplyCaptionColors()
-    {
-        var light = Root.ActualTheme == ElementTheme.Light;
-        var text = light ? Look.Hex(0x1B1E25) : Look.Hex(0xE9EBF0);
-        var hover = light ? Look.Hex(0x000000, 0x14) : Look.Hex(0xFFFFFF, 0x14);
-        var title = AppWindow.TitleBar;
-        title.ButtonBackgroundColor = title.ButtonInactiveBackgroundColor = Colors.Transparent;
-        title.ButtonForegroundColor = text;
-        title.ButtonHoverBackgroundColor = hover;
-        title.ButtonHoverForegroundColor = text;
-        title.ButtonPressedBackgroundColor = light ? Look.Hex(0x000000, 0x1F) : Look.Hex(0xFFFFFF, 0x1F);
-        title.ButtonPressedForegroundColor = text;
-        title.ButtonInactiveForegroundColor = light ? Look.Hex(0x5A6170) : Look.Hex(0xA3A9B5);
-    }
+    // ----------------------------------------------------------------------------------- Ventana
 
-    // El tamaño por defecto no debe superar el área útil (p. ej. una pantalla de 800x600).
+    // Tamaño inicial 1280x800, sin superar el área útil de la pantalla.
     private void FitToScreen()
     {
         var work = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
-        var width = Math.Min(1100, work.Width);
-        var height = Math.Min(740, work.Height);
+        var width = Math.Min(1280, work.Width);
+        var height = Math.Min(800, work.Height);
         AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(work.X + (work.Width - width) / 2, work.Y + (work.Height - height) / 2, width, height));
     }
 
-    // Solo para CI: JACK_CAPTURE=empty|demo|reference y JACK_THEME=light|dark preparan la ventana para la captura de pantalla.
-    // "demo" y "reference" rellenan conversaciones y mensajes de ejemplo; la app real no los crea.
-    // "reference" reproduce la maqueta del plan (plan jack windows/referencia) a 1280×860.
-    private void ApplyCaptureMode()
+    // WinUI no tiene MinWidth en Window: si la ventana se hace más pequeña que 900x600, se vuelve a estirar.
+    private void EnforceMinimumSize(AppWindow sender, AppWindowChangedEventArgs args)
     {
-        var mode = Environment.GetEnvironmentVariable("JACK_CAPTURE");
-        if (mode is not ("empty" or "demo" or "reference")) return;
-        // MoveAndResize usa píxeles físicos: se escala por el DPI para que el tamaño lógico sea el de la maqueta.
-        var scale = GetDpiForWindow(WinRT.Interop.WindowNative.GetWindowHandle(this)) / 96.0;
-        var (width, height) = mode == "reference" ? (1280, 860) : (1000, 700);
-        AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(0, 0, (int)(width * scale), (int)(height * scale)));
-        Root.RequestedTheme = Environment.GetEnvironmentVariable("JACK_THEME") == "light" ? ElementTheme.Light : ElementTheme.Dark;
-        if (mode == "empty") return;
-        var demo = Path.Combine(Path.GetTempPath(), "jack-demo");
-        ChatConversation Add(string title, string folder, ChatProvider provider, TimeSpan age)
+        if (!args.DidSizeChange) return;
+        var size = sender.Size;
+        var width = Math.Max(size.Width, 900);
+        var height = Math.Max(size.Height, 600);
+        if (width != size.Width || height != size.Height) sender.Resize(new Windows.Graphics.SizeInt32(width, height));
+    }
+
+    // Solo para capturas de CI: JACK_THEME=light|dark fuerza el tema de la ventana.
+    private void ApplyCaptureTheme()
+    {
+        var theme = Environment.GetEnvironmentVariable("JACK_THEME");
+        if (theme is "light" or "dark") Root.RequestedTheme = theme == "dark" ? ElementTheme.Dark : ElementTheme.Light;
+    }
+
+    private void NewAgentShortcut_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        EnterNewMode();
+        args.Handled = true;
+    }
+
+    // ----------------------------------------------------------------------------------- Refresco
+
+    // El store avisa en cada cambio pequeño (p. ej. cada fragmento de respuesta); agrupamos los repintados.
+    private void ScheduleRefresh()
+    {
+        if (!refreshTimer.IsRunning) refreshTimer.Start();
+    }
+
+    private void Refresh()
+    {
+        Sidebar.Refresh();
+        ShowError();
+        if (newMode)
         {
-            var conversation = workspace.CreateConversation(title, Directory.CreateDirectory(Path.Combine(demo, folder)).FullName, provider);
-            created[conversation.Id] = DateTime.Now - age;
-            return conversation;
-        }
-        if (mode == "reference")
-        {
-            var ok = Add("Responde solo con la palabra OK", "Jack", ChatProvider.Claude, TimeSpan.Zero);
-            Add("Nuevo agente", "Jack", ChatProvider.Claude, TimeSpan.FromMinutes(6));
-            Add("Nuevo agente", "Jack", ChatProvider.Claude, TimeSpan.FromMinutes(17));
-            options[ok.Id] = new AgentOptions { Model = "Sonnet 5.5" };
-            demoTurns[ok.Id] =
-            [
-                new(TurnKind.Agent, @"**Para probarlo:** la compilación normal falla porque tu Jack está abierto y bloquea el `.exe` (PID 3068). Ciérralo y recompila. El `dotnet` del PATH es el SDK 8, así que usé `C:\Program Files (x86)\dotnet\dotnet.exe`, que es el 10."),
-                new(TurnKind.Agent, "¿Quieres que añada también los selectores de modelo y modo en esta pantalla?"),
-                new(TurnKind.User, "sí, y también el esfuerzo y demás"),
-                new(TurnKind.Tools, "", new ToolGroup("Explorar", "1 búsqueda · 2 lecturas",
-                    "Mientras no exista el agente, guardo el modelo, el esfuerzo y el modo pendientes en la ventana para aplicarlos al crearlo; también hago público `DefaultMode` para no duplicar la regla del modo inicial.",
-                    "Editar · 5 archivos",
-                    [
-                        new("NuevoAgenteView.xaml", "Edit"),
-                        new("NuevoAgenteView.xaml.cs", "Edit"),
-                        new("MainWindow.xaml.cs", "Edit"),
-                        new("AgentOptions.cs", "Edit"),
-                        new("Composer.xaml", "Edit", Running: true)
-                    ]))
-            ];
-            RebuildSidebar();
-            Select(ok);
+            ShowNewMode();
             return;
         }
-        var pagos = Add("Revisar el módulo de pagos", "tienda-web", ChatProvider.Codex, TimeSpan.FromMinutes(2));
-        var migrar = Add("Migrar a .NET 10", "api-pedidos", ChatProvider.Claude, TimeSpan.FromMinutes(9));
-        var docs = Add("Documentar la CLI", "docs", ChatProvider.OpenCode, TimeSpan.FromMinutes(31));
-        demoTurns[pagos.Id] =
-        [
-            new(TurnKind.User, "Revisa el módulo de pagos: los totales con descuento salen con un céntimo de diferencia."),
-            new(TurnKind.Agent, "Voy a empezar por ver cómo se calcula el total y en qué punto se redondea."),
-            new(TurnKind.Tools, "", new ToolGroup("Explorar", "1 búsqueda · 1 lectura",
-                "El descuento se redondea antes de sumar los impuestos y el error se acumula. Redondeo una sola vez, al final.",
-                "Editar · 2 archivos",
-                [
-                    new("src/Pagos/Totales.cs", "Edit"),
-                    new("tests/Pagos/TotalesTests.cs", "Edit", Running: true)
-                ]))
-        ];
-        demoTurns[migrar.Id] =
-        [
-            new(TurnKind.User, "Migra api-pedidos a .NET 10 sin romper los contratos públicos."),
-            new(TurnKind.Agent, "Empiezo por el archivo de proyecto y los paquetes que ya tienen versión compatible.")
-        ];
-        demoTurns[docs.Id] =
-        [
-            new(TurnKind.User, "Documenta los comandos de la CLI en `docs/uso.md`."),
-            new(TurnKind.Agent, "Listo el índice. Reviso cada comando con su ayuda integrada antes de describirlo.")
-        ];
-        RebuildSidebar();
-        Select(pagos);
-    }
 
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
-    private static extern uint GetDpiForWindow(IntPtr hwnd);
-
-    // ===== Estado de cada agente =====
-
-    private void OnConversationsChanged(object? sender, NotifyCollectionChangedEventArgs e)
-    {
-        if (e.NewItems is not null)
+        var conversation = store.SelectedConversation;
+        if (conversation is null)
         {
-            foreach (ChatConversation conversation in e.NewItems)
-                created.TryAdd(conversation.Id, DateTime.Now);
+            shownId = null;
+            draft = null;
+            ShowEmpty();
+            return;
         }
-        RebuildSidebar();
+
+        EmptyState.Visibility = Visibility.Collapsed;
+        ConversationView.Visibility = Visibility.Visible;
+        HeaderBar.Visibility = Visibility.Visible;
+        NewChatPanel.Visibility = Visibility.Collapsed;
+        Transcript.Visibility = Visibility.Visible;
+        SettingsRow.Visibility = Visibility.Visible;
+        if (conversation.Id != shownId) SwitchTo(conversation);
+
+        var id = conversation.Id;
+        ConversationTitle.Text = string.IsNullOrWhiteSpace(conversation.Title) ? "Nuevo agente" : conversation.Title;
+        ConversationDescription.Text = $"{ChatPresentation.ProjectName(conversation.ProjectPath)} · {conversation.Provider.Title()}";
+
+        var busy = store.IsBusy(id);
+        var working = store.Statuses.TryGetValue(id, out var status) && (status == ChatStatus.Running || status == ChatStatus.Queued);
+        Transcript.Show(id, conversation.Messages, working);
+        ConversationState.Text = working ? "· Trabajando…" : "";
+        StopButton.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
+
+        ShowApprovals(id);
+        ShowQueue(id);
+        RestoreRecalled(id);
+        SyncSettings(conversation, busy);
+        UpdateSendButton();
     }
 
-    private AgentOptions OptionsOf(ChatConversation conversation)
+    private void ShowEmpty()
     {
-        if (!options.TryGetValue(conversation.Id, out var current))
+        var any = store.Conversations.Count > 0;
+        EmptyTitle.Text = any ? "Selecciona un agente" : "Crea tu primer agente";
+        EmptyBody.Text = any
+            ? "Elige una conversación en la barra lateral o crea una nueva."
+            : "Elige la carpeta de un proyecto y un proveedor para preparar una conversación.";
+        HeaderBar.Visibility = Visibility.Collapsed;
+        EmptyState.Visibility = Visibility.Visible;
+        ConversationView.Visibility = Visibility.Collapsed;
+    }
+
+    private void ShowError()
+    {
+        var message = store.ErrorMessage;
+        suppressErrorBar = true;
+        ErrorBar.Message = message ?? "";
+        ErrorBar.IsOpen = message is not null;
+        suppressErrorBar = false;
+    }
+
+    private void ErrorBar_Closed(InfoBar sender, InfoBarClosedEventArgs args)
+    {
+        if (!suppressErrorBar) store.DismissError();
+    }
+
+    // Cambia la conversación mostrada: guarda el borrador de la anterior y carga el de la nueva.
+    private void SwitchTo(ChatConversation conversation)
+    {
+        if (shownId is { } previous && draft is not null) drafts[previous] = draft;
+        shownId = conversation.Id;
+        if (!drafts.TryGetValue(conversation.Id, out draft))
         {
-            options[conversation.Id] = current = new AgentOptions
+            draft = new Draft();
+            drafts[conversation.Id] = draft;
+        }
+        Composer.Text = draft.Text;
+        RenderAttachments();
+        comboOwner = null;
+        effortKey = "";
+        approvalKey = "";
+        // El cursor queda listo en el compositor al abrir o crear un agente.
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => Composer.Focus(FocusState.Programmatic));
+    }
+
+    // ----------------------------------------------------------------------------------- Aprobaciones
+
+    private void ShowApprovals(Guid id)
+    {
+        var approvals = store.Approvals.TryGetValue(id, out var list) ? list : null;
+        // Solo se reconstruye si cambian las aprobaciones: así no se pierden las respuestas que el usuario escribe.
+        var key = id + "|" + (approvals is null ? "" : string.Join("|", approvals.Select(approval => approval.Id + ":" + approval.Questions.Count)));
+        if (key != approvalKey)
+        {
+            approvalKey = key;
+            ApprovalsBox.Children.Clear();
+            if (approvals is not null)
             {
-                Model = conversation.Provider == ChatProvider.Claude ? "Sonnet 5.5" : DefaultModel
-            };
-        }
-        return current;
-    }
-
-    private static string[] ModelsOf(ChatProvider provider) =>
-        provider == ChatProvider.Claude ? ["Sonnet 5.5", "Opus 5.5", "Haiku 5.5"] : [DefaultModel];
-
-    private bool IsRunning(Guid id) =>
-        demoTurns.TryGetValue(id, out var turns) && turns.Any(turn => turn.Group?.Running == true);
-
-    private static string Ago(DateTime moment)
-    {
-        var elapsed = DateTime.Now - moment;
-        if (elapsed < TimeSpan.FromMinutes(1)) return "ahora";
-        if (elapsed < TimeSpan.FromHours(1)) return $"hace {(int)elapsed.TotalMinutes} min";
-        if (elapsed < TimeSpan.FromDays(1)) return $"hace {(int)elapsed.TotalHours} h";
-        return $"hace {(int)elapsed.TotalDays} d";
-    }
-
-    // Una vez que el agente ha trabajado, el subtítulo muestra su modelo; antes, solo el tiempo.
-    private string SubtitleOf(ChatConversation conversation)
-    {
-        var ago = created.TryGetValue(conversation.Id, out var moment) ? Ago(moment) : "ahora";
-        if (!demoTurns.ContainsKey(conversation.Id)) return ago;
-        var model = OptionsOf(conversation).Model;
-        return $"{(model == DefaultModel ? conversation.ProviderTitle : model)} · {ago}";
-    }
-
-    private void UpdateSubtitles()
-    {
-        foreach (var conversation in workspace.Conversations)
-        {
-            if (subtitles.TryGetValue(conversation.Id, out var text)) text.Text = SubtitleOf(conversation);
-        }
-    }
-
-    // ===== Barra lateral =====
-
-    private void SearchBox_TextChanged(object sender, TextChangedEventArgs e) => RebuildSidebar();
-
-    private void RebuildSidebar()
-    {
-        AgentList.Children.Clear();
-        rows.Clear();
-        subtitles.Clear();
-        var query = SearchBox.Text.Trim();
-        var visible = workspace.Conversations
-            .Where(c => query.Length == 0
-                || c.Title.Contains(query, StringComparison.CurrentCultureIgnoreCase)
-                || c.ProjectName.Contains(query, StringComparison.CurrentCultureIgnoreCase))
-            .OrderByDescending(c => created.GetValueOrDefault(c.Id))
-            .ToList();
-        foreach (var group in visible.GroupBy(c => c.ProjectPath, StringComparer.OrdinalIgnoreCase))
-        {
-            AgentList.Children.Add(GroupLabel(group.First().ProjectName));
-            foreach (var conversation in group) AgentList.Children.Add(AgentRow(conversation));
-        }
-        UpdateSelection();
-    }
-
-    private static UIElement GroupLabel(string name)
-    {
-        var label = new Grid { Padding = new Thickness(10, 12, 10, 4), ColumnSpacing = 8 };
-        label.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        label.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var icon = new FontIcon { Glyph = "", FontSize = 14, VerticalAlignment = VerticalAlignment.Center };
-        var text = new TextBlock { Text = name, FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
-        Grid.SetColumn(text, 1);
-        label.Children.Add(icon);
-        label.Children.Add(text);
-        Muted(label, text, icon);
-        return label;
-    }
-
-    // Texto atenuado: los pinceles temáticos no se resuelven desde código, así que se elige el color al cargar según el tema.
-    private static void Muted(FrameworkElement host, params FrameworkElement[] targets) =>
-        host.Loaded += (_, _) =>
-        {
-            var color = host.ActualTheme == ElementTheme.Light ? Look.Hex(0x5A6170) : Look.Hex(0xA3A9B5);
-            var brush = new Microsoft.UI.Xaml.Media.SolidColorBrush(color);
-            foreach (var target in targets)
-            {
-                if (target is TextBlock text) text.Foreground = brush;
-                else if (target is FontIcon icon) icon.Foreground = brush;
+                foreach (var approval in approvals) ApprovalsBox.Children.Add(ApprovalView.Build(store, id, approval));
             }
-        };
+        }
+        ApprovalsHost.Visibility = ApprovalsBox.Children.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+    }
 
-    private UIElement AgentRow(ChatConversation conversation)
+    // ----------------------------------------------------------------------------------- Cola de mensajes y adjuntos
+
+    private void ShowQueue(Guid id)
     {
-        var running = IsRunning(conversation.Id);
-        var content = new Grid { ColumnSpacing = 10 };
-        content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(16) });
-        content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-        var indicator = new Microsoft.UI.Xaml.Shapes.Rectangle
+        QueueHost.Children.Clear();
+        if (store.Waiting.TryGetValue(id, out var waiting))
         {
-            Width = 3,
-            RadiusX = 2,
-            RadiusY = 2,
-            HorizontalAlignment = HorizontalAlignment.Left,
-            VerticalAlignment = VerticalAlignment.Stretch,
-            Margin = new Thickness(-10, 2, 0, 2),
-            Fill = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["JackAccentBrush"],
-            Visibility = Visibility.Collapsed
-        };
-        Grid.SetColumnSpan(indicator, 2);
-        content.Children.Add(indicator);
-
-        UIElement state = running
-            ? new Spinner()
-            : new Microsoft.UI.Xaml.Shapes.Ellipse
+            foreach (var message in waiting)
             {
-                Width = 6, Height = 6, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
-                Fill = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["JackIdleDotBrush"]
+                var text = new TextBlock
+                {
+                    Text = "En espera: " + ChatPresentation.Preview(message.Text, 48),
+                    Style = (Style)Application.Current.Resources["JackCaption"],
+                    TextWrapping = TextWrapping.NoWrap,
+                    TextTrimming = TextTrimming.CharacterEllipsis
+                };
+                QueueHost.Children.Add(new Border
+                {
+                    Style = (Style)Application.Current.Resources["JackChip"],
+                    Child = text
+                });
+            }
+        }
+        QueueHost.Visibility = QueueHost.Children.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    // Si el agente se detuvo con mensajes en espera, el texto vuelve al compositor para editarlo.
+    private void RestoreRecalled(Guid id)
+    {
+        if (draft is null || !store.Recalled.TryGetValue(id, out var recalled)) return;
+        if (Composer.Text.Trim().Length == 0 && draft.Files.Count == 0)
+        {
+            Composer.Text = recalled.Text;
+            draft.Files = recalled.Attachments.ToList();
+            RenderAttachments();
+        }
+        store.ClearRecalled(id);
+    }
+
+    private void RenderAttachments()
+    {
+        AttachmentsHost.Children.Clear();
+        var owner = draft;
+        var files = owner?.Files ?? new List<string>();
+        foreach (var path in files)
+        {
+            var chip = new Button
+            {
+                Content = Path.GetFileName(path) + "  ×",
+                Padding = new Thickness(8, 2, 8, 2),
+                MinHeight = 0
             };
-        var stateHost = new Grid { Width = 16, Height = 16, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 3, 0, 0) };
-        stateHost.Children.Add(state);
-        content.Children.Add(stateHost);
-
-        var title = new TextBlock { Text = conversation.Title, TextTrimming = TextTrimming.CharacterEllipsis };
-        var subtitle = new TextBlock { Text = SubtitleOf(conversation), FontSize = 12 };
-        Muted(subtitle, subtitle);
-        var texts = new StackPanel { HorizontalAlignment = HorizontalAlignment.Stretch };
-        texts.Children.Add(title);
-        texts.Children.Add(subtitle);
-        Grid.SetColumn(texts, 1);
-        content.Children.Add(texts);
-        subtitles[conversation.Id] = subtitle;
-
-        var row = new Button
-        {
-            Style = (Style)Application.Current.Resources["JackButton"],
-            Content = content,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            HorizontalContentAlignment = HorizontalAlignment.Stretch,
-            VerticalContentAlignment = VerticalAlignment.Top,
-            Padding = new Thickness(10, 8, 10, 8),
-            MinHeight = 0
-        };
-        AutomationProperties.SetName(row, conversation.Title);
-        ToolTipService.SetToolTip(row, conversation.ProjectPath);
-        row.Click += (_, _) => Select(conversation);
-        rows[conversation.Id] = new SidebarRow(row, indicator);
-        return row;
-    }
-
-    // Fila seleccionada: fondo blanco 8 % y barra de acento de 3 px a la izquierda.
-    private void UpdateSelection()
-    {
-        foreach (var (id, row) in rows)
-        {
-            var isSelected = id == selectedId;
-            row.Indicator.Visibility = isSelected ? Visibility.Visible : Visibility.Collapsed;
-            if (isSelected) row.Row.Background = Look.Selected(Root.ActualTheme);
-            else row.Row.ClearValue(Control.BackgroundProperty);
-            AutomationProperties.SetItemStatus(row.Row, isSelected ? "Seleccionado" : "");
+            ToolTipService.SetToolTip(chip, path);
+            chip.Click += (_, _) =>
+            {
+                owner?.Files.Remove(path);
+                RenderAttachments();
+                UpdateSendButton();
+            };
+            AttachmentsHost.Children.Add(chip);
         }
+        AttachmentsHost.Visibility = files.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
     }
 
-    private void Select(ChatConversation conversation)
+    // ----------------------------------------------------------------------------------- Ajustes (modelo, esfuerzo, modo)
+
+    private void SyncSettings(ChatConversation conversation, bool busy)
     {
-        selectedId = conversation.Id;
-        UpdateSelection();
-        ShowConversation(conversation);
-    }
-
-    // ===== Conversación =====
-
-    private void ShowConversation(ChatConversation? conversation)
-    {
-        EmptyState.Visibility = conversation is null ? Visibility.Visible : Visibility.Collapsed;
-        ConversationView.Visibility = conversation is null ? Visibility.Collapsed : Visibility.Visible;
-        if (conversation is null) return;
-
-        var running = IsRunning(conversation.Id);
-        var hasTurns = demoTurns.TryGetValue(conversation.Id, out var turns);
-        ConversationTitle.Text = conversation.Title;
-        HeaderFolder.Text = conversation.ProjectName;
-        HeaderProvider.Text = conversation.ProviderTitle;
-        HeaderBusy.Text = running ? "Trabajando…" : "";
-        HeaderIdle.Text = running ? "" : "CLI sin conectar";
-        StopButton.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
-        SendButton.IsEnabled = running;
-        SendIcon.Glyph = running ? "\uE71A" : "\uE724";
-        AutomationProperties.SetName(SendButton, running ? "Detener" : "Enviar");
-        ComposerHint.Text = hasTurns
-            ? "Intro envía · Mayús+Intro nueva línea"
-            : "La CLI de este agente aún no está conectada: todavía no se pueden enviar mensajes.";
-        BuildOptionMenus(conversation);
-        Transcript.ItemsSource = turns;
-        // Como en un chat, lo más reciente queda a la vista.
-        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
-        {
-            TranscriptScroll.UpdateLayout();
-            TranscriptScroll.ChangeView(null, TranscriptScroll.ScrollableHeight, null, true);
-        });
-    }
-
-    // Píldoras del compositor: el menú de cada una cambia el valor mostrado y lo recuerda por agente.
-    private void BuildOptionMenus(ChatConversation conversation)
-    {
-        var current = OptionsOf(conversation);
-        ModelText.Text = current.Model;
-        EffortText.Text = $"Esfuerzo · {current.Effort}";
-        ModeText.Text = $"Permisos · {current.Mode}";
-        FillMenu(ModelMenu, ModelsOf(conversation.Provider), current.Model, value =>
-        {
-            current.Model = value;
-            ModelText.Text = value;
-            UpdateSubtitles();
-        });
-        FillMenu(EffortMenu, ["Bajo", "Medio", "Alto"], current.Effort, value =>
-        {
-            current.Effort = value;
-            EffortText.Text = $"Esfuerzo · {value}";
-        });
-        FillMenu(ModeMenu, ["Manual", "Auto"], current.Mode, value =>
-        {
-            current.Mode = value;
-            ModeText.Text = $"Permisos · {value}";
-        });
-    }
-
-    private static void FillMenu(MenuFlyout menu, string[] choices, string selected, Action<string> apply)
-    {
-        menu.Items.Clear();
-        foreach (var choice in choices)
-        {
-            var item = new RadioMenuFlyoutItem { Text = choice, GroupName = menu.GetHashCode().ToString(), IsChecked = choice == selected };
-            item.Click += (_, _) => apply(choice);
-            menu.Items.Add(item);
-        }
-    }
-
-    // Pliega y despliega el cuerpo de la tarjeta de herramientas.
-    private void ToolHeader_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is not Button { Parent: StackPanel card, Content: Grid header } || card.Children.Count < 2) return;
-        var body = card.Children[1];
-        var open = body.Visibility == Visibility.Collapsed;
-        body.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
-        if (header.Children[^1] is FontIcon chevron) chevron.Glyph = open ? "\uE70D" : "\uE70E";
-    }
-
-    // ===== Nuevo agente =====
-
-    private bool isCreating;
-
-    private void NewConversation_Accelerator(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
-    {
-        args.Handled = true;
-        NewConversation_Click(sender, new RoutedEventArgs());
-    }
-
-    private async void NewConversation_Click(object sender, RoutedEventArgs e)
-    {
-        // Hay dos botones "Nuevo agente" y un atajo; WinUI solo permite un ContentDialog abierto a la vez.
-        if (isCreating) return;
-        isCreating = true;
-        NewConversationButton.IsEnabled = false;
+        suppressCombos = true;
         try
         {
-            var picker = new FolderPicker();
-            picker.FileTypeFilter.Add("*");
-            WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
-            var folder = await picker.PickSingleFolderAsync();
-            if (folder is null) return;
+            var provider = conversation.Provider;
+            if (comboOwner != conversation.Id)
+            {
+                comboOwner = conversation.Id;
+                ModeBox.Items.Clear();
+                foreach (var mode in ChatRunMode.Choices(provider))
+                {
+                    ModeBox.Items.Add(new ComboBoxItem { Content = mode.Title, Tag = mode.Id });
+                }
+                ModelBox.Items.Clear();
+                foreach (var choice in store.ModelChoices(provider))
+                {
+                    ModelBox.Items.Add(new ComboBoxItem { Content = choice.Title, Tag = choice.Id });
+                }
+            }
 
-            var title = new TextBox { Header = "Nombre", Text = "Nuevo agente", MaxLength = 200 };
-            var provider = new ComboBox
+            // Modelo: si no está en la lista (p. ej. una versión antigua), se añade para que se vea.
+            SelectByTag(ModelBox, conversation.Model, () => new ComboBoxItem
             {
-                Header = "Proveedor",
-                ItemsSource = new[] { "Codex", "Claude Code", "OpenCode" },
-                SelectedIndex = 0,
-                HorizontalAlignment = HorizontalAlignment.Stretch
-            };
-            var validation = new TextBlock { TextWrapping = TextWrapping.Wrap };
-            AutomationProperties.SetLiveSetting(validation, Microsoft.UI.Xaml.Automation.Peers.AutomationLiveSetting.Polite);
-            var fields = new StackPanel { Spacing = 16 };
-            fields.Children.Add(title);
-            fields.Children.Add(provider);
-            fields.Children.Add(new TextBlock { Text = folder.Path, TextWrapping = TextWrapping.Wrap });
-            fields.Children.Add(validation);
-            var dialog = new ContentDialog
+                Content = ChatPresentation.ModelTitle(conversation.Model),
+                Tag = conversation.Model
+            });
+
+            // Esfuerzo: depende del modelo, así que se reconstruye solo cuando cambia el modelo.
+            var key = conversation.Id + "|" + conversation.Model;
+            if (key != effortKey)
             {
-                XamlRoot = Root.XamlRoot,
-                Title = "Nuevo agente",
-                Content = fields,
-                PrimaryButtonText = "Crear conversación",
-                CloseButtonText = "Cancelar",
-                DefaultButton = ContentDialogButton.Primary
-            };
-            dialog.PrimaryButtonClick += (_, args) =>
-            {
-                try
+                effortKey = key;
+                EffortBox.Items.Clear();
+                foreach (var effort in store.SupportedEfforts(provider, conversation.Model))
                 {
-                    var selectedProvider = provider.SelectedIndex switch
-                    {
-                        1 => ChatProvider.Claude,
-                        2 => ChatProvider.OpenCode,
-                        _ => ChatProvider.Codex
-                    };
-                    Select(workspace.CreateConversation(title.Text, folder.Path, selectedProvider));
+                    EffortBox.Items.Add(new ComboBoxItem { Content = ChatModelChoice.EffortTitle(effort), Tag = effort });
                 }
-                catch (ArgumentException)
-                {
-                    validation.Text = "Indica un nombre y comprueba que la carpeta del proyecto siga disponible.";
-                    args.Cancel = true;
-                }
-            };
-            await dialog.ShowAsync();
-        }
-        catch (Exception error)
-        {
-            System.Diagnostics.Debug.WriteLine(error);
-            await new ContentDialog
+            }
+            SelectByTag(EffortBox, conversation.Effort, () => new ComboBoxItem
             {
-                XamlRoot = Root.XamlRoot,
-                Title = "No se pudo preparar la conversación",
-                Content = "Vuelve a intentarlo y elige una carpeta local a la que tengas acceso.",
-                CloseButtonText = "Cerrar"
-            }.ShowAsync();
+                Content = ChatModelChoice.EffortTitle(conversation.Effort),
+                Tag = conversation.Effort
+            });
+
+            SelectByTag(ModeBox, conversation.Mode ?? "manual", () => new ComboBoxItem
+            {
+                Content = ChatPresentation.ModeTitle(conversation),
+                Tag = conversation.Mode ?? "manual"
+            });
+
+            // Como en Swift, el modelo y el esfuerzo no cambian con un turno en marcha o con mensajes en cola.
+            ModelBox.IsEnabled = !busy;
+            EffortBox.IsEnabled = !busy;
+            ModeBox.IsEnabled = !busy || store.ChangesModeLive(conversation.Id);
         }
         finally
         {
-            NewConversationButton.IsEnabled = true;
-            isCreating = false;
+            suppressCombos = false;
         }
+    }
+
+    // Selecciona el elemento cuyo Tag coincide; si no existe, lo añade con <paramref name="create"/>.
+    private static void SelectByTag(ComboBox box, string? tag, Func<ComboBoxItem> create)
+    {
+        if (tag is null) return;
+        foreach (var item in box.Items.OfType<ComboBoxItem>())
+        {
+            if ((item.Tag as string) == tag)
+            {
+                box.SelectedItem = item;
+                return;
+            }
+        }
+        var added = create();
+        box.Items.Add(added);
+        box.SelectedItem = added;
+    }
+
+    private void ModelBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (suppressCombos || shownId is not { } id) return;
+        if (ModelBox.SelectedItem is not ComboBoxItem { Tag: string model }) return;
+        var conversation = store.SelectedConversation;
+        if (conversation is null || model == conversation.Model) return;
+        store.UpdateSettings(id, model, conversation.Effort);
+    }
+
+    private void EffortBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (suppressCombos || shownId is not { } id) return;
+        if (EffortBox.SelectedItem is not ComboBoxItem { Tag: string effort }) return;
+        var conversation = store.SelectedConversation;
+        if (conversation is null || effort == conversation.Effort) return;
+        store.UpdateSettings(id, conversation.Model, effort);
+    }
+
+    private void ModeBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (suppressCombos || shownId is not { } id) return;
+        if (ModeBox.SelectedItem is not ComboBoxItem { Tag: string mode }) return;
+        var conversation = store.SelectedConversation;
+        if (conversation is null || mode == conversation.Mode) return;
+        store.UpdateMode(id, mode, ChatRunMode.Choices(conversation.Provider));
+    }
+
+    // ----------------------------------------------------------------------------------- Compositor
+
+    // Mientras la conversación está ocupada y el compositor está vacío, el botón detiene al agente.
+    private void UpdateSendButton()
+    {
+        var empty = Composer.Text.Trim().Length == 0 && (draft?.Files.Count ?? 0) == 0;
+        var showStop = shownId is { } id && store.IsBusy(id) && empty;
+        if (showStop == sendShowsStop) return;
+        sendShowsStop = showStop;
+        SendGlyph.Glyph = showStop ? "\uE71A" : "\uE74A";
+        ToolTipService.SetToolTip(SendButton, showStop ? "Detener" : "Enviar");
+        AutomationProperties.SetName(SendButton, showStop ? "Detener" : "Enviar");
+    }
+
+    private void Composer_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (draft is not null) draft.Text = Composer.Text;
+        UpdateSendButton();
+    }
+
+    private void Composer_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key != VirtualKey.Enter) return;
+        // Mayús+Intro inserta una nueva línea; Intro envía.
+        if (InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Shift).HasFlag(CoreVirtualKeyStates.Down)) return;
+        e.Handled = true;
+        SendCurrent();
+    }
+
+    private void Stop_Click(object sender, RoutedEventArgs e)
+    {
+        if (shownId is { } id) store.Stop(id);
+    }
+
+    private void Send_Click(object sender, RoutedEventArgs e)
+    {
+        if (newMode)
+        {
+            SendNew();
+            return;
+        }
+        if (shownId is not { } id || draft is null) return;
+        var empty = Composer.Text.Trim().Length == 0 && draft.Files.Count == 0;
+        // Ocupada y sin texto: el botón es "Detener". Con texto, se envía y el store lo pone en cola.
+        if (empty && store.IsBusy(id))
+        {
+            store.Stop(id);
+            return;
+        }
+        SendCurrent();
+    }
+
+    private void SendCurrent()
+    {
+        if (newMode)
+        {
+            SendNew();
+            return;
+        }
+        if (shownId is not { } id || draft is null) return;
+        var text = Composer.Text;
+        if (text.Trim().Length == 0 && draft.Files.Count == 0) return;
+        var files = draft.Files.ToList();
+        // Si el agente está ocupado, store.Send deja el mensaje en cola (store.Waiting) y lo entrega al terminar.
+        store.Send(text, id, files.Count == 0 ? null : files);
+        Composer.Text = "";
+        draft.Files.Clear();
+        RenderAttachments();
+        UpdateSendButton();
+    }
+
+    private void Attach_Click(object sender, RoutedEventArgs e)
+    {
+        if (draft is null) return;
+        try
+        {
+            foreach (var path in NativePicker.PickFiles(WinRT.Interop.WindowNative.GetWindowHandle(this), "Adjuntar archivos"))
+            {
+                if (!draft.Files.Contains(path)) draft.Files.Add(path);
+            }
+            RenderAttachments();
+            UpdateSendButton();
+        }
+        catch (Exception error)
+        {
+            store.ReportError("No se pudo abrir el selector de archivos: " + error.Message);
+        }
+    }
+
+    // ----------------------------------------------------------------------------------- Nuevo agente
+
+    private void NewAgent_Click(object sender, RoutedEventArgs e) => EnterNewMode();
+
+    // Pantalla de agente nuevo, dentro del propio chat: carpeta arriba y compositor abajo.
+    private void EnterNewMode()
+    {
+        if (!newMode)
+        {
+            if (shownId is { } previous && draft is not null) drafts[previous] = draft;
+            newMode = true;
+            shownId = null;
+            draft = newDraft;
+            Composer.Text = newDraft.Text;
+            RenderAttachments();
+            comboOwner = null;
+            effortKey = "";
+            approvalKey = "";
+            FillNewRecents();
+        }
+        Refresh();
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+        {
+            if (NewFolder.Text.Trim().Length == 0) NewFolder.Focus(FocusState.Programmatic);
+            else Composer.Focus(FocusState.Programmatic);
+        });
+    }
+
+    private void LeaveNewMode()
+    {
+        if (!newMode) return;
+        newMode = false;
+        shownId = null;
+        draft = null;
+        Refresh();
+    }
+
+    private void ShowNewMode()
+    {
+        EmptyState.Visibility = Visibility.Collapsed;
+        ConversationView.Visibility = Visibility.Visible;
+        HeaderBar.Visibility = Visibility.Visible;
+        NewChatPanel.Visibility = Visibility.Visible;
+        Transcript.Visibility = Visibility.Collapsed;
+        ApprovalsHost.Visibility = Visibility.Collapsed;
+        QueueHost.Visibility = Visibility.Collapsed;
+        SettingsRow.Visibility = Visibility.Collapsed;
+        StopButton.Visibility = Visibility.Collapsed;
+        ConversationTitle.Text = "Nuevo agente";
+        ConversationDescription.Text = "Claude Code";
+        ConversationState.Text = "";
+        UpdateSendButton();
+    }
+
+    private void FillNewRecents()
+    {
+        NewRecent.Children.Clear();
+        NewRecent.Children.Add(RecentRow("\uE80F", "Sin carpeta", "Usa tu carpeta personal", ChatPresentation.HomeFolder));
+        var recent = store.Conversations
+            .OrderByDescending(c => c.UpdatedAt)
+            .Select(c => c.ProjectPath)
+            .Where(path => Directory.Exists(path) && !ChatPresentation.IsHome(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(6)
+            .ToList();
+        foreach (var path in recent) NewRecent.Children.Add(RecentRow("\uE8B7", ChatPresentation.ProjectName(path), path, path));
+        NewRecentBox.Visibility = Visibility.Visible;
+    }
+
+    private Button RecentRow(string glyph, string title, string subtitle, string path)
+    {
+        var row = new Button
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(10, 7, 10, 7),
+            CornerRadius = new CornerRadius(8),
+            Content = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 10,
+                Children =
+                {
+                    new FontIcon { Glyph = glyph, FontSize = 13, Foreground = (Brush)Application.Current.Resources["JackMutedBrush"] },
+                    new TextBlock { Text = title, FontSize = 13.5 },
+                    new TextBlock { Text = subtitle, FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis,
+                                    Style = (Style)Application.Current.Resources["JackCaption"], MaxWidth = 300 }
+                }
+            }
+        };
+        row.Click += (_, _) =>
+        {
+            NewFolder.Text = path;
+            Composer.Focus(FocusState.Programmatic);
+        };
+        return row;
+    }
+
+    private void NewFolder_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        var path = NewFolder.Text.Trim().Trim('"');
+        var missing = path.Length > 0 && !Directory.Exists(path);
+        NewHint.Text = "La carpeta no existe.";
+        NewHint.Visibility = missing ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void NewBrowse_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var folder = NativePicker.PickFolder(WinRT.Interop.WindowNative.GetWindowHandle(this), "Carpeta del proyecto");
+            if (folder is not null)
+            {
+                NewFolder.Text = folder;
+                Composer.Focus(FocusState.Programmatic);
+            }
+        }
+        catch (Exception error)
+        {
+            NewHint.Text = "No se pudo abrir el selector: " + error.Message + ". Escribe la ruta a mano.";
+            NewHint.Visibility = Visibility.Visible;
+        }
+    }
+
+    // Crea el agente en la carpeta elegida y le envía el primer mensaje.
+    private void SendNew()
+    {
+        var path = NewFolder.Text.Trim().Trim('"');
+        if (!Directory.Exists(path))
+        {
+            NewHint.Text = path.Length == 0 ? "Elige primero la carpeta del proyecto." : "La carpeta no existe.";
+            NewHint.Visibility = Visibility.Visible;
+            NewFolder.Focus(FocusState.Programmatic);
+            return;
+        }
+        var text = Composer.Text;
+        var files = newDraft.Files.ToList();
+        if (text.Trim().Length == 0 && files.Count == 0) return;
+
+        if (store.Create(path, ChatProvider.Claude) is not { } id) return; // el store deja el aviso en ErrorMessage
+        newMode = false;
+        shownId = null;
+        draft = null;
+        newDraft.Text = "";
+        newDraft.Files.Clear();
+        Composer.Text = "";
+        NewFolder.Text = "";
+        store.Send(text, id, files.Count == 0 ? null : files);
+        Refresh();
     }
 }
