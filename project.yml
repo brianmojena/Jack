@@ -37,8 +37,15 @@ targets:
       - path: Resources/AppIcon.icon
         buildPhase: resources
       # The 3D office: rooms and characters exported from Blender (scripts/office-assets.sh).
+      # Models, light probes and textures (~100 MB) are not bundled in the Mac app: Jack downloads them the first time the
+      # office opens (Sources/Jack/Office/OfficeAssets.swift). scripts/office-assets-pack.sh makes the zip. iOS bundles them all.
       - path: Resources/Office/Runtime
         buildPhase: resources
+        excludes:
+          - "*.usdz"
+          - "*.exr"
+          - "OfficeBake_*.jpg"
+          - "OfficeDetail_*.jpg"
       # Card art (back, jack, queen, king, joker), prepared by scripts/office_cards_art.py.
       - path: Resources/Office/Cards
         buildPhase: resources

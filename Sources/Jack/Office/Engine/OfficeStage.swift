@@ -20,7 +20,8 @@ import simd
     struct Resources {
         var url: (_ name: String, _ ext: String) -> URL?
 
-        static let bundled = Resources { name, ext in Bundle.main.url(forResource: name, withExtension: ext) }
+        /// Primero lo descargado (los modelos de la oficina no viajan en la app de la Mac, ver `OfficeAssets`), luego la app.
+        static let bundled = Resources { name, ext in OfficeAssets.installedURL(name, ext) ?? Bundle.main.url(forResource: name, withExtension: ext) }
         static func folder(_ folder: URL) -> Resources {
             Resources { name, ext in folder.appendingPathComponent("\(name).\(ext)") }
         }

@@ -171,8 +171,14 @@ struct OfficeSceneView: View {
     @State private var applied = AppliedEffects()
     @State private var lastDrag = CGSize.zero
     @State private var lastMagnification: CGFloat = 1
+    @ObservedObject private var assets = OfficeAssets.shared
 
     var body: some View {
+        // Sin los modelos descargados no hay escena que cargar: se ofrece bajarlos, y al acabar la escena aparece sola.
+        if assets.state == .ready { scene } else { OfficeAssetsCard(assets: assets) }
+    }
+
+    @ViewBuilder private var scene: some View {
         // Con menos resolución la escena se dibuja en un lienzo más pequeño y se estira a la ventana.
         let scale = CGFloat(quality.resolution)
         GeometryReader { proxy in
