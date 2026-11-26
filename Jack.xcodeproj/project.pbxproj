@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		00D913C849CFADCDB86A2A71 /* OfficeProbe_meeting.exr in Resources */ = {isa = PBXBuildFile; fileRef = 85FC6D04B47AF8967D809866 /* OfficeProbe_meeting.exr */; };
 		0230B1D650D8C501C6748C4C /* OfficeSketch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F3637C53B407597775A835F /* OfficeSketch.swift */; };
 		02606301DCDC252B001348BE /* OfficeTVLogo.swift in Sources */ = {isa = PBXBuildFile; fileRef = D917312D43914049835AB295 /* OfficeTVLogo.swift */; };
 		02B83CB51FECD80B94438A2F /* ChatArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = 094C42C6DC4B76FE4E66E40D /* ChatArchive.swift */; };
@@ -17,9 +16,7 @@
 		072C2113618D353E495AA216 /* ChessMasters.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B0A4D0840ACD2556EE7FC91 /* ChessMasters.swift */; };
 		082B014E5E65DB1EAA95D741 /* ClaudeModelDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DA67B7C60AC3972FCB405CE /* ClaudeModelDetector.swift */; };
 		099A1E35E710F6327E3C3018 /* OfficeSceneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C60F74C94A49F61251E1379F /* OfficeSceneView.swift */; };
-		09AEA74C5B1A717F25280A1E /* OfficeProbe_mac.exr in Resources */ = {isa = PBXBuildFile; fileRef = F8CFDFDEB62F513033AE1DDC /* OfficeProbe_mac.exr */; };
 		0AD32BCA8D5467B1157EE855 /* Office2DScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7920154A0C48A8B576E4954 /* Office2DScene.swift */; };
-		0B10C961FB762DADFA6160AD /* OfficeDetail_Object_194.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 9B5E3B33992F0FECFB6ED57C /* OfficeDetail_Object_194.jpg */; };
 		0B9CFB06EF702B2815B43FC8 /* OfficeCardTalker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8590C0C005B125669702B7C3 /* OfficeCardTalker.swift */; };
 		0B9EADBC19694EDE76F0B47D /* CustomizationSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20441D75C93CEA30B27EC32F /* CustomizationSettingsView.swift */; };
 		0BD576E2B4A206561BD3BED4 /* MainWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7BD885E59F4C6849E846404 /* MainWindowView.swift */; };
@@ -31,6 +28,7 @@
 		110277F9DBA65AE493EF5520 /* CodeOSGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BD4A6056435F3477F2BF01F /* CodeOSGridView.swift */; };
 		125DC2F3E2AC2F34CBF5DA1A /* PaneLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = D509AEAE925B54594B2E191B /* PaneLayout.swift */; };
 		133D8F5D52A858016C0CD152 /* OfficeChessSetupCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C3963173B64BA866E086FD5 /* OfficeChessSetupCard.swift */; };
+		13E4019F71CE6AB2CBBE61CE /* OfficeAssets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C9C3CAF338D0A26F89F2BAD /* OfficeAssets.swift */; };
 		13E5587D2DFD397AFB57C9B5 /* ProgressTasks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BD8FE80738952666BEDFBA7 /* ProgressTasks.swift */; };
 		1426FBDE33222743A7485D0A /* JackCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A669F4C23030DFB614FB88C4 /* JackCore.framework */; };
 		1498D1DF8A8083084BF82604 /* JackDesign.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12A56C2DEDA3D8023FD61366 /* JackDesign.swift */; };
@@ -64,14 +62,12 @@
 		264ACAE40D81F03FB17D90FE /* OfficeChessPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AEFE88E5FE3B5A05EA0BE71 /* OfficeChessPlayer.swift */; };
 		26A5E22A1BECEA834881B1D4 /* Avatar_DEADPOOL.png in Resources */ = {isa = PBXBuildFile; fileRef = 0115E6D3245B4235B6E44CAE /* Avatar_DEADPOOL.png */; };
 		26F33593401C4D6EF10CC974 /* AgentBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 112E9D6E62140F40A3F29A21 /* AgentBridge.swift */; };
-		271A101EAC8B08D73BC317E4 /* LAMINE.usdz in Resources */ = {isa = PBXBuildFile; fileRef = 3256570DB470AE91C84FA069 /* LAMINE.usdz */; };
 		28950F3713B14C7E4449B984 /* ProviderUsageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB76527AA8274E1DC203B419 /* ProviderUsageView.swift */; };
 		2897AE012231902E2B043DC7 /* OfficePersonaEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E3E7A4FFB39026DD65A8AED /* OfficePersonaEditor.swift */; };
 		28AC8F651C192396167D8317 /* AttachmentViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8AC5CBAB71E44192E8AF824 /* AttachmentViews.swift */; };
 		295035C3484097065D8072D1 /* OfficeInterfaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5DA957BF049BAF361BA307D /* OfficeInterfaceView.swift */; };
 		2A23B1440EE00D3C9D2CD650 /* ChatImages.swift in Sources */ = {isa = PBXBuildFile; fileRef = C77FC7E95D4EE8768DC19D3F /* ChatImages.swift */; };
 		2A74F5CBFD0102E18EA266C5 /* JupyterKernel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52312515048B37AD7AAEE21C /* JupyterKernel.swift */; };
-		2ABB3DC7BAC5958046AF5199 /* GIRL.usdz in Resources */ = {isa = PBXBuildFile; fileRef = A9273830B442B5862BFE6D2E /* GIRL.usdz */; };
 		2B63503F337D59229C435107 /* FlowDiagram.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23A3C12F03AEFEE7243BF5C8 /* FlowDiagram.swift */; };
 		2CC3EE4B58F09B4A8AC4055C /* Schedules.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3CA9FD0CA60D6DFD0D58CB6 /* Schedules.swift */; };
 		2CD3AE84E731F84635B040B6 /* NotebookDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CCF40FF45B214513A23886B /* NotebookDocument.swift */; };
@@ -83,7 +79,6 @@
 		31A450B8426DD2E2BEF42A41 /* SSHTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD2509598C4FC1C9E886108E /* SSHTransport.swift */; };
 		31E3313DC51961979D4DFD8D /* AgentMentions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9864BADC2C8516EF2CD7C854 /* AgentMentions.swift */; };
 		33619E71635FCFBE0574FA58 /* CardQueen.webp in Resources */ = {isa = PBXBuildFile; fileRef = 512AEFAD5D64FD5A9D96527D /* CardQueen.webp */; };
-		342C0345FDB435FB0D4549CD /* OfficeProbe_rack.exr in Resources */ = {isa = PBXBuildFile; fileRef = 8640142886D4EFC2A10ED89B /* OfficeProbe_rack.exr */; };
 		347E552E6B9D51CB9AD5C939 /* OfficeBake_room_albedo.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 52C9BBA2EE2712C606D70503 /* OfficeBake_room_albedo.jpg */; };
 		34BC32CE33FE4D40341CCE4D /* AgentFoldersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67147764C7E299C6400683A6 /* AgentFoldersView.swift */; };
 		3621471A9E8A3D283111D4E5 /* ClaudeCloudPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E8F79C0D4ADDF32C1AA5996 /* ClaudeCloudPanel.swift */; };
@@ -99,10 +94,8 @@
 		40314B7654B616188E22E329 /* OfficeProbe_meeting.exr in Resources */ = {isa = PBXBuildFile; fileRef = 85FC6D04B47AF8967D809866 /* OfficeProbe_meeting.exr */; };
 		40889F0D6819757C0FB718A4 /* OfficeCardTable.swift in Sources */ = {isa = PBXBuildFile; fileRef = F014AF06A134892ED194BA0A /* OfficeCardTable.swift */; };
 		43E4CAEBEC4284BB09E5681A /* MacLink+OfficeHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCA51C301D8FD6BFC4E5D57C /* MacLink+OfficeHost.swift */; };
-		44B4F16D5381EB7C963C74C8 /* OfficeDetail_Object_196.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 2B8F83AED770453EC6B722D7 /* OfficeDetail_Object_196.jpg */; };
 		4520EEB63ED5EB9698EA24AF /* OfficeCardFace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EA299C819B7DEF70F287174 /* OfficeCardFace.swift */; };
 		4634192947D42C964EB9182B /* jack-progress in Embed Dependencies */ = {isa = PBXBuildFile; fileRef = DE478C8255BAFA828A7913CE /* jack-progress */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		46BEEAA2D460A31E68C98C0D /* OfficeProbe_pcs.exr in Resources */ = {isa = PBXBuildFile; fileRef = 0B2FE592C14B9EA3B6569FDF /* OfficeProbe_pcs.exr */; };
 		46C682ED68BF1576075FDA88 /* CardBack.webp in Resources */ = {isa = PBXBuildFile; fileRef = 501CA45C7AE68C6639FF9DED /* CardBack.webp */; };
 		47D12EA07E650A82BF186198 /* AgentPanes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96265CFED9209661366D40C0 /* AgentPanes.swift */; };
 		49BDC82ABF85D0445FB53329 /* MacLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F423DD30951E6CA1861E4D6 /* MacLink.swift */; };
@@ -146,12 +139,10 @@
 		6710432588B24B1A6CB97E59 /* TerminalInterfaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3130A5E80CADC1AE5B40976C /* TerminalInterfaceView.swift */; };
 		684CDE5DB17B0BE325B38196 /* BotProviders.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8298F91A48865622E6E1DBB4 /* BotProviders.swift */; };
 		686196E608B832A56A19FFE2 /* jack-ctl in Embed Dependencies */ = {isa = PBXBuildFile; fileRef = B37F4B978E9E8F59C971F1E7 /* jack-ctl */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		6A298857C592C72C99645AEE /* OfficeProbe_chess.exr in Resources */ = {isa = PBXBuildFile; fileRef = 0B3D2FCDB3BB86E41638DC95 /* OfficeProbe_chess.exr */; };
 		6A89D2DA42A687D07F5F2C3F /* SimulatorPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A3D7246F7BBDA7A8018807 /* SimulatorPanel.swift */; };
 		6B19A3C12DEF7AE66729AA83 /* OfficeChessGame.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D025C650A4072CEEFE9A0C3 /* OfficeChessGame.swift */; };
 		6C0BA18694B6B9295CA04ADA /* OfficeNarrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA6D4C3C0E3982C22F2F25B1 /* OfficeNarrator.swift */; };
 		6D6E50A86ACBF482DAA29570 /* CodeOSRemovalDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78B9A61DC67EED25FD44126E /* CodeOSRemovalDialog.swift */; };
-		6E34413A8520410627E235EB /* FRANKLIN.usdz in Resources */ = {isa = PBXBuildFile; fileRef = FE98510172BA77F6A01641E5 /* FRANKLIN.usdz */; };
 		6E48741064D54833FC2D8A21 /* OfficeLiveScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F734741C87233B79689516 /* OfficeLiveScreen.swift */; };
 		6E931F04DF68F7A53F748B37 /* Avatar_CH31.png in Resources */ = {isa = PBXBuildFile; fileRef = 3459226D16C2F0236403CB33 /* Avatar_CH31.png */; };
 		6EA3FDC7A465EA79B4DB8C59 /* OfficeColleagueView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 961D65BF09CA18DC77CB3C3D /* OfficeColleagueView.swift */; };
@@ -166,6 +157,7 @@
 		74E9097DA259542305A63488 /* OfficeLayout.json in Resources */ = {isa = PBXBuildFile; fileRef = 067FC34731494377F242C1EA /* OfficeLayout.json */; };
 		760C01FC11CEF4A015B1A471 /* Office2DLayoutEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB41DF62FCDF8F7E535B132E /* Office2DLayoutEngine.swift */; };
 		7648BD04B9478BA64F7BD82D /* OfficeSketchArtist.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB8DD376D74D75B98BDE3A14 /* OfficeSketchArtist.swift */; };
+		771C2C0D7A21A290349839D0 /* OfficeAssets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C9C3CAF338D0A26F89F2BAD /* OfficeAssets.swift */; };
 		77B471556E73B54194C14BCA /* CodeOSControlCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9B57B4402676E0C3DC3A25D /* CodeOSControlCenter.swift */; };
 		77E7D4E71BC16C0B6C490334 /* Office2DInterfaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E66EB1079E1D427DB8DF587 /* Office2DInterfaceView.swift */; };
 		791652D7F06A38E5D66BB8E1 /* CardKing.webp in Resources */ = {isa = PBXBuildFile; fileRef = DB0BA08D1073B0655703B88D /* CardKing.webp */; };
@@ -176,7 +168,6 @@
 		7CF0D92236427584C6ED9239 /* PaneSplit.swift in Sources */ = {isa = PBXBuildFile; fileRef = BECA119E22381166808B5690 /* PaneSplit.swift */; };
 		7D4CC0F281DABD8A9E4E68C2 /* OfficeChessGame.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D025C650A4072CEEFE9A0C3 /* OfficeChessGame.swift */; };
 		7E295FDBE4DB448AD14EB38C /* BrowserAddress.swift in Sources */ = {isa = PBXBuildFile; fileRef = D270EF82D7E479169076203B /* BrowserAddress.swift */; };
-		7EF7A87639B12120A83BF719 /* OfficeProbe_lounge.exr in Resources */ = {isa = PBXBuildFile; fileRef = 28754813E1E0999C9F8B3E4C /* OfficeProbe_lounge.exr */; };
 		80B5589FEB174B883AB73FA5 /* CardJack.webp in Resources */ = {isa = PBXBuildFile; fileRef = 81D06A9BFE7E2741DF022646 /* CardJack.webp */; };
 		8128112C0B002A0F0A7D857B /* OfficePlatform.swift in Sources */ = {isa = PBXBuildFile; fileRef = 564ED3A58931D07FED64C208 /* OfficePlatform.swift */; };
 		82001565019E6A3EEEB9A411 /* OfficeSofaTalk.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D804F6903E93D790E25E568 /* OfficeSofaTalk.swift */; };
@@ -205,7 +196,6 @@
 		945101B1264E34154DC79876 /* WorkspacePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6164E34644769C64B3E867B1 /* WorkspacePanel.swift */; };
 		946656CE33DFA092313EF782 /* MobileOfficeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDDEBFA21588DEA184EEEF31 /* MobileOfficeView.swift */; };
 		94D73D9F131B2B947818203E /* OfficeDetail_Object_196.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 2B8F83AED770453EC6B722D7 /* OfficeDetail_Object_196.jpg */; };
-		957BAD3B8F877B8C3FAFFA05 /* OfficeRoom.usdz in Resources */ = {isa = PBXBuildFile; fileRef = B1D9F8E01DEDBA4586FAA1B0 /* OfficeRoom.usdz */; };
 		95ECF5156D293D2A4E4B3268 /* OfficeDetail.metal in Sources */ = {isa = PBXBuildFile; fileRef = 7D7300E96F8042DDBECBD473 /* OfficeDetail.metal */; };
 		961257F1331631473551DE16 /* ArtifactTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CFA10CB841F5A058AC09FE4 /* ArtifactTools.swift */; };
 		964053119D89B26D9081F1F6 /* ChatModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8E5B74C47ED76F7F4E3175D /* ChatModels.swift */; };
@@ -285,7 +275,6 @@
 		D0940594786ADCB9DF4AD81B /* ProjectFinder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83D024EB758956F78F8FDB4B /* ProjectFinder.swift */; };
 		D1C5A2BEAC86CACC48774922 /* RemoteAgentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B332971E94CCDE4220748943 /* RemoteAgentView.swift */; };
 		D37B7990977D80B56C62AD7C /* Avatar_FRANKLIN.png in Resources */ = {isa = PBXBuildFile; fileRef = 9CDE854B3FD01D422AB89A6C /* Avatar_FRANKLIN.png */; };
-		D4F02C74127ECABE8354B0E8 /* DEADPOOL.usdz in Resources */ = {isa = PBXBuildFile; fileRef = FBCEDB5716647F7760B19F33 /* DEADPOOL.usdz */; };
 		D519970990C82C86212937D6 /* OfficeMonitorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C25BE499120207FCBC7D15A9 /* OfficeMonitorView.swift */; };
 		D5A642CF4BCD0CB1A9FA3806 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C4E64BB6ED15B3A579DB97CE /* Assets.xcassets */; };
 		D74AA0C80E21EDE18AA02769 /* CardJack.webp in Resources */ = {isa = PBXBuildFile; fileRef = 81D06A9BFE7E2741DF022646 /* CardJack.webp */; };
@@ -301,7 +290,6 @@
 		DC69FFE0CE1B3972D807D898 /* OfficeLayout.json in Resources */ = {isa = PBXBuildFile; fileRef = 067FC34731494377F242C1EA /* OfficeLayout.json */; };
 		DF27F7AB77EE30AF53A4FB30 /* OfficeCanvasRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 877ADF6023714BAEC92A7A3B /* OfficeCanvasRunner.swift */; };
 		DF87C7D5B4F7163DBFBADFD0 /* NewAgentSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8816FF36883C8E65FD124DC7 /* NewAgentSheet.swift */; };
-		E13C0DB2476B2A515F894BBF /* OfficeBake_room_albedo.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 52C9BBA2EE2712C606D70503 /* OfficeBake_room_albedo.jpg */; };
 		E1E9043DB2CAEFF2F44FC5A9 /* OfficeCardViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16680F5C7DD7A00F229836B9 /* OfficeCardViews.swift */; };
 		E2323A48216D9273326541A1 /* CodeOSModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D186CCFB7E87C05455C56AD /* CodeOSModel.swift */; };
 		E426E8B542FBF4560789F09C /* OfficeDetail.metal in Sources */ = {isa = PBXBuildFile; fileRef = 7D7300E96F8042DDBECBD473 /* OfficeDetail.metal */; };
@@ -316,10 +304,8 @@
 		E9D72567F7366ABEB63F3339 /* NotebookPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE392CC548349392081A80A6 /* NotebookPanel.swift */; };
 		EA5AF718CED48B60FEF2D5CF /* OfficeInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE36C499F0CD0494F65F0521 /* OfficeInput.swift */; };
 		EA8E2312D34B47D610054009 /* CodeOSFolderPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2827C5DBB15B2D2EA0CD77D /* CodeOSFolderPicker.swift */; };
-		EB4769F610D6F7890CBE5D6D /* OfficeProbe_sofa.exr in Resources */ = {isa = PBXBuildFile; fileRef = 4D62294F7536095356FAA42A /* OfficeProbe_sofa.exr */; };
 		EC04FA625364509E11174352 /* MarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BF3FCA24BA069D694B0B6F5 /* MarkdownText.swift */; };
 		EC2FDDB9F5C92E0F87CD45CC /* Sounds in Resources */ = {isa = PBXBuildFile; fileRef = AB6534A56549DFA1F449F357 /* Sounds */; };
-		EC3598039BED03FF2D93838E /* REMY.usdz in Resources */ = {isa = PBXBuildFile; fileRef = B33E00280F531F45985C9478 /* REMY.usdz */; };
 		ECD9FD900BC1F8DCEA52BD7C /* IntegratedTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39ED136E5E7B3612035F8AB0 /* IntegratedTools.swift */; };
 		ED0C1E5A05E48C44805BA565 /* ChatModelChoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAA06A062E9665524A768902 /* ChatModelChoice.swift */; };
 		ED6975EFB9DCC205207C64CA /* PlayingCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC30E5EC6B6A1E518C872057 /* PlayingCards.swift */; };
@@ -341,9 +327,7 @@
 		F75DB029A29F7EC9E15CFBA1 /* MarkdownTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5A12922F7A4E1E7A3623821 /* MarkdownTableView.swift */; };
 		F93CE714154BF3C5632D1146 /* OfficeOutings.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4AA7C809CECC6EBC1900B9D /* OfficeOutings.swift */; };
 		F985C2BC5F0C06B6ECDABA72 /* OfficeAssignments.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05109BEC027632469B1BE7E8 /* OfficeAssignments.swift */; };
-		FB3768AA2CC8AAB469CCD9A9 /* OfficeCoffee.usdz in Resources */ = {isa = PBXBuildFile; fileRef = FA3913908EAAFE4B49420F97 /* OfficeCoffee.usdz */; };
 		FB8D133AB460B06C837E3330 /* OfficeCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = B84D6FF4E5B0A5142CE3466B /* OfficeCanvas.swift */; };
-		FC19D2D5A244B0E2775C3482 /* CH31.usdz in Resources */ = {isa = PBXBuildFile; fileRef = 0D6B7F996310DFC0D7965C38 /* CH31.usdz */; };
 		FD2DB397ADC1C70F67933319 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = D25E338010A6DCE454E4B674 /* main.swift */; };
 		FD733015495B4D55D0039B68 /* OfficePersonas.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7000AAC5B5D05A170361D0C /* OfficePersonas.swift */; };
 		FDA0C86DE21F32B305B5F8F8 /* BrowserPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5019EA3818C709E8D20043A4 /* BrowserPicker.swift */; };
@@ -550,6 +534,7 @@
 		8A45A93DAF44DBBC83A60C50 /* ExecutableResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExecutableResolver.swift; sourceTree = "<group>"; };
 		8B9CC2E572A9B10D6495B50F /* CodeOSQuota.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeOSQuota.swift; sourceTree = "<group>"; };
 		8B9FF5D801E87D00459F6C1C /* CodeOSFramework.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeOSFramework.swift; sourceTree = "<group>"; };
+		8C9C3CAF338D0A26F89F2BAD /* OfficeAssets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeAssets.swift; sourceTree = "<group>"; };
 		8CCF40FF45B214513A23886B /* NotebookDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotebookDocument.swift; sourceTree = "<group>"; };
 		8D186CCFB7E87C05455C56AD /* CodeOSModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeOSModel.swift; sourceTree = "<group>"; };
 		8E5C4FA969B19D4A4E474A64 /* OfficeLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeLayout.swift; sourceTree = "<group>"; };
@@ -1074,6 +1059,7 @@
 			isa = PBXGroup;
 			children = (
 				76103D558313260D9DDCFE3B /* ChatStore+OfficeHost.swift */,
+				8C9C3CAF338D0A26F89F2BAD /* OfficeAssets.swift */,
 				05109BEC027632469B1BE7E8 /* OfficeAssignments.swift */,
 				AAB762688CB92664884E380E /* OfficeAvatars.swift */,
 				877ADF6023714BAEC92A7A3B /* OfficeCanvasRunner.swift */,
@@ -1263,32 +1249,14 @@
 				C08C8130E28AF041A3DE64BB /* Avatar_GIRL.png in Resources */,
 				BF0828C79F9347C25D63A7E2 /* Avatar_LAMINE.png in Resources */,
 				84DA3DC2F65285C6BB9C5B1A /* Avatar_REMY.png in Resources */,
-				FC19D2D5A244B0E2775C3482 /* CH31.usdz in Resources */,
 				46C682ED68BF1576075FDA88 /* CardBack.webp in Resources */,
 				80B5589FEB174B883AB73FA5 /* CardJack.webp in Resources */,
 				83252C9D64EAF74EB84EECDB /* CardJoker.webp in Resources */,
 				3C4146DD453ABC62AA5F00D1 /* CardKing.webp in Resources */,
 				C53D7C884196CEC0AC557002 /* CardQueen.webp in Resources */,
-				D4F02C74127ECABE8354B0E8 /* DEADPOOL.usdz in Resources */,
-				6E34413A8520410627E235EB /* FRANKLIN.usdz in Resources */,
-				2ABB3DC7BAC5958046AF5199 /* GIRL.usdz in Resources */,
-				271A101EAC8B08D73BC317E4 /* LAMINE.usdz in Resources */,
-				E13C0DB2476B2A515F894BBF /* OfficeBake_room_albedo.jpg in Resources */,
 				7320BA4C372A4423C5D7EDF1 /* OfficeChess.json in Resources */,
-				FB3768AA2CC8AAB469CCD9A9 /* OfficeCoffee.usdz in Resources */,
 				4DFEA928DFE8143C6BD7F264 /* OfficeDetail.json in Resources */,
-				0B10C961FB762DADFA6160AD /* OfficeDetail_Object_194.jpg in Resources */,
-				44B4F16D5381EB7C963C74C8 /* OfficeDetail_Object_196.jpg in Resources */,
 				DC69FFE0CE1B3972D807D898 /* OfficeLayout.json in Resources */,
-				6A298857C592C72C99645AEE /* OfficeProbe_chess.exr in Resources */,
-				7EF7A87639B12120A83BF719 /* OfficeProbe_lounge.exr in Resources */,
-				09AEA74C5B1A717F25280A1E /* OfficeProbe_mac.exr in Resources */,
-				00D913C849CFADCDB86A2A71 /* OfficeProbe_meeting.exr in Resources */,
-				46BEEAA2D460A31E68C98C0D /* OfficeProbe_pcs.exr in Resources */,
-				342C0345FDB435FB0D4549CD /* OfficeProbe_rack.exr in Resources */,
-				EB4769F610D6F7890CBE5D6D /* OfficeProbe_sofa.exr in Resources */,
-				957BAD3B8F877B8C3FAFFA05 /* OfficeRoom.usdz in Resources */,
-				EC3598039BED03FF2D93838E /* REMY.usdz in Resources */,
 				EC2FDDB9F5C92E0F87CD45CC /* Sounds in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1354,6 +1322,7 @@
 				49BDC82ABF85D0445FB53329 /* MacLink.swift in Sources */,
 				946656CE33DFA092313EF782 /* MobileOfficeView.swift in Sources */,
 				653B96547F29843CB8ADC999 /* OfficeActor.swift in Sources */,
+				771C2C0D7A21A290349839D0 /* OfficeAssets.swift in Sources */,
 				F985C2BC5F0C06B6ECDABA72 /* OfficeAssignments.swift in Sources */,
 				918EB5060DD4E84C0A358F06 /* OfficeAvatars.swift in Sources */,
 				E687B28C2769F6F7FB692E9F /* OfficeBrain.swift in Sources */,
@@ -1482,6 +1451,7 @@
 				56703BD311DEFC99C9AC998D /* Office2DView.swift in Sources */,
 				39BB0D2D03AD2E0C0EDAE622 /* Office2DViewModel.swift in Sources */,
 				93D394A30438870C98924A15 /* OfficeActor.swift in Sources */,
+				13E4019F71CE6AB2CBBE61CE /* OfficeAssets.swift in Sources */,
 				23C27E17768412C6E4895294 /* OfficeAssignments.swift in Sources */,
 				91C52FBBAF6A2CF0F25297D8 /* OfficeAvatars.swift in Sources */,
 				DF27F7AB77EE30AF53A4FB30 /* OfficeCanvasRunner.swift in Sources */,
