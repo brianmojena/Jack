@@ -14,6 +14,9 @@ struct BotModeView<Chat: View>: View {
     @State private var editingRoutine: BotRoutine?
     @State private var selectedChannelID: UUID?
     @State private var editingChannel: BotChannel?
+    /// The table is the front page; the lists of agents, routines and channels are one tab away.
+    private enum Tab { case table, agents }
+    @State private var tab: Tab = .table
 
     private var selectedChannel: BotChannel? { bots.channels.first { $0.id == selectedChannelID } }
     /// The agent shown, unless a channel is.
@@ -22,21 +25,26 @@ struct BotModeView<Chat: View>: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                agentList.frame(width: 250)
-                Rectangle().fill(BP.line.opacity(0.2)).frame(width: 1)
-                center.frame(maxWidth: .infinity)
-                if let agent = selected {
+            tabBar
+            if tab == .table {
+                BotTableView(orchestrator: store.orchestrator, providers: store.apiProviders, bots: bots, store: store, projectPaths: projectPaths, chat: chat)
+            } else {
+                HStack(spacing: 0) {
+                    agentList.frame(width: 250)
                     Rectangle().fill(BP.line.opacity(0.2)).frame(width: 1)
-                    routinePanel(agent).frame(width: 310)
+                    center.frame(maxWidth: .infinity)
+                    if let agent = selected {
+                        Rectangle().fill(BP.line.opacity(0.2)).frame(width: 1)
+                        routinePanel(agent).frame(width: 310)
+                    }
                 }
+                titleBlock
             }
-            titleBlock
         }
         .background { ZStack { BP.ink; BPGrid() } }
         .tint(BP.hi).toggleStyle(BPToggleStyle()).buttonStyle(BPButtonStyle())
         .preferredColorScheme(.dark)
-        .onAppear { open(selected) }
+        .onAppear { if tab == .agents { open(selected) } }
         .sheet(item: $editingAgent) { agent in
             BotAgentEditor(agent: agent, store: store, projectPaths: projectPaths) { saved in
                 bots.upsert(saved); selectedID = saved.id; editingAgent = nil
@@ -50,6 +58,27 @@ struct BotModeView<Chat: View>: View {
         .sheet(item: $editingRoutine) { routine in
             BotRoutineEditor(routine: routine) { bots.upsert($0); editingRoutine = nil } onCancel: { editingRoutine = nil }
         }
+    }
+
+    /// MESA (Jack and its team) or AGENTES (every agent, routines and channels).
+    private var tabBar: some View {
+        HStack(spacing: 0) {
+            ForEach([(Tab.table, "MESA"), (Tab.agents, "AGENTES · RUTINAS · CANALES")], id: \.1) { item in
+                Button {
+                    tab = item.0
+                    if item.0 == .agents { open(selected) }
+                } label: {
+                    Text(item.1).font(BP.mono(10, .semibold)).tracking(1.2).foregroundStyle(tab == item.0 ? BP.hi : BP.dim)
+                        .padding(.horizontal, 16).frame(height: 28)
+                        .overlay(alignment: .bottom) { if tab == item.0 { Rectangle().fill(BP.hi).frame(height: 2) } }
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer()
+        }
+        .background(BP.ink.opacity(0.9))
+        .overlay(alignment: .bottom) { Rectangle().fill(BP.line.opacity(0.2)).frame(height: 1) }
     }
 
     /// Selecting an agent shows its conversation, when it already has one.

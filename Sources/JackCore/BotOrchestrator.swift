@@ -128,9 +128,23 @@ public enum BotRunModes {
     @Published public private(set) var proposals: [BotProposal] = []
     public var policy = BotOrchestrationPolicy.standard
     public var now: () -> Date = Date.init
-    /// Which command-line engines are installed. Replaced by the table with the result of its scan.
-    public var installedProviders: () -> Set<ChatProvider> = { [] }
+    /// The command-line engines found the last time the table scanned. Empty until the first scan.
+    @Published public private(set) var cliStatuses: [CLIProviderStatus] = []
+    @Published public private(set) var scanning = false
+    /// Which command-line engines are installed; tests replace it.
+    public lazy var installedProviders: () -> Set<ChatProvider> = { [unowned self] in Set(self.cliStatuses.filter(\.installed).map(\.provider)) }
     public var apiProviders: () -> [APIProviderConfig] = { [] }
+
+    /// Looks for the installed engines off the main thread. Called when the table opens or the user asks; never in the background.
+    public func scanCLIs() {
+        guard !scanning else { return }
+        scanning = true
+        Task { [weak self] in
+            let found = await Task.detached(priority: .utility) { CLIDetector.scan() }.value
+            self?.cliStatuses = found
+            self?.scanning = false
+        }
+    }
 
     private unowned let store: ChatStore
     init(store: ChatStore) { self.store = store }
