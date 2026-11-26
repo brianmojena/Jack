@@ -44,8 +44,8 @@ struct MainWindowView: View {
     @AppStorage("transcriptMonospaced") private var monospaced = false
     @AppStorage(InterfaceStyle.key) private var interfaceStyle = InterfaceStyle.basic
     @State private var newChatID = UUID()
-    /// Automations mode replaces the chat area until an agent is chosen.
-    @State private var showingAutomations = false
+    /// Jack Bot mode replaces the chat area until another mode or an agent is chosen.
+    @State private var showingBot = false
     @State private var showingArtifacts = false
     @State private var showingClaudeCloud = false
     @State private var showingClaudeChat = false
@@ -109,7 +109,7 @@ struct MainWindowView: View {
     private var ice: Bool { embedded != nil || effectiveInterfaceStyle == .ice }
     private var officeVisible: Bool {
         !store.lightModeEnabled && (showingOffice || effectiveInterfaceStyle.isOffice)
-            && !showingArtifacts && !showingClaudeCloud && !showingClaudeChat && !showingAutomations
+            && !showingArtifacts && !showingClaudeCloud && !showingClaudeChat && !showingBot
     }
     private var sidebarProjectSort: SidebarProjectSort {
         SidebarProjectSort.resolve(projectSortValue, legacyAlphabetical: legacyAlphabeticalProjects)
@@ -213,7 +213,7 @@ struct MainWindowView: View {
                   conversation.remote == nil, conversation.projectPath == request.projectPath else { return }
             forceBasicForCustomCommand = true
             showingArtifacts = false; showingClaudeCloud = false; showingClaudeChat = false
-            showingAutomations = false; showingOffice = false
+            showingBot = false; showingOffice = false
             store.select(conversation.id)
             do {
                 _ = try workspace.runCustomCommand(request)
@@ -426,9 +426,9 @@ struct MainWindowView: View {
             selectedID: store.selectedID,
             onNewConversation: { _ in
                 if let onNewChat { onNewChat(); return }
-                showingAutomations = false; showingArtifacts = false; showingClaudeCloud = false; showingClaudeChat = false; showingOffice = false; openNewConversation()
+                showingBot = false; showingArtifacts = false; showingClaudeCloud = false; showingClaudeChat = false; showingOffice = false; openNewConversation()
             },
-            onSelect: { showingAutomations = false; showingArtifacts = false; showingClaudeCloud = false; showingClaudeChat = false; showingOffice = false; store.select($0) },
+            onSelect: { showingBot = false; showingArtifacts = false; showingClaudeCloud = false; showingClaudeChat = false; showingOffice = false; store.select($0) },
             onRename: { id in store.conversations.first { $0.id == id }.map(beginRename) },
             onImproveNameWithAI: store.improveChatName(withAI:),
             onDelete: { id in deletingConversation = store.conversations.first { $0.id == id } },
@@ -442,20 +442,20 @@ struct MainWindowView: View {
             onImproveChatNames: store.improveChatNames,
             onHide: toggleSidebar,
             searchRequest: searchRequest,
-            onShowAutomations: { showingClaudeCloud = false; showingClaudeChat = false; showingArtifacts = false; showingOffice = false; showingAutomations = true },
-            automationsActive: showingAutomations,
-            onShowArtifacts: store.lightModeEnabled ? nil : { showingClaudeCloud = false; showingClaudeChat = false; showingAutomations = false; showingOffice = false; showingArtifacts = true },
+            onShowBot: { showingClaudeCloud = false; showingClaudeChat = false; showingArtifacts = false; showingOffice = false; showingBot = true },
+            botActive: showingBot,
+            onShowArtifacts: store.lightModeEnabled ? nil : { showingClaudeCloud = false; showingClaudeChat = false; showingBot = false; showingOffice = false; showingArtifacts = true },
             artifactsActive: showingArtifacts,
             onShowOffice: store.lightModeEnabled ? nil : {
-                showingClaudeCloud = false; showingClaudeChat = false; showingArtifacts = false; showingAutomations = false; showingOffice = true
+                showingClaudeCloud = false; showingClaudeChat = false; showingArtifacts = false; showingBot = false; showingOffice = true
             },
             officeActive: officeVisible,
             onShowClaudeCloud: store.lightModeEnabled ? nil : {
-                showingArtifacts = false; showingAutomations = false; showingOffice = false; showingClaudeChat = false; showingClaudeCloud = true
+                showingArtifacts = false; showingBot = false; showingOffice = false; showingClaudeChat = false; showingClaudeCloud = true
             },
             claudeCloudActive: showingClaudeCloud,
             onShowClaudeChat: store.lightModeEnabled ? nil : {
-                showingArtifacts = false; showingAutomations = false; showingOffice = false; showingClaudeCloud = false; showingClaudeChat = true
+                showingArtifacts = false; showingBot = false; showingOffice = false; showingClaudeCloud = false; showingClaudeChat = true
             },
             claudeChatActive: showingClaudeChat,
             onRespond: store.lightModeEnabled ? nil : { id, approval, allow in store.respond(conversationID: id, approvalID: approval, allow: allow) }
@@ -479,15 +479,15 @@ struct MainWindowView: View {
                 store.select(id)
                 sendToAgent(text, files: [], to: id, now: false)
             }
-        } else if showingAutomations {
-            AutomationsView(schedules: store.schedules, projectPaths: automationProjectPaths)
+        } else if showingBot {
+            BotModeView(bots: store.bots, store: store, projectPaths: botProjectPaths) { chatPanes }
         } else {
             chatPanes
         }
     }
 
-    /// Folders of the user's chats, most recently used first, for automations to choose from.
-    private var automationProjectPaths: [String] {
+    /// Folders of the user's chats, most recently used first, for Jack Bot agents to choose from.
+    private var botProjectPaths: [String] {
         var seen = Set<String>()
         return store.conversations.sorted { $0.updatedAt > $1.updatedAt }.map(\.projectPath).filter { seen.insert($0).inserted }
     }
@@ -894,7 +894,7 @@ struct MainWindowView: View {
     private var sidebarRows: [SidebarRowModel] {
         let titles = Dictionary(uniqueKeysWithValues: store.conversations.map { ($0.id, $0.title) })
         // Normal: sub-agents live in the popup, not in the sidebar.
-        return store.conversations.filter { store.lightModeEnabled || $0.parentID == nil }.map { conversation in
+        return store.conversations.filter { store.lightModeEnabled || ($0.parentID == nil && $0.botAgentID == nil) }.map { conversation in
             let status = store.statuses[conversation.id] ?? .idle
             return SidebarRowModel(
                 id: conversation.id,

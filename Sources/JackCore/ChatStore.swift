@@ -209,9 +209,88 @@ enum AntigravityTerminalError: LocalizedError {
         scheduleCenter = center
         return center
     }
+    /// Jack Bot's agents and routines. Normal mode only: Light never creates or starts it.
+    private var botStore: BotStore?
+    public var bots: BotStore {
+        if let botStore { return botStore }
+        let store = BotStore(directory: archive.directory)
+        store.run = { [weak self] agent, routine in
+            guard let self else { return .failure(.init("Jack se está cerrando")) }
+            return self.sendToBotAgent(routine.instruction + BotRoutine.quietNote, agent: agent)
+        }
+        store.deliver = { [weak self] agent, text in
+            guard let self else { return .failure(.init("Jack se está cerrando")) }
+            return self.sendToBotAgent(text, agent: agent)
+        }
+        store.onError = { [weak self] in self?.errorMessage = $0 }
+        botStore = store
+        // Old automations become agents with a routine; only after that is safely on disk are they dropped.
+        if !store.migrated, store.migrate(schedules.automations) { schedules.removeAllAutomations() }
+        return store
+    }
+    /// Jack's team on the table: proposals, limits and the session. Normal mode only; Light never touches it.
+    private var botOrchestrator: BotOrchestrator?
+    public var orchestrator: BotOrchestrator {
+        if let botOrchestrator { return botOrchestrator }
+        let value = BotOrchestrator(store: self)
+        botOrchestrator = value
+        return value
+    }
+    /// The agent's own conversation, created the first time. Its instructions are pinned to it, so every message carries them.
+    /// `applyEngine` moves an existing conversation to the agent's current engine and model: used when the user edits the agent.
+    @discardableResult
+    public func botConversation(for agent: BotAgent, applyEngine: Bool = false) -> UUID? {
+        var id = agent.conversationID.flatMap { known in conversations.contains { $0.id == known } ? known : nil }
+        if id == nil { id = create(projectPath: agent.projectPath, provider: agent.provider, model: agent.model.isEmpty ? nil : agent.model,
+                                   title: agent.name, select: false) }
+        guard let id, let index = conversations.firstIndex(where: { $0.id == id }) else { return nil }
+        let model = agent.model.isEmpty ? agent.provider.defaultModel : agent.model
+        if applyEngine, conversations[index].provider != agent.provider || conversations[index].model != model {
+            if isBusy(id) { errorMessage = "«\(agent.name)» está trabajando: el nuevo motor se aplicará si lo editas cuando termine." }
+            else {
+                if conversations[index].provider != agent.provider {
+                    // A session belongs to its engine, so the new one starts a fresh session in the same transcript.
+                    conversations[index].provider = agent.provider; conversations[index].sessionID = nil
+                    conversations[index].mode = defaultMode(for: agent.provider); conversations[index].variant = nil; conversations[index].remote = nil
+                }
+                conversations[index].model = model
+                conversations[index].effort = Self.clamp(conversations[index].effort, to: supportedEfforts(provider: agent.provider, model: model))
+            }
+        }
+        conversations[index].botAgentID = agent.id
+        var context = conversations[index].jackContext ?? JackContextSettings()
+        context.pinned = agent.instructions.isEmpty ? [] : [agent.instructions]
+        conversations[index].jackContext = context
+        save(id)
+        bots.setConversation(id, for: agent.id)
+        return id
+    }
+    /// Deletes the agent and its routines. Its conversation stays, as an ordinary chat in the sidebar.
+    public func removeBotAgent(_ agent: BotAgent) {
+        if let id = agent.conversationID, let index = conversations.firstIndex(where: { $0.id == id }) {
+            conversations[index].botAgentID = nil; save(id)
+        }
+        bots.remove(agent: agent.id)
+    }
+    /// Writes a text into the agent's own conversation: a routine, another agent's message or a channel note.
+    public func sendToBotAgent(_ text: String, agent: BotAgent) -> Result<UUID, ScheduleCenter.ScheduleError> {
+        errorMessage = nil
+        guard let id = botConversation(for: agent) else { return .failure(.init("la carpeta «\(agent.projectPath)» no existe")) }
+        return sendIfAccepted(text, to: id) ? .success(id) : .failure(.init(errorMessage ?? "el agente no aceptó el mensaje"))
+    }
+    /// The local API for scripts. Normal mode only: it exists once Jack Bot is used and never in Light.
+    private var botAPIServer: BotAPI?
+    var botAPI: BotAPI {
+        if let botAPIServer { return botAPIServer }
+        let api = BotAPI(store: self, directory: archive.directory.appendingPathComponent("bot", isDirectory: true))
+        api.observe(bots)
+        botAPIServer = api
+        return api
+    }
     /// Starts checking schedules in Normal; stops in Light.
     public func applySchedules() {
-        if lightModeEnabled { scheduleCenter?.stop() } else { schedules.start() }
+        if lightModeEnabled { scheduleCenter?.stop(); botStore?.stop(); botAPIServer?.stop(); botOrchestrator?.stopAll() }
+        else { _ = bots; schedules.start(); bots.start(); botAPI.refresh() }
     }
     /// Progress bars agents report with `jack-progress`; created on first use so tests don't watch the real folder.
     private var progressMonitor: ProgressMonitor?
@@ -1763,6 +1842,7 @@ enum AntigravityTerminalError: LocalizedError {
         asides.cancelAll()
         notebookWorkspace?.stop()
         remoteServer?.stop()
+        botStore?.stop(); botAPIServer?.stop()
         if lightModeEnabled { progressMonitor?.stop(); serverMonitor?.stop() }
         StellarRuntime.shutdown()
         for id in Array(pending.keys) { flush(id) }
@@ -1924,14 +2004,17 @@ enum AntigravityTerminalError: LocalizedError {
         let startIndex = turnMessageStartIndices.removeValue(forKey: id) ?? 0
         guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
         let messages = conversations[index].messages
-        if let last = messages.last(where: { ($0.role == "assistant" || $0.role == "error") && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+        let turnMessages = Array(messages.dropFirst(min(startIndex, messages.count)))
+        // A Jack Bot agent with nothing to report answers only the marker: no preview, no unread dot.
+        let quiet = conversations[index].botAgentID != nil
+            && turnMessages.last(where: { $0.role == "assistant" })?.text.trimmingCharacters(in: .whitespacesAndNewlines) == BotRoutine.quietMarker
+        if !quiet, let last = messages.last(where: { ($0.role == "assistant" || $0.role == "error") && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
             conversations[index].preview = Self.preview(of: last.text)
         }
-        let turnMessages = Array(messages.dropFirst(min(startIndex, messages.count)))
         if let reply = turnMessages.last(where: { $0.role == "assistant" && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
             lastReplies[id] = String(reply.text.prefix(24_000))
         }
-        if selectedID != id { conversations[index].hasUnread = true }
+        if selectedID != id, !quiet { conversations[index].hasUnread = true }
     }
 
     // MARK: Delegation
