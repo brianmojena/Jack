@@ -8,78 +8,163 @@
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
             </ResourceDictionary.MergedDictionaries>
 
+            <!-- Fluent plano: un fondo, dos superficies y un acento. Default y Dark son idénticos; Light conserva la
+                 misma estructura con la paleta invertida (la maqueta de referencia solo cubre el oscuro). -->
             <ResourceDictionary.ThemeDictionaries>
                 <ResourceDictionary x:Key="Default">
-                    <SolidColorBrush x:Key="JackCanvasBrush" Color="#0B0D14" />
-                    <SolidColorBrush x:Key="JackPanelBrush" Color="#0DFFFFFF" />
-                    <SolidColorBrush x:Key="JackPanelStrongBrush" Color="#1AFFFFFF" />
-                    <SolidColorBrush x:Key="JackStrokeBrush" Color="#1AFFFFFF" />
-                    <SolidColorBrush x:Key="JackTextBrush" Color="#F3F5FA" />
-                    <SolidColorBrush x:Key="JackTextDimBrush" Color="#A8B0C8" />
-                    <SolidColorBrush x:Key="JackTextFaintBrush" Color="#6F7896" />
+                    <SolidColorBrush x:Key="JackCanvasBrush" Color="#14161B" />
+                    <SolidColorBrush x:Key="JackSurfaceBrush" Color="#1E2128" />
+                    <SolidColorBrush x:Key="JackCardBrush" Color="#23262E" />
+                    <SolidColorBrush x:Key="JackComposerBrush" Color="#262A33" />
+                    <SolidColorBrush x:Key="JackTextBrush" Color="#E9EBF0" />
+                    <SolidColorBrush x:Key="JackMutedBrush" Color="#A3A9B5" />
+                    <SolidColorBrush x:Key="JackAccentTextBrush" Color="#4CC2FF" />
+                    <SolidColorBrush x:Key="JackSuccessBrush" Color="#6CCB8A" />
                     <SolidColorBrush x:Key="JackAmberTextBrush" Color="#FFB020" />
-                    <LinearGradientBrush x:Key="JackTitleBrush" StartPoint="0,0" EndPoint="1,0.4">
-                        <GradientStop Color="#FFFFFF" Offset="0" />
-                        <GradientStop Color="#FFC49A" Offset="1" />
-                    </LinearGradientBrush>
+                    <SolidColorBrush x:Key="JackHoverBrush" Color="#14FFFFFF" />
+                    <SolidColorBrush x:Key="JackRowHoverBrush" Color="#0DFFFFFF" />
+                    <SolidColorBrush x:Key="JackSearchBrush" Color="#0FFFFFFF" />
+                    <SolidColorBrush x:Key="JackSearchLineBrush" Color="#40FFFFFF" />
+                    <SolidColorBrush x:Key="JackPanelBorderBrush" Color="#14FFFFFF" />
+                    <SolidColorBrush x:Key="JackStrokeBrush" Color="#1FFFFFFF" />
+                    <SolidColorBrush x:Key="JackStopStrokeBrush" Color="#24FFFFFF" />
+                    <SolidColorBrush x:Key="JackSeparatorBrush" Color="#12FFFFFF" />
+                    <SolidColorBrush x:Key="JackBubbleBrush" Color="#17FFFFFF" />
+                    <SolidColorBrush x:Key="JackCardBorderBrush" Color="#17FFFFFF" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
-                    <SolidColorBrush x:Key="JackCanvasBrush" Color="#0B0D14" />
-                    <SolidColorBrush x:Key="JackPanelBrush" Color="#0DFFFFFF" />
-                    <SolidColorBrush x:Key="JackPanelStrongBrush" Color="#1AFFFFFF" />
-                    <SolidColorBrush x:Key="JackStrokeBrush" Color="#1AFFFFFF" />
-                    <SolidColorBrush x:Key="JackTextBrush" Color="#F3F5FA" />
-                    <SolidColorBrush x:Key="JackTextDimBrush" Color="#A8B0C8" />
-                    <SolidColorBrush x:Key="JackTextFaintBrush" Color="#6F7896" />
+                    <SolidColorBrush x:Key="JackCanvasBrush" Color="#14161B" />
+                    <SolidColorBrush x:Key="JackSurfaceBrush" Color="#1E2128" />
+                    <SolidColorBrush x:Key="JackCardBrush" Color="#23262E" />
+                    <SolidColorBrush x:Key="JackComposerBrush" Color="#262A33" />
+                    <SolidColorBrush x:Key="JackTextBrush" Color="#E9EBF0" />
+                    <SolidColorBrush x:Key="JackMutedBrush" Color="#A3A9B5" />
+                    <SolidColorBrush x:Key="JackAccentTextBrush" Color="#4CC2FF" />
+                    <SolidColorBrush x:Key="JackSuccessBrush" Color="#6CCB8A" />
                     <SolidColorBrush x:Key="JackAmberTextBrush" Color="#FFB020" />
-                    <LinearGradientBrush x:Key="JackTitleBrush" StartPoint="0,0" EndPoint="1,0.4">
-                        <GradientStop Color="#FFFFFF" Offset="0" />
-                        <GradientStop Color="#FFC49A" Offset="1" />
-                    </LinearGradientBrush>
+                    <SolidColorBrush x:Key="JackHoverBrush" Color="#14FFFFFF" />
+                    <SolidColorBrush x:Key="JackRowHoverBrush" Color="#0DFFFFFF" />
+                    <SolidColorBrush x:Key="JackSearchBrush" Color="#0FFFFFFF" />
+                    <SolidColorBrush x:Key="JackSearchLineBrush" Color="#40FFFFFF" />
+                    <SolidColorBrush x:Key="JackPanelBorderBrush" Color="#14FFFFFF" />
+                    <SolidColorBrush x:Key="JackStrokeBrush" Color="#1FFFFFFF" />
+                    <SolidColorBrush x:Key="JackStopStrokeBrush" Color="#24FFFFFF" />
+                    <SolidColorBrush x:Key="JackSeparatorBrush" Color="#12FFFFFF" />
+                    <SolidColorBrush x:Key="JackBubbleBrush" Color="#17FFFFFF" />
+                    <SolidColorBrush x:Key="JackCardBorderBrush" Color="#17FFFFFF" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Light">
-                    <SolidColorBrush x:Key="JackCanvasBrush" Color="#EDF0F7" />
-                    <SolidColorBrush x:Key="JackPanelBrush" Color="#B3FFFFFF" />
-                    <SolidColorBrush x:Key="JackPanelStrongBrush" Color="#FFFFFFFF" />
-                    <SolidColorBrush x:Key="JackStrokeBrush" Color="#1F1B2235" />
-                    <SolidColorBrush x:Key="JackTextBrush" Color="#12172A" />
-                    <SolidColorBrush x:Key="JackTextDimBrush" Color="#566080" />
-                    <SolidColorBrush x:Key="JackTextFaintBrush" Color="#8B93AD" />
+                    <SolidColorBrush x:Key="JackCanvasBrush" Color="#F1F3F7" />
+                    <SolidColorBrush x:Key="JackSurfaceBrush" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="JackCardBrush" Color="#F4F5F9" />
+                    <SolidColorBrush x:Key="JackComposerBrush" Color="#F7F8FB" />
+                    <SolidColorBrush x:Key="JackTextBrush" Color="#1B1E25" />
+                    <SolidColorBrush x:Key="JackMutedBrush" Color="#5A6170" />
+                    <SolidColorBrush x:Key="JackAccentTextBrush" Color="#0A64A8" />
+                    <SolidColorBrush x:Key="JackSuccessBrush" Color="#1E8A4C" />
                     <SolidColorBrush x:Key="JackAmberTextBrush" Color="#9A5B00" />
-                    <LinearGradientBrush x:Key="JackTitleBrush" StartPoint="0,0" EndPoint="1,0.4">
-                        <GradientStop Color="#12172A" Offset="0" />
-                        <GradientStop Color="#D9480F" Offset="1" />
-                    </LinearGradientBrush>
+                    <SolidColorBrush x:Key="JackHoverBrush" Color="#14000000" />
+                    <SolidColorBrush x:Key="JackRowHoverBrush" Color="#0D000000" />
+                    <SolidColorBrush x:Key="JackSearchBrush" Color="#0A000000" />
+                    <SolidColorBrush x:Key="JackSearchLineBrush" Color="#40000000" />
+                    <SolidColorBrush x:Key="JackPanelBorderBrush" Color="#14000000" />
+                    <SolidColorBrush x:Key="JackStrokeBrush" Color="#1F000000" />
+                    <SolidColorBrush x:Key="JackStopStrokeBrush" Color="#24000000" />
+                    <SolidColorBrush x:Key="JackSeparatorBrush" Color="#12000000" />
+                    <SolidColorBrush x:Key="JackBubbleBrush" Color="#0F000000" />
+                    <SolidColorBrush x:Key="JackCardBorderBrush" Color="#17000000" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
 
-            <LinearGradientBrush x:Key="JackAccentBrush" StartPoint="0,0" EndPoint="1,1">
-                <GradientStop Color="#FFB15C" Offset="0" />
-                <GradientStop Color="#FF5A1F" Offset="1" />
-            </LinearGradientBrush>
-            <SolidColorBrush x:Key="JackInkBrush" Color="#190B04" />
-            <SolidColorBrush x:Key="JackGreenBrush" Color="#2FBF71" />
-            <SolidColorBrush x:Key="JackRedBrush" Color="#F0555A" />
-            <SolidColorBrush x:Key="JackAmberBrush" Color="#FFB020" />
+            <!-- Acento único: cambiar este color cambia toda la interfaz. -->
+            <Color x:Key="JackAccent">#4CC2FF</Color>
+            <SolidColorBrush x:Key="JackAccentBrush" Color="{StaticResource JackAccent}" />
+            <SolidColorBrush x:Key="JackAccentInkBrush" Color="#06131C" />
+            <SolidColorBrush x:Key="JackIdleDotBrush" Color="#6B7280" />
 
-            <!-- Botón principal naranja: degradado, borde de luz y halo apilado (WinUI no tiene desenfoque en XAML). -->
-            <Style x:Key="JackCta" TargetType="Button">
-                <Setter Property="Foreground" Value="{StaticResource JackInkBrush}" />
-                <Setter Property="FontWeight" Value="SemiBold" />
-                <Setter Property="Padding" Value="16,11" />
+            <x:Double x:Key="JackBaseFontSize">14</x:Double>
+            <FontFamily x:Key="JackFont">Segoe UI Variable Text, Segoe UI</FontFamily>
+            <FontFamily x:Key="JackMonoFont">Cascadia Code, Consolas</FontFamily>
+
+            <!-- Texto base: Segoe UI Variable 14 y color de la maqueta. -->
+            <Style TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="{StaticResource JackFont}" />
+                <Setter Property="FontSize" Value="{StaticResource JackBaseFontSize}" />
+                <Setter Property="Foreground" Value="{ThemeResource JackTextBrush}" />
+            </Style>
+            <Style x:Key="JackMono" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="{StaticResource JackMonoFont}" />
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="Foreground" Value="{ThemeResource JackMutedBrush}" />
+            </Style>
+
+            <!-- Botón plano 36 px, radio 8, hover blanco 8 %. La capa de hover va aparte para que convivan con un fondo propio (fila seleccionada). -->
+            <Style x:Key="JackButton" TargetType="Button">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="Foreground" Value="{ThemeResource JackTextBrush}" />
+                <Setter Property="BorderBrush" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="CornerRadius" Value="8" />
+                <Setter Property="Padding" Value="10,0" />
+                <Setter Property="MinHeight" Value="36" />
                 <Setter Property="HorizontalContentAlignment" Value="Center" />
+                <Setter Property="VerticalContentAlignment" Value="Center" />
+                <Setter Property="FontFamily" Value="{StaticResource JackFont}" />
+                <Setter Property="FontSize" Value="{StaticResource JackBaseFontSize}" />
+                <Setter Property="FocusVisualMargin" Value="-2" />
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="Button">
-                            <Grid x:Name="Host">
-                                <Border Margin="-6" CornerRadius="19" Background="#FF5A1F" Opacity="0.07" />
-                                <Border Margin="-3" CornerRadius="16" Background="#FF5A1F" Opacity="0.14" />
-                                <Border x:Name="Bg" CornerRadius="13" Background="{StaticResource JackAccentBrush}"
-                                        BorderBrush="#55FFFFFF" BorderThickness="1" Padding="{TemplateBinding Padding}">
-                                    <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                                      VerticalAlignment="Center" />
-                                </Border>
-                                <Border x:Name="Sheen" CornerRadius="13" Background="#30FFFFFF" Opacity="0" IsHitTestVisible="False" />
+                            <Grid x:Name="Host" CornerRadius="{TemplateBinding CornerRadius}">
+                                <Border x:Name="Bg" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{TemplateBinding CornerRadius}" />
+                                <Border x:Name="Hover" Background="{ThemeResource JackHoverBrush}" CornerRadius="{TemplateBinding CornerRadius}"
+                                        Opacity="0" IsHitTestVisible="False" />
+                                <ContentPresenter x:Name="Content" Padding="{TemplateBinding Padding}" Foreground="{TemplateBinding Foreground}"
+                                                  HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                  VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+                                <VisualStateManager.VisualStateGroups>
+                                    <VisualStateGroup x:Name="CommonStates">
+                                        <VisualState x:Name="Normal" />
+                                        <VisualState x:Name="PointerOver">
+                                            <VisualState.Setters>
+                                                <Setter Target="Hover.Opacity" Value="1" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Pressed">
+                                            <VisualState.Setters>
+                                                <Setter Target="Hover.Opacity" Value="1" />
+                                                <Setter Target="Host.Opacity" Value="0.85" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Disabled">
+                                            <VisualState.Setters>
+                                                <Setter Target="Content.Opacity" Value="0.45" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                    </VisualStateGroup>
+                                </VisualStateManager.VisualStateGroups>
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Acento sólido (Nuevo agente, enviar/detener). -->
+            <Style x:Key="JackAccentButton" TargetType="Button" BasedOn="{StaticResource JackButton}">
+                <Setter Property="Background" Value="{StaticResource JackAccentBrush}" />
+                <Setter Property="Foreground" Value="{StaticResource JackAccentInkBrush}" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Grid x:Name="Host" CornerRadius="{TemplateBinding CornerRadius}">
+                                <Border x:Name="Bg" Background="{TemplateBinding Background}" CornerRadius="{TemplateBinding CornerRadius}" />
+                                <Border x:Name="Sheen" Background="#26FFFFFF" CornerRadius="{TemplateBinding CornerRadius}"
+                                        Opacity="0" IsHitTestVisible="False" />
+                                <ContentPresenter x:Name="Content" Padding="{TemplateBinding Padding}" Foreground="{TemplateBinding Foreground}"
+                                                  HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                  VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
                                 <VisualStateManager.VisualStateGroups>
                                     <VisualStateGroup x:Name="CommonStates">
                                         <VisualState x:Name="Normal" />
@@ -95,7 +180,7 @@
                                         </VisualState>
                                         <VisualState x:Name="Disabled">
                                             <VisualState.Setters>
-                                                <Setter Target="Host.Opacity" Value="0.35" />
+                                                <Setter Target="Host.Opacity" Value="0.4" />
                                             </VisualState.Setters>
                                         </VisualState>
                                     </VisualStateGroup>
@@ -104,6 +189,21 @@
                         </ControlTemplate>
                     </Setter.Value>
                 </Setter>
+            </Style>
+
+            <!-- Píldora del compositor (modelo, esfuerzo, permisos). -->
+            <Style x:Key="JackPill" TargetType="Button" BasedOn="{StaticResource JackButton}">
+                <Setter Property="CornerRadius" Value="18" />
+                <Setter Property="BorderBrush" Value="{ThemeResource JackStrokeBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="Padding" Value="12,0" />
+                <Setter Property="FontSize" Value="13" />
+            </Style>
+
+            <!-- Botón con borde (Detener). -->
+            <Style x:Key="JackOutlineButton" TargetType="Button" BasedOn="{StaticResource JackButton}">
+                <Setter Property="BorderBrush" Value="{ThemeResource JackStopStrokeBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
             </Style>
         </ResourceDictionary>
     </Application.Resources>

@@ -50,6 +50,12 @@ Prueba manual de la interfaz:
 6. Redimensiona la ventana, revisa el foco con Tab y los temas claro/oscuro de Windows.
 7. Cierra y vuelve a abrir: la lista debe estar vacía, como advierte el prototipo.
 
+## Diseño
+
+La ventana sigue la maqueta «agente en curso» de `plan jack windows/referencia` (ver `plan jack windows/PLAN.md`): Fluent oscuro plano, un solo acento cian (`JackAccent` en `App.xaml`), barra lateral sin panel de 272 px y panel principal de 8 px de radio. Los colores, radios y medidas están en `App.xaml`; `Look.cs` tiene el texto con fragmentos en monoespaciado, el spinner y el modelo de mensajes. El tema claro conserva la estructura con la paleta invertida (la maqueta solo cubre el oscuro). En anchos menores de 760 px la barra lateral se oculta. El botón **Ajustes** aún no tiene pantalla. Las píldoras de modelo, esfuerzo y permisos cambian el valor mostrado por agente, pero todavía no llegan a ninguna CLI.
+
+Para comparar con la maqueta: `JACK_CAPTURE=reference` abre la ventana a 1280×860 (escalada por el DPI) con los datos de la maqueta; `JACK_THEME=light|dark` fija el tema. `empty` y `demo` son las capturas de CI.
+
 ## Estado de validación
 
 Se revisaron los archivos XML y las referencias locales. Las comprobaciones de `Jack.Core.Checks` se compilaron y ejecutaron correctamente con el SDK de .NET 10.0.403 para Windows x64 dentro de CrossOver 26.3. **La app completa todavía no se ha compilado ni validado visualmente en Windows**. Este código es una base inicial, no una versión validada para distribuir.

@@ -33,7 +33,7 @@ jobs:
             [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr hwnd, int attr, out Rect rect, int size);
           }
           '@
-          foreach ($c in @(@('empty','dark'), @('empty','light'), @('demo','dark'), @('demo','light'))) {
+          foreach ($c in @(@('empty','dark'), @('empty','light'), @('demo','dark'), @('demo','light'), @('reference','dark'))) {
             $env:JACK_CAPTURE = $c[0]; $env:JACK_THEME = $c[1]
             $since = Get-Date
             $app = Start-Process out/Jack.WinUI.exe -PassThru
