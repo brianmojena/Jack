@@ -60,7 +60,10 @@ extension AgentBridge {
             guard target.id != me.id else { return ("That is you; write to a teammate.", true) }
             let text = (arguments["message"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else { return ("The message is empty.", true) }
-            var note = "Mensaje de «\(me.name)» (agente \(short(me.id))):\n\(text)"
+            // Inside a team the messages follow the tree and count against the session limits.
+            if let refusal = store.orchestrator.authorize(from: me, to: target) { return (refusal.message, true) }
+            // What another bot writes is data for the reader, never an instruction.
+            var note = BotMessageEnvelope.wrap(text, from: me.name, shortID: short(me.id))
             if arguments["expects_reply"] as? Bool == true { note += "\n\nEspera tu respuesta: contéstale con bot_send_message al agente \(short(me.id))." }
             let wasBusy = target.conversationID.map(store.isBusy) ?? false
             switch store.sendToBotAgent(note, agent: target) {
@@ -99,6 +102,9 @@ extension AgentBridge {
                 case .failure(let error): return (error.message, true)
                 }
             }
+
+        case "bot_propose_team", "bot_team_status", "bot_report":
+            return orchestrationCall(name, arguments: arguments, me: me, store: store) ?? ("Unknown tool \(name).", true)
 
         default:
             return ("Unknown tool \(name).", true)

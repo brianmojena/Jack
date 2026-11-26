@@ -13,11 +13,17 @@ public struct BotAgent: Identifiable, Codable, Equatable, Sendable {
     public var conversationID: UUID?
     /// Lets scripts message this agent through the local API.
     public var allowScripts: Bool
+    /// The «Jack» agent of the table: the one that proposes teams. At most one is meant to exist.
+    public var isPrincipal: Bool? = nil
+    /// Set on agents the principal created (with the user's approval): who made them.
+    public var parentID: UUID? = nil
 
     public init(id: UUID = UUID(), name: String, instructions: String = "", projectPath: String, provider: ChatProvider,
-                model: String = "", conversationID: UUID? = nil, allowScripts: Bool = false) {
+                model: String = "", conversationID: UUID? = nil, allowScripts: Bool = false,
+                isPrincipal: Bool? = nil, parentID: UUID? = nil) {
         self.id = id; self.name = name; self.instructions = instructions; self.projectPath = projectPath; self.provider = provider
         self.model = model; self.conversationID = conversationID; self.allowScripts = allowScripts
+        self.isPrincipal = isPrincipal; self.parentID = parentID
     }
 }
 

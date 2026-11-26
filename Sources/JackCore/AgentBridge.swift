@@ -191,7 +191,8 @@ public struct ChatDelegation: Equatable {
             let tools = (allowed.delegates ? delegationTools : []) + (allowed.images ? [Self.imageTool] : [])
                 + (allowed.notebooks && store?.lightModeEnabled == false ? Self.notebookTools : [])
                 + (allowed.normalMode && store?.lightModeEnabled == false ? Self.artifactTools + Self.integratedTools : [])
-                + (allowed.normalMode && store?.lightModeEnabled == false && store?.conversations.first(where: { $0.id == caller })?.botAgentID != nil ? Self.botTools : [])
+                + (allowed.normalMode && store?.lightModeEnabled == false && store?.conversations.first(where: { $0.id == caller })?.botAgentID != nil
+                    ? Self.botToolDefinitions(for: store?.conversations.first(where: { $0.id == caller })?.botAgentID.flatMap { id in store?.bots.agents.first { $0.id == id } }) : [])
             return Self.result(id: id, ["tools": tools])
         case "tools/call":
             let name = params["name"] as? String ?? ""

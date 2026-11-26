@@ -228,6 +228,23 @@ enum AntigravityTerminalError: LocalizedError {
         if !store.migrated, store.migrate(schedules.automations) { schedules.removeAllAutomations() }
         return store
     }
+    /// Jack's team on the table: proposals, limits and the session. Normal mode only; Light never touches it.
+    private var botOrchestrator: BotOrchestrator?
+    public var orchestrator: BotOrchestrator {
+        if let botOrchestrator { return botOrchestrator }
+        let value = BotOrchestrator(store: self)
+        value.apiProviders = { [weak self] in self?.apiProviders.providers ?? [] }
+        botOrchestrator = value
+        return value
+    }
+    /// The custom API providers of Jack Bot. Their keys live in the Keychain, never in this store's file.
+    private var apiProviderStore: APIProviderStore?
+    public var apiProviders: APIProviderStore {
+        if let apiProviderStore { return apiProviderStore }
+        let value = APIProviderStore(directory: archive.directory)
+        apiProviderStore = value
+        return value
+    }
     /// The agent's own conversation, created the first time. Its instructions are pinned to it, so every message carries them.
     /// `applyEngine` moves an existing conversation to the agent's current engine and model: used when the user edits the agent.
     @discardableResult
@@ -281,8 +298,8 @@ enum AntigravityTerminalError: LocalizedError {
     }
     /// Starts checking schedules in Normal; stops in Light.
     public func applySchedules() {
-        if lightModeEnabled { scheduleCenter?.stop(); botStore?.stop(); botAPIServer?.stop() }
-        else { _ = bots; schedules.start(); bots.start(); botAPI.refresh() }
+        if lightModeEnabled { scheduleCenter?.stop(); botStore?.stop(); botAPIServer?.stop(); botOrchestrator?.stopAll(); BotAPIRegistry.shared.clear() }
+        else { _ = bots; schedules.start(); bots.start(); botAPI.refresh(); apiProviders.registerForDriver() }
     }
     /// Progress bars agents report with `jack-progress`; created on first use so tests don't watch the real folder.
     private var progressMonitor: ProgressMonitor?
@@ -1891,6 +1908,19 @@ enum AntigravityTerminalError: LocalizedError {
         if let live = liveDrivers[id] { return live }
         let driver = makeDriver(conversation.provider)
         if !lightModeEnabled, let stellar = driver as? StellarChatDriver {
+            if conversation.botAgentID != nil {
+                // A Jack Bot agent on an API provider gets the same bot tools the command-line engines get through the bridge.
+                stellar.botDefinitions = { [weak self] current in
+                    guard let self, !self.lightModeEnabled, let agentID = current.botAgentID else { return [] }
+                    return AgentBridge.botToolDefinitions(for: self.bots.agents.first { $0.id == agentID }).map { tool in
+                        ["type": "function", "function": ["name": tool["name"]!, "description": tool["description"]!, "parameters": tool["inputSchema"]!]]
+                    }
+                }
+                stellar.botHandler = { [weak self] name, arguments, current in
+                    guard let self, !self.lightModeEnabled else { return ("Jack Bot tools are available only in Normal mode.", true) }
+                    return self.bridge.botCall(name, arguments: arguments, conversation: current, store: self)
+                }
+            }
             stellar.artifactHandler = { [weak self] name, arguments, current in
                 guard let self, !self.lightModeEnabled else { return ("Artifacts are available only in Normal mode.", true) }
                 let result = self.bridge.artifactCall(name, arguments: arguments, conversation: current, library: self.artifacts)

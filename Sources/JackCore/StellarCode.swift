@@ -463,6 +463,8 @@ final class StellarChatDriver: ChatDriver {
     static let maxSteps = 40
     var prepareServer: (StellarServer, String) async throws -> Void = { server, model in
         if server.api == .ollama { await StellarRuntime.ensureOllama(wait: true) }
+        // A remote API provider is checked by the request itself, which reports its own error.
+        if BotAPIRegistry.shared.isAPI(server) { return }
         guard await StellarHTTP.reachable(server) else {
             throw StellarError.message("\(server.title) no responde en \(server.baseURL). Inícialo para usar \(model).")
         }
@@ -472,6 +474,9 @@ final class StellarChatDriver: ChatDriver {
     }
     var streamRequest: StreamFactory = StellarClient.stream
     var artifactHandler: ((String, [String: Any], ChatConversation) -> (String, Bool))?
+    /// Jack Bot tools for an agent on a custom API provider. Set only in Normal mode and only for Jack Bot agents.
+    var botHandler: ((String, [String: Any], ChatConversation) -> (String, Bool))?
+    var botDefinitions: ((ChatConversation) -> [[String: Any]])?
     private var artifactInstructions: String { !energySaving && artifactHandler != nil ? "\n\n" + ArtifactLibrary.agentInstructions : "" }
     var artifactDefinitions: [[String: Any]] {
         guard !energySaving, artifactHandler != nil else { return [] }
@@ -536,7 +541,8 @@ final class StellarChatDriver: ChatDriver {
             let textID = "stellar-\(UUID().uuidString)"
             let reasoningID = textID + ":reasoning"
             var text = "", calls: [StellarToolCall] = []
-            let toolDefinitions = useTools ? (energySaving ? StellarTools.definitions : StellarTools.normalDefinitions + artifactDefinitions) : nil
+            let botTools = !energySaving && botHandler != nil ? (botDefinitions?(conversation) ?? []) : []
+            let toolDefinitions = useTools ? (energySaving ? StellarTools.definitions : StellarTools.normalDefinitions + artifactDefinitions + botTools) : nil
             let bounded = energySaving ? (history, nil) : Self.contextBounded(history, system: system, contextLength: contextLength, toolDefinitions: toolDefinitions ?? [])
             if let notice = bounded.1, !contextNoticeSent {
                 contextNoticeSent = true
@@ -615,6 +621,14 @@ final class StellarChatDriver: ChatDriver {
                 }
             }
             let (output, failed) = artifactHandler(call.name, call.input, conversation)
+            onEvent(.tool(id: toolID, title: call.name, detail: input + "\n" + output, status: failed ? "failed" : "completed"))
+            return ToolResult(text: output, failed: failed)
+        }
+        if !energySaving, call.name.hasPrefix("bot_") || call.name.hasPrefix("channel_"), let botHandler {
+            let toolID = "stellar-bot-\(UUID().uuidString)"
+            let input = boundedJSON(call.input)
+            onEvent(.tool(id: toolID, title: call.name, detail: input, status: "running"))
+            let (output, failed) = botHandler(call.name, call.input, conversation)
             onEvent(.tool(id: toolID, title: call.name, detail: input + "\n" + output, status: failed ? "failed" : "completed"))
             return ToolResult(text: output, failed: failed)
         }

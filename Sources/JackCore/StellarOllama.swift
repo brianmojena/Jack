@@ -86,7 +86,9 @@ public enum StellarModels {
         let modelID = canonicalID(modelID, allowOllamaName: allowOllamaName)
         guard let slash = modelID.firstIndex(of: "/") else { return nil }
         let prefix = String(modelID[..<slash])
-        guard let server = StellarServer.all.first(where: { $0.id == prefix }) else { return nil }
+        // Custom API providers resolve only where `allowOllamaName` is true: the Normal window. Light never sees them.
+        let candidates = allowOllamaName ? StellarServer.all + BotAPIRegistry.shared.servers : StellarServer.all
+        guard let server = candidates.first(where: { $0.id == prefix }) else { return nil }
         let name = String(modelID[modelID.index(after: slash)...])
         return name.isEmpty ? nil : (server, name)
     }
@@ -239,10 +241,22 @@ public enum StellarTransport {
 
 enum StellarHTTP {
     static func request(_ server: StellarServer, path: String, body: [String: Any]? = nil, timeout: TimeInterval) throws -> URLRequest {
-        guard let url = URL(string: server.baseURL + path), StellarServer.isLocal(url) else {
+        guard let url = URL(string: server.baseURL + path) else {
+            throw StellarError.message("Stellar Code solo se conecta a servidores locales.")
+        }
+        // The only non-local servers are the API providers the user added to Jack Bot, with a key kept in the Keychain.
+        let apiProvider = BotAPIRegistry.shared.config(for: server)
+        guard StellarServer.isLocal(url) || (apiProvider != nil && (url.scheme == "https" || StellarServer.isLocal(url))) else {
             throw StellarError.message("Stellar Code solo se conecta a servidores locales.")
         }
         var request = URLRequest(url: url, timeoutInterval: timeout)
+        if apiProvider != nil {
+            guard let key = BotAPIRegistry.shared.apiKey(for: server) else {
+                throw StellarError.message("Falta la clave de API de «\(server.title)». Guárdala en Jack Bot > Proveedor.")
+            }
+            request.setValue("Bearer " + key, forHTTPHeaderField: "Authorization")
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+        }
         if let body {
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -356,7 +370,7 @@ enum StellarClient {
                     if response.status != 200 {
                         var text = ""
                         for try await line in response.lines { text += line; if text.count > 4000 { break } }
-                        throw StellarError.message(errorText(text) ?? "\(server.title) respondió \(response.status).")
+                        throw StellarError.message(BotAPIRegistry.shared.redact(errorText(text) ?? "\(server.title) respondió \(response.status)."))
                     }
                     var calls: [Int: (id: String, name: String, arguments: String)] = [:]
                     for try await line in response.lines {
@@ -385,7 +399,7 @@ enum StellarClient {
                             let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
                             if payload == "[DONE]" { break }
                             guard let object = parse(payload) else { continue }
-                            if let error = object["error"] { throw StellarError.message(errorText(boundedJSON(error)) ?? "El servidor local devolvió un error.") }
+                            if let error = object["error"] { throw StellarError.message(BotAPIRegistry.shared.redact(errorText(boundedJSON(error)) ?? "El servidor local devolvió un error.")) }
                             if let usage = object["usage"] as? [String: Any] {
                                 continuation.yield(.usage(prompt: usage["prompt_tokens"] as? Int ?? 0, output: usage["completion_tokens"] as? Int ?? 0))
                             }
