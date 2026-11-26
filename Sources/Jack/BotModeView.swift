@@ -2,8 +2,8 @@ import AppKit
 import JackCore
 import SwiftUI
 
-/// Jack Bot mode, drawn as a blueprint on black: persistent agents on the left, the selected agent's own chat in the middle,
-/// its routines on the right and a title block along the bottom.
+/// Jack Bot mode, a node editor on near-black. A floating bar on top switches between four views: the table (Jack and its
+/// team as nodes on a canvas) and the lists of agents, routines and channels.
 struct BotModeView<Chat: View>: View {
     @ObservedObject var bots: BotStore
     @ObservedObject var store: ChatStore
@@ -14,9 +14,12 @@ struct BotModeView<Chat: View>: View {
     @State private var editingRoutine: BotRoutine?
     @State private var selectedChannelID: UUID?
     @State private var editingChannel: BotChannel?
-    /// The table is the front page; the lists of agents, routines and channels are one tab away.
-    private enum Tab { case table, agents }
-    @State private var tab: Tab = .table
+    @State private var tab: BotTab
+
+    init(bots: BotStore, store: ChatStore, projectPaths: [String], initialTab: BotTab = .table, @ViewBuilder chat: @escaping () -> Chat) {
+        self.bots = bots; self.store = store; self.projectPaths = projectPaths; self.chat = chat
+        _tab = State(initialValue: initialTab)
+    }
 
     private var selectedChannel: BotChannel? { bots.channels.first { $0.id == selectedChannelID } }
     /// The agent shown, unless a channel is.
@@ -24,27 +27,40 @@ struct BotModeView<Chat: View>: View {
     private func isWorking(_ agent: BotAgent) -> Bool { agent.conversationID.map { store.statuses[$0]?.isActive == true } ?? false }
 
     var body: some View {
-        VStack(spacing: 0) {
-            tabBar
-            if tab == .table {
+        ZStack(alignment: .top) {
+            switch tab {
+            case .table:
                 BotTableView(orchestrator: store.orchestrator, bots: bots, store: store, projectPaths: projectPaths, chat: chat)
-            } else {
+            case .agents:
                 HStack(spacing: 0) {
-                    agentList.frame(width: 250)
-                    Rectangle().fill(BP.line.opacity(0.2)).frame(width: 1)
+                    agentList(.agents).frame(width: 260)
+                    Rectangle().fill(BC.line.opacity(0.08)).frame(width: 1)
                     center.frame(maxWidth: .infinity)
-                    if let agent = selected {
-                        Rectangle().fill(BP.line.opacity(0.2)).frame(width: 1)
-                        routinePanel(agent).frame(width: 310)
-                    }
                 }
-                titleBlock
+                .padding(.top, 66)
+            case .routines:
+                HStack(spacing: 0) {
+                    agentList(.agents).frame(width: 260)
+                    Rectangle().fill(BC.line.opacity(0.08)).frame(width: 1)
+                    if let agent = selected { routinePanel(agent).frame(maxWidth: .infinity) }
+                    else { placeholder("Crea un agente para darle rutinas.") }
+                }
+                .padding(.top, 66)
+            case .channels:
+                HStack(spacing: 0) {
+                    agentList(.channels).frame(width: 260)
+                    Rectangle().fill(BC.line.opacity(0.08)).frame(width: 1)
+                    if let channel = selectedChannel { BotChannelView(bots: bots, channel: channel) { editingChannel = channel }.frame(maxWidth: .infinity) }
+                    else { placeholder("Elige un canal de la lista o crea uno nuevo.") }
+                }
+                .padding(.top, 66)
             }
+            BotTopBar(orchestrator: store.orchestrator, tab: $tab, onTab: switchTab)
         }
-        .background { ZStack { BP.ink; BPGrid() } }
-        .tint(BP.hi).toggleStyle(BPToggleStyle()).buttonStyle(BPButtonStyle())
+        .background { ZStack { BC.canvas; BCDotGrid() } }
+        .tint(BC.hi).toggleStyle(BCToggleStyle()).buttonStyle(BCButtonStyle())
         .preferredColorScheme(.dark)
-        .onAppear { if tab == .agents { open(selected) } }
+        .onAppear { if tab != .table { switchTab(tab) } }
         .sheet(item: $editingAgent) { agent in
             BotAgentEditor(agent: agent, store: store, projectPaths: projectPaths) { saved in
                 bots.upsert(saved); selectedID = saved.id; editingAgent = nil
@@ -60,25 +76,16 @@ struct BotModeView<Chat: View>: View {
         }
     }
 
-    /// MESA (Jack and its team) or AGENTES (every agent, routines and channels).
-    private var tabBar: some View {
-        HStack(spacing: 0) {
-            ForEach([(Tab.table, "MESA"), (Tab.agents, "AGENTES · RUTINAS · CANALES")], id: \.1) { item in
-                Button {
-                    tab = item.0
-                    if item.0 == .agents { open(selected) }
-                } label: {
-                    Text(item.1).font(BP.mono(10, .semibold)).tracking(1.2).foregroundStyle(tab == item.0 ? BP.hi : BP.dim)
-                        .padding(.horizontal, 16).frame(height: 28)
-                        .overlay(alignment: .bottom) { if tab == item.0 { Rectangle().fill(BP.hi).frame(height: 2) } }
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-            Spacer()
+    private func switchTab(_ new: BotTab) {
+        switch new {
+        case .table: break
+        case .agents, .routines: selectedChannelID = nil; open(selected)
+        case .channels: if selectedChannelID == nil { selectedChannelID = bots.channels.first { $0.state != .archived }?.id }
         }
-        .background(BP.ink.opacity(0.9))
-        .overlay(alignment: .bottom) { Rectangle().fill(BP.line.opacity(0.2)).frame(height: 1) }
+    }
+
+    private func placeholder(_ text: String) -> some View {
+        Text(text).font(BC.sf(12)).foregroundStyle(BC.faint).frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     /// Selecting an agent shows its conversation, when it already has one.
@@ -91,63 +98,49 @@ struct BotModeView<Chat: View>: View {
         BotAgent(name: "", projectPath: projectPaths.first ?? "", provider: .claude)
     }
 
-    // MARK: Title block
-
-    private var titleBlock: some View {
-        let active = bots.routines.filter { !$0.paused }.count
-        let cells = [("PLANO", "JACK BOT"), ("AGENTES", "\(bots.agents.count)"), ("TRABAJANDO", "\(bots.agents.filter(isWorking).count)"),
-                     ("RUTINAS", "\(bots.routines.count) · \(active) ACT."), ("CANALES", "\(bots.channels.filter { $0.state != .archived }.count)")]
-        return HStack(spacing: 0) {
-            ForEach(Array(cells.enumerated()), id: \.offset) { index, cell in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(cell.0).font(BP.mono(8.5)).foregroundStyle(BP.faint).tracking(1)
-                    Text(cell.1).font(BP.mono(11, .semibold)).foregroundStyle(index == 2 && cell.1 != "0" ? BP.hi : BP.text)
-                }
-                .padding(.horizontal, 14).padding(.vertical, 6)
-                .frame(maxWidth: index == 0 ? 170 : .infinity, alignment: .leading)
-                Rectangle().fill(BP.line.opacity(0.2)).frame(width: 1)
-            }
-            Text("ESC 1:1").font(BP.mono(9.5)).foregroundStyle(BP.faint).padding(.horizontal, 14)
-        }
-        .frame(height: 38).background(BP.ink.opacity(0.9))
-        .overlay(alignment: .top) { Rectangle().fill(BP.line.opacity(0.35)).frame(height: 1) }
-    }
-
     // MARK: Agents
 
-    private var agentList: some View {
+    private enum ListKind { case agents, channels }
+
+    private func agentList(_ kind: ListKind) -> some View {
         VStack(spacing: 0) {
             HStack {
-                Text("JACK·BOT").font(BP.mono(13, .bold)).tracking(2).foregroundStyle(BP.text)
+                Text(kind == .agents ? "Agentes" : "Canales").font(BC.sf(13, .semibold)).foregroundStyle(BC.text)
                 Spacer()
-                Button { editingAgent = blankAgent() } label: { Image(systemName: "plus") }
-                    .buttonStyle(BPIconButtonStyle()).help("Crear un agente").accessibilityLabel("Crear un agente")
+                if kind == .agents {
+                    Button { editingAgent = blankAgent() } label: { Image(systemName: "plus") }
+                        .buttonStyle(BCIconButtonStyle()).help("Crear un agente").accessibilityLabel("Crear un agente")
+                } else {
+                    Button { editingChannel = BotChannel(name: "", memberIDs: [], ownerID: UUID()) } label: { Image(systemName: "plus") }
+                        .buttonStyle(BCIconButtonStyle()).help("Crear un canal").disabled(bots.agents.count < 2).accessibilityLabel("Crear un canal")
+                }
             }
             .padding(14)
-            Rectangle().fill(BP.line.opacity(0.2)).frame(height: 1)
-            if bots.agents.isEmpty {
+            if kind == .agents, bots.agents.isEmpty {
                 VStack(spacing: 10) {
-                    ZStack {
-                        Rectangle().strokeBorder(BP.line.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [4, 3])).frame(width: 64, height: 64)
-                        Image(systemName: "plus").font(.system(size: 20, weight: .light)).foregroundStyle(BP.dim)
-                    }
-                    Text("SIN AGENTES").font(BP.mono(11, .semibold)).tracking(1.5).foregroundStyle(BP.text)
+                    Image(systemName: "plus").font(.system(size: 20, weight: .light)).foregroundStyle(BC.dim)
+                        .frame(width: 56, height: 56).bcBox()
+                    Text("Sin agentes").font(BC.sf(12, .semibold)).foregroundStyle(BC.text)
                     Text("Un agente es un compañero persistente: su carpeta, sus instrucciones y una sola conversación. Puede usar cualquier motor.")
-                        .font(BP.mono(10.5)).foregroundStyle(BP.dim).multilineTextAlignment(.center)
-                    Button("Crear agente") { editingAgent = blankAgent() }.buttonStyle(BPButtonStyle(prominent: true)).padding(.top, 4)
+                        .font(BC.sf(11)).foregroundStyle(BC.dim).multilineTextAlignment(.center)
+                    Button("Crear agente") { editingAgent = blankAgent() }.buttonStyle(BCButtonStyle(prominent: true)).padding(.top, 4)
+                }
+                .padding(18).frame(maxHeight: .infinity)
+            } else if kind == .channels, bots.channels.filter({ $0.state != .archived }).isEmpty {
+                VStack(spacing: 10) {
+                    Text("Sin canales").font(BC.sf(12, .semibold)).foregroundStyle(BC.text)
+                    Text("Un canal es un hilo compartido con un dueño de tarea. Necesitas al menos dos agentes.")
+                        .font(BC.sf(11)).foregroundStyle(BC.dim).multilineTextAlignment(.center)
                 }
                 .padding(18).frame(maxHeight: .infinity)
             } else {
                 ScrollView {
                     LazyVStack(spacing: 6, pinnedViews: []) {
-                        BPHeader("01", "AGENTES").padding(.bottom, 2)
-                        ForEach(Array(bots.agents.enumerated()), id: \.element.id) { agentRow($0.element, index: $0.offset) }
-                        BPHeader(number: "02", title: "CANALES") {
-                            Button { editingChannel = BotChannel(name: "", memberIDs: [], ownerID: UUID()) } label: { Image(systemName: "plus") }
-                                .buttonStyle(BPIconButtonStyle()).help("Crear un canal").disabled(bots.agents.count < 2).accessibilityLabel("Crear un canal")
+                        if kind == .agents {
+                            ForEach(Array(bots.agents.enumerated()), id: \.element.id) { agentRow($0.element, index: $0.offset) }
+                        } else {
+                            ForEach(Array(bots.channels.filter { $0.state != .archived }.enumerated()), id: \.element.id) { channelRow($0.element, index: $0.offset) }
                         }
-                        .padding(.top, 14)
-                        ForEach(Array(bots.channels.filter { $0.state != .archived }.enumerated()), id: \.element.id) { channelRow($0.element, index: $0.offset) }
                     }
                     .padding(12)
                 }
@@ -159,16 +152,16 @@ struct BotModeView<Chat: View>: View {
         let isSelected = channel.id == selectedChannelID
         return Button { selectedChannelID = channel.id } label: {
             HStack(spacing: 10) {
-                Text(BP.code("C", index)).font(BP.mono(10, .semibold)).foregroundStyle(isSelected ? BP.hi : BP.dim).frame(width: 34, alignment: .leading)
+                Text(BC.code("C", index)).font(BC.sf(10, .semibold)).foregroundStyle(isSelected ? BC.hi : BC.dim).frame(width: 34, alignment: .leading)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(channel.name).font(BP.mono(12, .medium)).foregroundStyle(BP.text).lineLimit(1)
+                    Text(channel.name).font(BC.sf(12, .medium)).foregroundStyle(BC.text).lineLimit(1)
                     Text("\(channel.memberIDs.count) MIEMBROS" + (channel.state == .stopped ? " · DETENIDO" : ""))
-                        .font(BP.mono(9.5)).foregroundStyle(channel.state == .stopped ? BP.warn : BP.dim)
+                        .font(BC.sf(9.5)).foregroundStyle(channel.state == .stopped ? BC.warn : BC.dim)
                 }
                 Spacer(minLength: 4)
             }
             .padding(.horizontal, 8).padding(.vertical, 7).frame(maxWidth: .infinity, alignment: .leading)
-            .bpBox(selected: isSelected).contentShape(Rectangle())
+            .bcBox(selected: isSelected).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .contextMenu {
@@ -188,22 +181,22 @@ struct BotModeView<Chat: View>: View {
             selectedID = agent.id; selectedChannelID = nil; open(agent)
         } label: {
             HStack(spacing: 10) {
-                ProviderLogo(provider: agent.provider, size: 15, symbolScale: 0.8).foregroundStyle(isSelected ? BP.hi : BP.text)
-                    .frame(width: 30, height: 30).bpBox(selected: isSelected)
+                ProviderLogo(provider: agent.provider, size: 15, symbolScale: 0.8).foregroundStyle(isSelected ? BC.hi : BC.text)
+                    .frame(width: 30, height: 30).bcBox(selected: isSelected)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
-                        Text(BP.code("A", index)).font(BP.mono(9.5, .semibold)).foregroundStyle(isSelected ? BP.hi : BP.faint)
-                        Text(agent.name).font(BP.mono(12, .medium)).foregroundStyle(BP.text).lineLimit(1)
+                        Text(BC.code("A", index)).font(BC.sf(9.5, .semibold)).foregroundStyle(isSelected ? BC.hi : BC.faint)
+                        Text(agent.name).font(BC.sf(12, .medium)).foregroundStyle(BC.text).lineLimit(1)
                     }
-                    Text(working ? "■ TRABAJANDO" : "□ " + (routines.isEmpty ? "SIN RUTINAS" : "\(routines.count) RUTINA\(routines.count == 1 ? "" : "S")"))
-                        .font(BP.mono(9.5)).foregroundStyle(working ? BP.hi : BP.dim)
+                    Text(working ? "● Trabajando" : (routines.isEmpty ? "Sin rutinas" : "\(routines.count) rutina\(routines.count == 1 ? "" : "s")"))
+                        .font(BC.sf(9.5)).foregroundStyle(working ? BC.hi : BC.dim)
                 }
                 Spacer(minLength: 4)
-                if conversation?.hasUnread == true { Rectangle().fill(BP.hi).frame(width: 6, height: 6).accessibilityLabel("Sin leer") }
+                if conversation?.hasUnread == true { Rectangle().fill(BC.hi).frame(width: 6, height: 6).accessibilityLabel("Sin leer") }
             }
             .padding(6).frame(maxWidth: .infinity, alignment: .leading)
-            .overlay(alignment: .leading) { if isSelected { Rectangle().fill(BP.hi).frame(width: 2) } }
-            .background(isSelected ? BP.line.opacity(0.07) : .clear).contentShape(Rectangle())
+            .overlay(alignment: .leading) { if isSelected { Rectangle().fill(BC.hi).frame(width: 2) } }
+            .background(isSelected ? BC.line.opacity(0.07) : .clear).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .contextMenu {
@@ -232,29 +225,29 @@ struct BotModeView<Chat: View>: View {
     private func agentStrip(_ agent: BotAgent) -> some View {
         let model = agent.model.isEmpty ? "PREDETERMINADO" : agent.model
         return HStack(spacing: 10) {
-            Text(BP.code("A", bots.agents.firstIndex { $0.id == agent.id } ?? 0)).foregroundStyle(BP.hi)
-            Text(agent.name).foregroundStyle(BP.text).lineLimit(1)
-            Text("/").foregroundStyle(BP.faint)
-            Text(agent.provider.title).foregroundStyle(BP.dim)
-            Text(model).foregroundStyle(BP.faint).lineLimit(1)
+            Text(BC.code("A", bots.agents.firstIndex { $0.id == agent.id } ?? 0)).foregroundStyle(BC.hi)
+            Text(agent.name).foregroundStyle(BC.text).lineLimit(1)
+            Text("/").foregroundStyle(BC.faint)
+            Text(agent.provider.title).foregroundStyle(BC.dim)
+            Text(model).foregroundStyle(BC.faint).lineLimit(1)
             Spacer()
-            Text("~/" + URL(fileURLWithPath: agent.projectPath).lastPathComponent).foregroundStyle(BP.faint).lineLimit(1)
+            Text("~/" + URL(fileURLWithPath: agent.projectPath).lastPathComponent).foregroundStyle(BC.faint).lineLimit(1)
             Button { editingAgent = agent } label: { Image(systemName: "slider.horizontal.3") }
-                .buttonStyle(BPIconButtonStyle()).help("Editar el agente, su motor y su modelo").accessibilityLabel("Editar el agente")
+                .buttonStyle(BCIconButtonStyle()).help("Editar el agente, su motor y su modelo").accessibilityLabel("Editar el agente")
         }
-        .font(BP.mono(10.5, .semibold)).tracking(0.6).textCase(.uppercase)
+        .font(BC.sf(10.5, .semibold))
         .padding(.horizontal, 14).padding(.vertical, 8)
-        .overlay(alignment: .bottom) { Rectangle().fill(BP.line.opacity(0.2)).frame(height: 1) }
+        .overlay(alignment: .bottom) { Rectangle().fill(BC.line.opacity(0.2)).frame(height: 1) }
     }
 
     private func emptyChat(_ agent: BotAgent) -> some View {
         VStack(spacing: 12) {
-            ProviderLogo(provider: agent.provider, size: 34, symbolScale: 0.8).foregroundStyle(BP.hi)
-                .frame(width: 84, height: 84).bpBox(marks: true)
-            Text(agent.name).font(BP.mono(15, .bold)).tracking(1.5).foregroundStyle(BP.text)
-            Text("\(agent.provider.title) · ~/\(URL(fileURLWithPath: agent.projectPath).lastPathComponent)").font(BP.mono(11)).foregroundStyle(BP.dim)
+            ProviderLogo(provider: agent.provider, size: 34, symbolScale: 0.8).foregroundStyle(BC.hi)
+                .frame(width: 84, height: 84).bcBox(marks: true)
+            Text(agent.name).font(BC.sf(15, .bold)).foregroundStyle(BC.text)
+            Text("\(agent.provider.title) · ~/\(URL(fileURLWithPath: agent.projectPath).lastPathComponent)").font(BC.sf(11)).foregroundStyle(BC.dim)
             if !agent.instructions.isEmpty {
-                Text(agent.instructions).font(BP.mono(11)).foregroundStyle(BP.dim).lineLimit(4)
+                Text(agent.instructions).font(BC.sf(11)).foregroundStyle(BC.dim).lineLimit(4)
                     .multilineTextAlignment(.center).frame(maxWidth: 400)
             }
             Button("Abrir conversación") {
@@ -263,7 +256,7 @@ struct BotModeView<Chat: View>: View {
                 }
                 store.select(id)
             }
-            .buttonStyle(BPButtonStyle(prominent: true)).padding(.top, 6)
+            .buttonStyle(BCButtonStyle(prominent: true)).padding(.top, 6)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -274,16 +267,16 @@ struct BotModeView<Chat: View>: View {
         let routines = bots.routines(of: agent.id)
         return VStack(spacing: 0) {
             HStack {
-                Text("RUTINAS").font(BP.mono(12, .bold)).tracking(2).foregroundStyle(BP.text)
+                Text("RUTINAS").font(BC.sf(12, .bold)).foregroundStyle(BC.text)
                 Spacer()
                 Button { editingRoutine = BotRoutine(agentID: agent.id, name: "", instruction: "", startAt: nineAM) } label: { Image(systemName: "plus") }
-                    .buttonStyle(BPIconButtonStyle()).help("Crear una rutina").accessibilityLabel("Crear una rutina")
+                    .buttonStyle(BCIconButtonStyle()).help("Crear una rutina").accessibilityLabel("Crear una rutina")
             }
             .padding(14)
-            Rectangle().fill(BP.line.opacity(0.2)).frame(height: 1)
+            Rectangle().fill(BC.line.opacity(0.2)).frame(height: 1)
             if routines.isEmpty {
                 Text("Una rutina le escribe a este agente a la hora que indiques, en su misma conversación.")
-                    .font(BP.mono(10.5)).foregroundStyle(BP.dim).multilineTextAlignment(.center)
+                    .font(BC.sf(10.5)).foregroundStyle(BC.dim).multilineTextAlignment(.center)
                     .padding(20).frame(maxHeight: .infinity, alignment: .top)
             } else {
                 ScrollView { LazyVStack(spacing: 10) { ForEach(Array(routines.enumerated()), id: \.element.id) { routineRow($0.element, index: $0.offset) } }.padding(12) }
@@ -298,8 +291,8 @@ struct BotModeView<Chat: View>: View {
     private func routineRow(_ routine: BotRoutine, index: Int) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(BP.code("R", index)).font(BP.mono(9.5, .semibold)).foregroundStyle(routine.paused ? BP.faint : BP.hi)
-                Text(routine.name).font(BP.mono(12, .semibold)).foregroundStyle(BP.text).lineLimit(1)
+                Text(BC.code("R", index)).font(BC.sf(9.5, .semibold)).foregroundStyle(routine.paused ? BC.faint : BC.hi)
+                Text(routine.name).font(BC.sf(12, .semibold)).foregroundStyle(BC.text).lineLimit(1)
                 Spacer(minLength: 4)
                 Toggle("", isOn: Binding(get: { !routine.paused }, set: { bots.setPaused(!$0, for: routine.id) }))
                     .labelsHidden().help(routine.paused ? "Reanudar" : "Pausar")
@@ -308,15 +301,15 @@ struct BotModeView<Chat: View>: View {
                     Button("Editar…", systemImage: "pencil") { editingRoutine = routine }
                     Divider()
                     Button("Eliminar", systemImage: "trash", role: .destructive) { bots.remove(routine: routine.id) }
-                } label: { Image(systemName: "ellipsis").foregroundStyle(BP.text) }
+                } label: { Image(systemName: "ellipsis").foregroundStyle(BC.text) }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 20).accessibilityLabel("Acciones de la rutina")
             }
-            Text(routine.instruction).font(BP.mono(10.5)).foregroundStyle(BP.dim).lineLimit(3)
-            BPDimension(text: summary(routine))
-            if let last = routine.lastRunAt { Text("ÚLTIMA · " + last.formatted(date: .abbreviated, time: .shortened)).font(BP.mono(9)).foregroundStyle(BP.faint) }
-            if let error = routine.lastError { Text(error).font(BP.mono(10)).foregroundStyle(BP.warn).lineLimit(3) }
+            Text(routine.instruction).font(BC.sf(10.5)).foregroundStyle(BC.dim).lineLimit(3)
+            BCDimension(text: summary(routine))
+            if let last = routine.lastRunAt { Text("ÚLTIMA · " + last.formatted(date: .abbreviated, time: .shortened)).font(BC.sf(9)).foregroundStyle(BC.faint) }
+            if let error = routine.lastError { Text(error).font(BC.sf(10)).foregroundStyle(BC.warn).lineLimit(3) }
         }
-        .padding(10).bpBox(fill: 0.03).opacity(routine.paused ? 0.55 : 1)
+        .padding(10).bcBox(fill: 0.03).opacity(routine.paused ? 0.55 : 1)
     }
 
     private func summary(_ routine: BotRoutine) -> String {
@@ -362,15 +355,15 @@ private struct BotAgentEditor: View {
     }
 
     var body: some View {
-        BPSheet(figure: "01", title: agent.name.isEmpty ? "Nuevo agente" : "Editar agente", width: 580) {
+        BCSheet(figure: "01", title: agent.name.isEmpty ? "Nuevo agente" : "Editar agente", width: 580) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    section("01", "NOMBRE") { TextField("Nombre", text: $agent.name).bpField() }
+                    section("01", "NOMBRE") { TextField("Nombre", text: $agent.name).bcField() }
                     section("02", "MOTOR") { providerGrid }
                     section("03", "MODELO") { modelList }
                     section("04", "CARPETA DE TRABAJO") {
                         HStack(spacing: 8) {
-                            TextField("/ruta/de/la/carpeta", text: $agent.projectPath).bpField()
+                            TextField("/ruta/de/la/carpeta", text: $agent.projectPath).bcField()
                             Menu("Elegir") {
                                 ForEach(projectPaths.prefix(30), id: \.self) { path in
                                     Button(URL(fileURLWithPath: path).lastPathComponent) { agent.projectPath = path }
@@ -378,18 +371,18 @@ private struct BotAgentEditor: View {
                                 Divider()
                                 Button("Otra carpeta…") { chooseFolder() }
                             }
-                            .menuStyle(.button).buttonStyle(BPButtonStyle()).fixedSize()
+                            .menuStyle(.button).buttonStyle(BCButtonStyle()).fixedSize()
                         }
                     }
                     section("05", "INSTRUCCIONES") {
-                        TextEditor(text: $agent.instructions).bpEditor(height: 110)
-                        Text("Acompañan a cada mensaje del agente. Su conversación es siempre la misma.").font(BP.mono(10)).foregroundStyle(BP.faint)
+                        TextEditor(text: $agent.instructions).bcEditor(height: 110)
+                        Text("Acompañan a cada mensaje del agente. Su conversación es siempre la misma.").font(BC.sf(10)).foregroundStyle(BC.faint)
                     }
                     section("06", "SCRIPTS") {
                         Toggle("Permitir scripts locales (API y jack-bot)", isOn: $agent.allowScripts)
                         if agent.allowScripts {
                             Text("Un script de este Mac con el token de Jack puede escribirle hasta \(BotAPI.runsPerHour) veces por hora. Úsalo solo con scripts de confianza.")
-                                .font(BP.mono(10)).foregroundStyle(BP.faint)
+                                .font(BC.sf(10)).foregroundStyle(BC.faint)
                         }
                     }
                 }
@@ -398,7 +391,7 @@ private struct BotAgentEditor: View {
             .frame(maxHeight: 560)
             HStack {
                 if agent.conversationID != nil {
-                    Text("Cambiar de motor abre una sesión nueva en la misma conversación.").font(BP.mono(9.5)).foregroundStyle(BP.faint)
+                    Text("Cambiar de motor abre una sesión nueva en la misma conversación.").font(BC.sf(9.5)).foregroundStyle(BC.faint)
                 }
                 Spacer()
                 Button("Cancelar", action: onCancel).keyboardShortcut(.cancelAction)
@@ -407,7 +400,7 @@ private struct BotAgentEditor: View {
                     saved.name = saved.name.trimmingCharacters(in: .whitespaces)
                     onSave(saved)
                 }
-                .buttonStyle(BPButtonStyle(prominent: true)).keyboardShortcut(.defaultAction).disabled(!valid)
+                .buttonStyle(BCButtonStyle(prominent: true)).keyboardShortcut(.defaultAction).disabled(!valid)
             }
         }
         .onAppear {
@@ -420,7 +413,7 @@ private struct BotAgentEditor: View {
     }
 
     private func section<Body: View>(_ number: String, _ title: String, @ViewBuilder _ body: () -> Body) -> some View {
-        VStack(alignment: .leading, spacing: 8) { BPHeader(number, title); body() }
+        VStack(alignment: .leading, spacing: 8) { BCHeader(number, title); body() }
     }
 
     private var providerGrid: some View {
@@ -434,15 +427,15 @@ private struct BotAgentEditor: View {
                     if provider == .opencode { loadOpenCode() }
                 } label: {
                     HStack(spacing: 8) {
-                        ProviderLogo(provider: provider, size: 15, symbolScale: 0.8).foregroundStyle(isSelected ? BP.hi : BP.text).frame(width: 18)
+                        ProviderLogo(provider: provider, size: 15, symbolScale: 0.8).foregroundStyle(isSelected ? BC.hi : BC.text).frame(width: 18)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(provider.title).font(BP.mono(11, .semibold)).foregroundStyle(BP.text).lineLimit(1)
+                            Text(provider.title).font(BC.sf(11, .semibold)).foregroundStyle(BC.text).lineLimit(1)
                             Text(found == nil ? "…" : provider.isBuiltIn ? "INTEGRADO" : found == true ? "INSTALADO" : "NO ENCONTRADO")
-                                .font(BP.mono(8.5)).foregroundStyle(found == false ? BP.warn : BP.faint)
+                                .font(BC.sf(8.5)).foregroundStyle(found == false ? BC.warn : BC.faint)
                         }
                         Spacer(minLength: 0)
                     }
-                    .padding(8).frame(maxWidth: .infinity, alignment: .leading).bpBox(selected: isSelected).contentShape(Rectangle())
+                    .padding(8).frame(maxWidth: .infinity, alignment: .leading).bcBox(selected: isSelected).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
@@ -451,10 +444,10 @@ private struct BotAgentEditor: View {
 
     @ViewBuilder private var modelList: some View {
         if agent.provider == .opencode, openCodeState == .loading {
-            HStack(spacing: 6) { ProgressView().controlSize(.small); Text("CONSULTANDO LOS MODELOS DE OPENCODE…").font(BP.mono(10)).foregroundStyle(BP.dim) }
+            HStack(spacing: 6) { ProgressView().controlSize(.small); Text("CONSULTANDO LOS MODELOS DE OPENCODE…").font(BC.sf(10)).foregroundStyle(BC.dim) }
         } else if agent.provider == .opencode, case .failed(let message) = openCodeState {
             VStack(alignment: .leading, spacing: 6) {
-                Text("No se pudieron cargar los modelos de OpenCode: \(message)").font(BP.mono(10)).foregroundStyle(BP.warn).lineLimit(3)
+                Text("No se pudieron cargar los modelos de OpenCode: \(message)").font(BC.sf(10)).foregroundStyle(BC.warn).lineLimit(3)
                 Button("Reintentar") { loadOpenCode() }
             }
         }
@@ -465,19 +458,19 @@ private struct BotAgentEditor: View {
                     let isSelected = option.id == agent.model
                     Button { agent.model = option.id } label: {
                         HStack(spacing: 8) {
-                            Image(systemName: isSelected ? "square.fill" : "square").font(.system(size: 8)).foregroundStyle(isSelected ? BP.hi : BP.faint)
-                            Text(option.title).font(BP.mono(11, isSelected ? .semibold : .regular)).foregroundStyle(BP.text).lineLimit(1)
-                            if option.title != option.id, !option.id.isEmpty { Text(option.id).font(BP.mono(9.5)).foregroundStyle(BP.faint).lineLimit(1) }
+                            Image(systemName: isSelected ? "square.fill" : "square").font(.system(size: 8)).foregroundStyle(isSelected ? BC.hi : BC.faint)
+                            Text(option.title).font(BC.sf(11, isSelected ? .semibold : .regular)).foregroundStyle(BC.text).lineLimit(1)
+                            if option.title != option.id, !option.id.isEmpty { Text(option.id).font(BC.sf(9.5)).foregroundStyle(BC.faint).lineLimit(1) }
                             Spacer(minLength: 0)
                         }
-                        .padding(.horizontal, 8).padding(.vertical, 5).background(isSelected ? BP.line.opacity(0.1) : .clear).contentShape(Rectangle())
+                        .padding(.horizontal, 8).padding(.vertical, 5).background(isSelected ? BC.line.opacity(0.1) : .clear).contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 }
             }
         }
-        .frame(height: min(CGFloat(options.count) * 27 + 4, 140)).bpBox(fill: 0.02)
-        TextField(placeholder, text: $agent.model).bpField()
+        .frame(height: min(CGFloat(options.count) * 27 + 4, 140)).bcBox(fill: 0.02)
+        TextField(placeholder, text: $agent.model).bcField()
     }
 
     private var placeholder: String {
@@ -517,13 +510,13 @@ private struct BotRoutineEditor: View {
     }
 
     var body: some View {
-        BPSheet(figure: "02", title: routine.name.isEmpty ? "Nueva rutina" : "Editar rutina", width: 500) {
+        BCSheet(figure: "02", title: routine.name.isEmpty ? "Nueva rutina" : "Editar rutina", width: 500) {
             VStack(alignment: .leading, spacing: 8) {
-                BPHeader("01", "NOMBRE")
-                TextField("Nombre", text: $routine.name).bpField()
-                BPHeader("02", "INSTRUCCIÓN").padding(.top, 6)
-                TextEditor(text: $routine.instruction).bpEditor(height: 100)
-                BPHeader("03", "CUÁNDO").padding(.top, 6)
+                BCHeader("01", "NOMBRE")
+                TextField("Nombre", text: $routine.name).bcField()
+                BCHeader("02", "INSTRUCCIÓN").padding(.top, 6)
+                TextEditor(text: $routine.instruction).bcEditor(height: 100)
+                BCHeader("03", "CUÁNDO").padding(.top, 6)
             }
             Toggle("Solo cuando un script la llame (webhook local)", isOn: Binding(get: { routine.apiOnly == true }, set: { routine.apiOnly = $0 ? true : nil }))
             VStack(alignment: .leading, spacing: 10) {
@@ -554,9 +547,9 @@ private struct BotRoutineEditor: View {
                     DatePicker("Hora", selection: $routine.startAt, displayedComponents: .hourAndMinute)
                 }
             }
-            .font(BP.mono(11.5)).foregroundStyle(BP.text)
+            .font(BC.sf(11.5)).foregroundStyle(BC.text)
             Text("La instrucción llega a la conversación del agente. Jack debe estar abierto; si estaba cerrado, la ejecución pendiente se lanza al abrirlo.")
-                .font(BP.mono(10)).foregroundStyle(BP.faint)
+                .font(BC.sf(10)).foregroundStyle(BC.faint)
             HStack {
                 Spacer()
                 Button("Cancelar", action: onCancel).keyboardShortcut(.cancelAction)
@@ -566,7 +559,7 @@ private struct BotRoutineEditor: View {
                     saved.createdAt = Date()
                     onSave(saved)
                 }
-                .buttonStyle(BPButtonStyle(prominent: true)).keyboardShortcut(.defaultAction).disabled(!valid)
+                .buttonStyle(BCButtonStyle(prominent: true)).keyboardShortcut(.defaultAction).disabled(!valid)
             }
         }
         .onAppear {
@@ -594,11 +587,11 @@ private struct BotChannelView: View {
                     LazyVStack(alignment: .leading, spacing: 12) {
                         ForEach(channel.messages) { message in
                             VStack(alignment: .leading, spacing: 3) {
-                                Text(name(message.authorID) + " ›").font(BP.mono(10.5, .semibold)).tracking(0.6).textCase(.uppercase)
-                                    .foregroundStyle(message.authorID == nil ? BP.hi : BP.dim)
-                                Text(message.text).font(BP.mono(12.5)).foregroundStyle(BP.text).textSelection(.enabled)
+                                Text(name(message.authorID) + " ›").font(BC.sf(10.5, .semibold))
+                                    .foregroundStyle(message.authorID == nil ? BC.hi : BC.dim)
+                                Text(message.text).font(BC.sf(12.5)).foregroundStyle(BC.text).textSelection(.enabled)
                             }
-                            .padding(.leading, 10).overlay(alignment: .leading) { Rectangle().fill(BP.line.opacity(message.authorID == nil ? 0.7 : 0.25)).frame(width: 1) }
+                            .padding(.leading, 10).overlay(alignment: .leading) { Rectangle().fill(BC.line.opacity(message.authorID == nil ? 0.7 : 0.25)).frame(width: 1) }
                             .id(message.id)
                         }
                     }
@@ -606,17 +599,17 @@ private struct BotChannelView: View {
                 }
                 .onChange(of: channel.messages.last?.id) { _, last in if let last { proxy.scrollTo(last, anchor: .bottom) } }
             }
-            if let notice { Text(notice).font(BP.mono(10.5)).foregroundStyle(BP.warn).padding(.horizontal, 20) }
+            if let notice { Text(notice).font(BC.sf(10.5)).foregroundStyle(BC.warn).padding(.horizontal, 20) }
             composer
         }
     }
 
     private var header: some View {
         HStack(spacing: 10) {
-            Text("#").font(BP.mono(14, .bold)).foregroundStyle(BP.hi)
+            Text("#").font(BC.sf(14, .bold)).foregroundStyle(BC.hi)
             VStack(alignment: .leading, spacing: 2) {
-                Text(channel.name).font(BP.mono(13, .bold)).tracking(1).textCase(.uppercase).foregroundStyle(BP.text)
-                Text("DUEÑO DE LA TAREA · \(name(channel.ownerID))").font(BP.mono(9.5)).tracking(0.6).textCase(.uppercase).foregroundStyle(BP.dim)
+                Text(channel.name).font(BC.sf(13, .bold)).foregroundStyle(BC.text)
+                Text("DUEÑO DE LA TAREA · \(name(channel.ownerID))").font(BC.sf(9.5)).foregroundStyle(BC.dim)
             }
             Spacer()
             Menu("Reasignar") {
@@ -624,7 +617,7 @@ private struct BotChannelView: View {
                     Button(name(id) + (id == channel.ownerID ? "  ✓" : "")) { bots.setOwner(id, in: channel.id) }
                 }
             }
-            .menuStyle(.button).buttonStyle(BPButtonStyle()).fixedSize()
+            .menuStyle(.button).buttonStyle(BCButtonStyle()).fixedSize()
             if channel.state == .stopped {
                 Button { bots.setState(.active, for: channel.id) } label: { Image(systemName: "play.fill") }.help("Reanudar").accessibilityLabel("Reanudar")
             } else {
@@ -633,16 +626,16 @@ private struct BotChannelView: View {
             Button(action: onEdit) { Image(systemName: "pencil") }.help("Editar").accessibilityLabel("Editar")
             Button { bots.setState(.archived, for: channel.id) } label: { Image(systemName: "archivebox") }.help("Archivar").accessibilityLabel("Archivar")
         }
-        .buttonStyle(BPIconButtonStyle())
+        .buttonStyle(BCIconButtonStyle())
         .padding(.horizontal, 20).padding(.vertical, 12)
-        .overlay(alignment: .bottom) { Rectangle().fill(BP.line.opacity(0.2)).frame(height: 1) }
+        .overlay(alignment: .bottom) { Rectangle().fill(BC.line.opacity(0.2)).frame(height: 1) }
     }
 
     private var composer: some View {
         HStack(spacing: 8) {
             TextField(channel.state == .stopped ? "El canal está detenido: se guarda, pero nadie lo lee" : "Escribe al dueño de la tarea…", text: $draft)
-                .bpField().onSubmit(send)
-            Button("Enviar", action: send).buttonStyle(BPButtonStyle(prominent: true)).disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .bcField().onSubmit(send)
+            Button("Enviar", action: send).buttonStyle(BCButtonStyle(prominent: true)).disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
         .padding(16)
     }
@@ -664,11 +657,11 @@ private struct BotChannelEditor: View {
     }
 
     var body: some View {
-        BPSheet(figure: "03", title: channel.name.isEmpty ? "Nuevo canal" : "Editar canal", width: 440) {
+        BCSheet(figure: "03", title: channel.name.isEmpty ? "Nuevo canal" : "Editar canal", width: 440) {
             VStack(alignment: .leading, spacing: 8) {
-                BPHeader("01", "NOMBRE")
-                TextField("Nombre", text: $channel.name).bpField()
-                BPHeader("02", "MIEMBROS").padding(.top, 6)
+                BCHeader("01", "NOMBRE")
+                TextField("Nombre", text: $channel.name).bcField()
+                BCHeader("02", "MIEMBROS").padding(.top, 6)
                 ForEach(agents) { agent in
                     Toggle(agent.name, isOn: Binding(
                         get: { channel.memberIDs.contains(agent.id) },
@@ -678,12 +671,12 @@ private struct BotChannelEditor: View {
                             if !channel.memberIDs.contains(channel.ownerID) { channel.ownerID = channel.memberIDs.first ?? channel.ownerID }
                         }))
                 }
-                BPHeader("03", "DUEÑO DE LA TAREA").padding(.top, 6)
+                BCHeader("03", "DUEÑO DE LA TAREA").padding(.top, 6)
                 Picker("Dueño de la tarea", selection: $channel.ownerID) {
                     ForEach(agents.filter { channel.memberIDs.contains($0.id) }) { Text($0.name).tag($0.id) }
                 }.labelsHidden()
                 Text("Solo el dueño oye lo que escribes en el canal. Los demás miembros entran cuando el dueño les delega una tarea.")
-                    .font(BP.mono(10)).foregroundStyle(BP.faint)
+                    .font(BC.sf(10)).foregroundStyle(BC.faint)
             }
             HStack {
                 Spacer()
@@ -693,7 +686,7 @@ private struct BotChannelEditor: View {
                     saved.name = saved.name.trimmingCharacters(in: .whitespaces)
                     onSave(saved)
                 }
-                .buttonStyle(BPButtonStyle(prominent: true)).keyboardShortcut(.defaultAction).disabled(!valid)
+                .buttonStyle(BCButtonStyle(prominent: true)).keyboardShortcut(.defaultAction).disabled(!valid)
             }
         }
     }

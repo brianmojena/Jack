@@ -119,7 +119,6 @@
 		4FE4F04A92F476E321F8A506 /* OfficeChessPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AEFE88E5FE3B5A05EA0BE71 /* OfficeChessPlayer.swift */; };
 		5074BA1370040975AAB81985 /* AgentUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFF06CBC57D40F317FC649F6 /* AgentUpdater.swift */; };
 		50B143FC44D72601C56EA034 /* Artifacts.swift in Sources */ = {isa = PBXBuildFile; fileRef = C25E6C8DB178859ECD873C96 /* Artifacts.swift */; };
-		512650BECF0361242CE42F3F /* BotBlueprint.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6DE8C9313DFFF823C2AEAD9 /* BotBlueprint.swift */; };
 		531EA1998B5E7521E31CEC85 /* CustomizationAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00E13DD0F27086479636A27 /* CustomizationAppearance.swift */; };
 		53306EA90065579DD4362D48 /* ApprovalViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E0312F9EF3FDF19D86B6340 /* ApprovalViews.swift */; };
 		564C1A990690802BD7604634 /* JackRemoteProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCABA0283CE71A5F4ED877AC /* JackRemoteProtocol.swift */; };
@@ -350,6 +349,7 @@
 		FDA0C86DE21F32B305B5F8F8 /* BrowserPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5019EA3818C709E8D20043A4 /* BrowserPicker.swift */; };
 		FDB53DA97ED906902CFF2AD5 /* ChatUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D0A660EF197200211C217B4 /* ChatUsage.swift */; };
 		FE244C492795D9A653A96A94 /* FRANKLIN.usdz in Resources */ = {isa = PBXBuildFile; fileRef = FE98510172BA77F6A01641E5 /* FRANKLIN.usdz */; };
+		FF339C97A3304DE38995F6B2 /* BotCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78095267D1A98E2DF76AD758 /* BotCanvas.swift */; };
 		FF5C420CE49696AB88CC0B81 /* Avatar_GIRL.png in Resources */ = {isa = PBXBuildFile; fileRef = 89E0B4DD49D100A6788F4431 /* Avatar_GIRL.png */; };
 		FF821D60F33C1127B7DDD634 /* LightTranscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = F40A187CE25E794DFACFD965 /* LightTranscript.swift */; };
 /* End PBXBuildFile section */
@@ -522,6 +522,7 @@
 		7099A2B3636CAE85AFECF7D0 /* GitPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitPanel.swift; sourceTree = "<group>"; };
 		751CF530CDA44A89E3355D46 /* JackCoreShims.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JackCoreShims.swift; sourceTree = "<group>"; };
 		76103D558313260D9DDCFE3B /* ChatStore+OfficeHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatStore+OfficeHost.swift"; sourceTree = "<group>"; };
+		78095267D1A98E2DF76AD758 /* BotCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotCanvas.swift; sourceTree = "<group>"; };
 		78B9A61DC67EED25FD44126E /* CodeOSRemovalDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeOSRemovalDialog.swift; sourceTree = "<group>"; };
 		78C11E2375D0EEFC17C10123 /* CodeOSQuotaCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeOSQuotaCoordinator.swift; sourceTree = "<group>"; };
 		7A561D763A0E7B6F2E944330 /* CodeOSKeys.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeOSKeys.swift; sourceTree = "<group>"; };
@@ -579,7 +580,6 @@
 		A513FA72943E495D585C29AB /* JackSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JackSidebar.swift; sourceTree = "<group>"; };
 		A5DA957BF049BAF361BA307D /* OfficeInterfaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficeInterfaceView.swift; sourceTree = "<group>"; };
 		A669F4C23030DFB614FB88C4 /* JackCore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = JackCore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
-		A6DE8C9313DFFF823C2AEAD9 /* BotBlueprint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotBlueprint.swift; sourceTree = "<group>"; };
 		A7000AAC5B5D05A170361D0C /* OfficePersonas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfficePersonas.swift; sourceTree = "<group>"; };
 		A72B6A361E6A5F241AE366A9 /* BotModeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotModeView.swift; sourceTree = "<group>"; };
 		A7920154A0C48A8B576E4954 /* Office2DScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Office2DScene.swift; sourceTree = "<group>"; };
@@ -1003,7 +1003,7 @@
 				6AA8C81C6A84E8DDF53B0226 /* AsideView.swift */,
 				A8AC5CBAB71E44192E8AF824 /* AttachmentViews.swift */,
 				EE20CBCE09336DFA3CA28709 /* BatterySaver.swift */,
-				A6DE8C9313DFFF823C2AEAD9 /* BotBlueprint.swift */,
+				78095267D1A98E2DF76AD758 /* BotCanvas.swift */,
 				A72B6A361E6A5F241AE366A9 /* BotModeView.swift */,
 				7B9FB35C647D86FB0641E5DF /* BotTable.swift */,
 				5019EA3818C709E8D20043A4 /* BrowserPicker.swift */,
@@ -1425,7 +1425,7 @@
 				166A26F7D4105C984E303849 /* AsideView.swift in Sources */,
 				28AC8F651C192396167D8317 /* AttachmentViews.swift in Sources */,
 				5D953693E66E01A72D9DB935 /* BatterySaver.swift in Sources */,
-				512650BECF0361242CE42F3F /* BotBlueprint.swift in Sources */,
+				FF339C97A3304DE38995F6B2 /* BotCanvas.swift in Sources */,
 				D943E8A182C0DC73F433DE78 /* BotModeView.swift in Sources */,
 				74C1314795ED7C8031F8A5D2 /* BotTable.swift in Sources */,
 				FDA0C86DE21F32B305B5F8F8 /* BrowserPicker.swift in Sources */,
