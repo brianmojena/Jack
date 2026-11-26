@@ -183,6 +183,25 @@ import XCTest
         XCTAssertTrue(bots.agents(matching: "zzz").isEmpty)
     }
 
+    func testEditingAnAgentMovesItsConversationToTheNewEngineAndModel() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("jack-bot-engine-" + UUID().uuidString)
+        let store = ChatStore(archive: ChatArchive(directory: folder), preferences: nil, driverFactory: { _ in RecordingDriver() })
+        defer { store.shutdown(); try? FileManager.default.removeItem(at: folder) }
+        var agent = BotAgent(name: "Ada", projectPath: NSTemporaryDirectory(), provider: .claude)
+        store.bots.upsert(agent)
+        let id = try XCTUnwrap(store.botConversation(for: agent))
+        agent = try XCTUnwrap(store.bots.agents.first)
+
+        agent.provider = .codex; agent.model = "gpt-x"
+        store.botConversation(for: agent, applyEngine: true)
+        let moved = try XCTUnwrap(store.conversations.first { $0.id == id })
+        XCTAssertEqual(moved.provider, .codex); XCTAssertEqual(moved.model, "gpt-x")
+
+        // Without the flag (every routine and message), a model picked in the chat itself is left alone.
+        store.botConversation(for: BotAgent(id: agent.id, name: "Ada", projectPath: NSTemporaryDirectory(), provider: .claude, conversationID: id))
+        XCTAssertEqual(store.conversations.first { $0.id == id }?.provider, .codex)
+    }
+
     func testBridgeToolsOnlyForBotAgentsAndDeliverIntoTheTeammate() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("jack-bot-tools-" + UUID().uuidString)
         var drivers: [RecordingDriver] = []

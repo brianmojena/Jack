@@ -229,12 +229,26 @@ enum AntigravityTerminalError: LocalizedError {
         return store
     }
     /// The agent's own conversation, created the first time. Its instructions are pinned to it, so every message carries them.
+    /// `applyEngine` moves an existing conversation to the agent's current engine and model: used when the user edits the agent.
     @discardableResult
-    public func botConversation(for agent: BotAgent) -> UUID? {
+    public func botConversation(for agent: BotAgent, applyEngine: Bool = false) -> UUID? {
         var id = agent.conversationID.flatMap { known in conversations.contains { $0.id == known } ? known : nil }
         if id == nil { id = create(projectPath: agent.projectPath, provider: agent.provider, model: agent.model.isEmpty ? nil : agent.model,
                                    title: agent.name, select: false) }
         guard let id, let index = conversations.firstIndex(where: { $0.id == id }) else { return nil }
+        let model = agent.model.isEmpty ? agent.provider.defaultModel : agent.model
+        if applyEngine, conversations[index].provider != agent.provider || conversations[index].model != model {
+            if isBusy(id) { errorMessage = "«\(agent.name)» está trabajando: el nuevo motor se aplicará si lo editas cuando termine." }
+            else {
+                if conversations[index].provider != agent.provider {
+                    // A session belongs to its engine, so the new one starts a fresh session in the same transcript.
+                    conversations[index].provider = agent.provider; conversations[index].sessionID = nil
+                    conversations[index].mode = defaultMode(for: agent.provider); conversations[index].variant = nil; conversations[index].remote = nil
+                }
+                conversations[index].model = model
+                conversations[index].effort = Self.clamp(conversations[index].effort, to: supportedEfforts(provider: agent.provider, model: model))
+            }
+        }
         conversations[index].botAgentID = agent.id
         var context = conversations[index].jackContext ?? JackContextSettings()
         context.pinned = agent.instructions.isEmpty ? [] : [agent.instructions]

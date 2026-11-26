@@ -258,7 +258,7 @@ func providerSymbol(_ provider: ChatProvider) -> String {
 }
 
 /// The provider's logo at `size` points, falling back to its SF Symbol.
-private struct ProviderLogo: View {
+struct ProviderLogo: View {
     let provider: ChatProvider
     let size: CGFloat
     let symbolScale: CGFloat
