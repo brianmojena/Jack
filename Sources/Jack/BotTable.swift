@@ -45,6 +45,9 @@ struct BotTableView<Chat: View>: View {
                 chatPanel.frame(width: 430)
             }
         }
+        .background { ZStack { BP.ink; BPGrid() } }
+        .tint(BP.hi).toggleStyle(BPToggleStyle()).buttonStyle(BPButtonStyle())
+        .preferredColorScheme(.dark)
         .onAppear { orchestrator.scanCLIs(); if let jack, let id = jack.conversationID, store.conversations.contains(where: { $0.id == id }) { store.select(id) } }
         .onReceive(clock) { tick = $0 }
         .sheet(item: $editingProvider) { config in
@@ -72,21 +75,27 @@ struct BotTableView<Chat: View>: View {
             ("PERMISOS", "PIDE SIEMPRE"),
         ]
         _ = tick
-        return HStack(spacing: 0) {
-            Text("JACK·MESA").font(BP.mono(13, .bold)).tracking(2).foregroundStyle(BP.text).padding(.horizontal, 16)
-            ForEach(Array(cells.enumerated()), id: \.offset) { _, cell in
-                Rectangle().fill(BP.line.opacity(0.2)).frame(width: 1)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(cell.0).font(BP.mono(8.5)).foregroundStyle(BP.faint).tracking(1)
-                    Text(cell.1).font(BP.mono(10.5, .semibold)).foregroundStyle(BP.text)
-                }
-                .padding(.horizontal, 12).help(limitHelp(cell.0))
+        return VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Text("JACK·MESA").font(BP.mono(13, .bold)).tracking(2).foregroundStyle(BP.text).lineLimit(1)
+                Spacer(minLength: 8)
+                Button("Disolver equipo") { confirmDissolve = true }.disabled(team.isEmpty).buttonStyle(BPButtonStyle())
+                Button("Detener todo") { confirmStop = true }.disabled(session == nil).buttonStyle(BPButtonStyle(destructive: true))
             }
-            Spacer(minLength: 8)
-            Button("Disolver equipo") { confirmDissolve = true }.disabled(team.isEmpty).buttonStyle(BPButtonStyle())
-            Button("Detener todo") { confirmStop = true }.disabled(session == nil).buttonStyle(BPButtonStyle(destructive: true)).padding(.horizontal, 10)
+            .padding(.horizontal, 16).frame(height: 38)
+            Rectangle().fill(BP.line.opacity(0.2)).frame(height: 1)
+            HStack(spacing: 0) {
+                ForEach(Array(cells.enumerated()), id: \.offset) { index, cell in
+                    if index > 0 { Rectangle().fill(BP.line.opacity(0.2)).frame(width: 1) }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(cell.0).font(BP.mono(8.5)).foregroundStyle(BP.faint).tracking(1)
+                        Text(cell.1).font(BP.mono(10.5, .semibold)).foregroundStyle(BP.text).lineLimit(1).minimumScaleFactor(0.7)
+                    }
+                    .padding(.horizontal, 12).frame(maxWidth: .infinity, alignment: .leading).help(limitHelp(cell.0))
+                }
+            }
+            .frame(height: 38)
         }
-        .frame(height: 46)
     }
 
     private func limitHelp(_ cell: String) -> String {
@@ -123,8 +132,6 @@ struct BotTableView<Chat: View>: View {
                 .labelsHidden().frame(maxWidth: 220)
                 Button("Elegir…") { chooseFolder() }
             }
-            Button("Añadir un proveedor por API…") { editingProvider = APIProviderConfig(name: "", baseURL: "https://", model: "") }
-                .buttonStyle(BPButtonStyle())
         }
         .padding(.top, 30).onAppear { if folder.isEmpty { folder = projectPaths.first ?? "" } }
     }
