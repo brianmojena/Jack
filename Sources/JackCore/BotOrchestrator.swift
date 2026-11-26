@@ -435,6 +435,14 @@ public enum BotRunModes {
         for index in proposals.indices where proposals[index].state == .pending { proposals[index].state = .rejected }
     }
 
+    /// Stops one child and frees its place in the session.
+    public func stop(child id: UUID) {
+        guard var session, session.children[id] != nil else { return }
+        session.children[id] = .stopped
+        self.session = session
+        if let conversation = bots.agents.first(where: { $0.id == id })?.conversationID { store.stop(conversation) }
+    }
+
     /// Removes the children the principal created. Their conversations stay as ordinary chats.
     public func dissolveTeam() {
         let children = bots.agents.filter { $0.parentID != nil }

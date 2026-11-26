@@ -301,8 +301,8 @@ struct BotTableView<Chat: View>: View {
                 Button("Abrir") {
                     if let id = store.botConversation(for: agent) { store.select(id) }
                 }
-                Button("Detener") { if let id = agent.conversationID { store.stop(id) } }
-                    .disabled(!(agent.conversationID.map { store.statuses[$0]?.isActive == true } ?? false))
+                Button("Detener") { orchestrator.stop(child: agent.id) }
+                    .disabled(orchestrator.session?.children[agent.id] != .working)
             }
         }
         .padding(10).frame(maxWidth: .infinity, alignment: .leading).bpBox(selected: isOpen)

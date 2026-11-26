@@ -417,6 +417,16 @@ import XCTest
         XCTAssertGreaterThanOrEqual(drivers.reduce(0) { $0 + $1.stopped }, stoppedBefore)
     }
 
+    func testStoppingOneChildFreesItsPlaceButKeepsTheOthers() throws {
+        _ = orchestrator.ask("hazlo", principal: jack)
+        let kids = try approve(["Ana", "Beto", "Cleo"])
+        guard case .failure = orchestrator.propose(from: jack, rationale: "x", specs: [spec("Dani")]) else { return XCTFail("three are working") }
+        orchestrator.stop(child: kids[0].id)
+        XCTAssertEqual(orchestrator.session?.children[kids[0].id], .stopped)
+        XCTAssertEqual(orchestrator.session?.children[kids[1].id], .working)
+        XCTAssertNoThrow(try orchestrator.propose(from: jack, rationale: "x", specs: [spec("Dani")]).get())
+    }
+
     func testDissolvingTheTeamRemovesChildrenButKeepsJack() throws {
         _ = orchestrator.ask("hazlo", principal: jack)
         _ = try approve(["Ana", "Beto"])
