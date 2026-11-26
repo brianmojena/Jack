@@ -6,14 +6,12 @@ import SwiftUI
 /// and everything that needs a decision (a team to approve, a limit reached) is shown here, not decided for the user.
 struct BotTableView<Chat: View>: View {
     @ObservedObject var orchestrator: BotOrchestrator
-    @ObservedObject var providers: APIProviderStore
     @ObservedObject var bots: BotStore
     @ObservedObject var store: ChatStore
     let projectPaths: [String]
     @ViewBuilder let chat: () -> Chat
     @State private var prompt = ""
     @State private var showingProviders = false
-    @State private var editingProvider: APIProviderConfig?
     @State private var folder = ""
     @State private var confirmStop = false
     @State private var confirmDissolve = false
@@ -50,9 +48,6 @@ struct BotTableView<Chat: View>: View {
         .preferredColorScheme(.dark)
         .onAppear { orchestrator.scanCLIs(); if let jack, let id = jack.conversationID, store.conversations.contains(where: { $0.id == id }) { store.select(id) } }
         .onReceive(clock) { tick = $0 }
-        .sheet(item: $editingProvider) { config in
-            APIProviderEditor(config: config, store: providers) { editingProvider = nil } onSaved: { _ in editingProvider = nil }
-        }
         .confirmationDialog("¿Detener a todos los bots?", isPresented: $confirmStop) {
             Button("Detener todo", role: .destructive) { orchestrator.stopAll() }
         } message: { Text("Para a Jack y a sus bots hijos y termina la sesión. Lo que ya hicieron se queda como está.") }
@@ -72,13 +67,14 @@ struct BotTableView<Chat: View>: View {
             ("HIJOS", "\(s.map { orchestrator.activeChildren(in: $0).count } ?? 0)/\(policy.maxActiveChildren)"),
             ("CREADOS", "\(s?.spawned ?? 0)/\(policy.maxChildrenPerSession)"),
             ("MENSAJES", "\(s?.messages ?? 0)/\(policy.maxMessagesPerSession)"),
-            ("PERMISOS", "PIDE SIEMPRE"),
+            ("MODO", orchestrator.approvalMode == .autonomous ? "AUTÓNOMO" : "PREGUNTAR"),
         ]
         _ = tick
         return VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Text("JACK·MESA").font(BP.mono(13, .bold)).tracking(2).foregroundStyle(BP.text).lineLimit(1)
                 Spacer(minLength: 8)
+                modeSwitch
                 Button("Disolver equipo") { confirmDissolve = true }.disabled(team.isEmpty).buttonStyle(BPButtonStyle())
                 Button("Detener todo") { confirmStop = true }.disabled(session == nil).buttonStyle(BPButtonStyle(destructive: true))
             }
@@ -95,7 +91,39 @@ struct BotTableView<Chat: View>: View {
                 }
             }
             .frame(height: 38)
+            if orchestrator.approvalMode == .autonomous {
+                HStack(spacing: 8) {
+                    Text("AUTÓNOMO").font(BP.mono(10, .bold)).tracking(1.5).foregroundStyle(BP.warn)
+                    Text("Jack crea y lanza bots sin pedirte aprobación. Los límites y «Detener todo» siguen activos; los mensajes entre bots siguen siendo datos, no órdenes.")
+                        .font(BP.mono(9.5)).foregroundStyle(BP.warn.opacity(0.85)).lineLimit(2)
+                    Spacer(minLength: 6)
+                    Button("Volver a preguntar") { if let jack { orchestrator.setApprovalMode(.ask, principal: jack) } }
+                }
+                .padding(.horizontal, 16).padding(.vertical, 6).background(BP.warn.opacity(0.1))
+                .overlay(alignment: .bottom) { Rectangle().fill(BP.warn.opacity(0.7)).frame(height: 1) }
+            }
         }
+    }
+
+    /// PREGUNTAR / AUTÓNOMO. Only this switch or the user's own message to Jack can make it autonomous.
+    private var modeSwitch: some View {
+        let autonomous = orchestrator.approvalMode == .autonomous
+        return HStack(spacing: 0) {
+            ForEach([(BotApprovalMode.ask, "PREGUNTAR"), (BotApprovalMode.autonomous, "AUTÓNOMO")], id: \.1) { item in
+                Button {
+                    if let jack { orchestrator.setApprovalMode(item.0, principal: jack) }
+                } label: {
+                    Text(item.1).font(BP.mono(9.5, .semibold)).tracking(0.8)
+                        .foregroundStyle(item.0 == (autonomous ? .autonomous : .ask) ? (item.0 == .autonomous ? BP.warn : BP.hi) : BP.dim)
+                        .padding(.horizontal, 8).padding(.vertical, 5)
+                        .background((item.0 == (autonomous ? .autonomous : .ask)) ? (item.0 == .autonomous ? BP.warn : BP.hi).opacity(0.14) : .clear)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).disabled(jack == nil)
+            }
+        }
+        .overlay(Rectangle().strokeBorder(BP.line.opacity(0.4), lineWidth: 1))
+        .help("PREGUNTAR: crear bots necesita tu aprobación. AUTÓNOMO: Jack crea y lanza bots sin preguntar. Solo tú puedes activarlo y vuelve a PREGUNTAR en cada sesión nueva.")
     }
 
     private func limitHelp(_ cell: String) -> String {
@@ -104,8 +132,8 @@ struct BotTableView<Chat: View>: View {
         case "HIJOS": return "Bots hijos trabajando a la vez. Máximo \(p.maxActiveChildren). Los hijos no crean bots (profundidad \(p.maxDepth))."
         case "CREADOS": return "Bots creados en esta sesión. Máximo \(p.maxChildrenPerSession)."
         case "MENSAJES": return "Mensajes entre bots en esta sesión (\(p.maxMessagesPerChild) por hijo). Es también el tope de gasto: no hay precio por token, el límite son los turnos y el tiempo."
-        case "SESIÓN": return "Una sesión empieza cuando le escribes a Jack y termina a los \(Int(p.sessionDuration / 60)) minutos o con «Detener todo»."
-        default: return "Crear bots exige tu aprobación aquí. Las acciones con efectos de cada bot te las pide su propio chat."
+        case "SESIÓN": return "Una sesión empieza cuando le escribes a Jack y termina a los \(Int(p.sessionDuration / 60)) minutos o con «Detener todo». Cada sesión nueva empieza en PREGUNTAR."
+        default: return "PREGUNTAR: crear bots exige tu aprobación aquí. AUTÓNOMO: Jack los lanza sin preguntar. Las acciones de cada bot siguen el modo de permisos de su propio chat."
         }
     }
 
@@ -119,7 +147,7 @@ struct BotTableView<Chat: View>: View {
                 Text("J").font(BP.mono(34, .bold)).foregroundStyle(BP.hi)
             }
             Text("MESA DE JACK").font(BP.mono(15, .bold)).tracking(2).foregroundStyle(BP.text)
-            Text("Jack es el bot principal. Tú le hablas; cuando la tarea lo pide, te propone un equipo de bots y tú lo apruebas. Elige con qué motor trabaja.")
+            Text("Jack es el bot principal. Tú le hablas; cuando la tarea lo pide, te propone un equipo de bots y tú lo apruebas. Elige con qué motor trabaja (las CLI que Jack ya integra).")
                 .font(BP.mono(11)).foregroundStyle(BP.dim).multilineTextAlignment(.center).frame(maxWidth: 460)
             providerList(selected: nil, choices: choices) { choice in create(choice) }
                 .frame(maxWidth: 420)
@@ -151,34 +179,14 @@ struct BotTableView<Chat: View>: View {
 
     // MARK: Table
 
-    private struct ProviderRow: Identifiable {
-        var choice: BotProviderChoice
-        var title: String
-        var detail: String
-        var available: Bool
-        var id: String { switch choice { case .cli(let p): return "cli-" + p.rawValue; case .api(let id): return "api-" + id.uuidString } }
-    }
-
-    private var providerChoices: [ProviderRow] {
-        var rows: [ProviderRow] = CLIDetector.providers.map { provider in
-            let status = orchestrator.cliStatuses.first { $0.provider == provider }
-            let detail = orchestrator.scanning && status == nil ? "BUSCANDO…" : status?.installed == true ? (status?.version ?? "INSTALADO").uppercased() : "NO ENCONTRADO"
-            return ProviderRow(choice: .cli(provider), title: provider.title, detail: detail, available: status?.installed == true)
-        }
-        rows += providers.providers.map { config in
-            ProviderRow(choice: .api(config.id), title: "API · " + config.name, detail: providers.hasKey(config.id) ? config.model : "FALTA LA CLAVE", available: providers.hasKey(config.id))
-        }
-        return rows
-    }
+    private var providerChoices: [BotProviderOption] { orchestrator.providerOptions() }
 
     private func providerLabel(_ agent: BotAgent) -> String {
-        switch orchestrator.choice(of: agent) {
-        case .cli(let provider): return provider.title
-        case .api(let id): return "API · " + (providers.provider(id: id)?.name ?? "?")
-        }
+        let choice = orchestrator.choice(of: agent)
+        return providerChoices.first { $0.choice == choice }?.title ?? agent.provider.title
     }
 
-    private func providerList(selected: BotProviderChoice?, choices: [ProviderRow], pick: @escaping (BotProviderChoice) -> Void) -> some View {
+    private func providerList(selected: BotProviderChoice?, choices: [BotProviderOption], pick: @escaping (BotProviderChoice) -> Void) -> some View {
         VStack(spacing: 4) {
             ForEach(choices) { row in
                 Button { pick(row.choice) } label: {
@@ -192,17 +200,10 @@ struct BotTableView<Chat: View>: View {
                     .bpBox(selected: row.choice == selected)
                 }
                 .buttonStyle(.plain).disabled(!row.available)
-                .contextMenu {
-                    if case .api(let id) = row.choice, let config = providers.provider(id: id) {
-                        Button("Editar…", systemImage: "pencil") { editingProvider = config }
-                        Button("Eliminar", systemImage: "trash", role: .destructive) { try? providers.remove(id) }
-                    }
-                }
             }
             HStack {
                 Button("Volver a buscar") { orchestrator.scanCLIs() }.disabled(orchestrator.scanning)
                 Spacer()
-                Button("Añadir API…") { editingProvider = APIProviderConfig(name: "", baseURL: "https://", model: "") }
             }
             .padding(.top, 4)
         }
@@ -245,7 +246,7 @@ struct BotTableView<Chat: View>: View {
                             providerList(selected: orchestrator.choice(of: jack), choices: providerChoices) { choice in
                                 orchestrator.setProvider(choice, for: jack); showingProviders = false
                             }
-                            Text("Un bot que está trabajando cambia de motor cuando termine. Las claves de API se guardan en el Llavero de macOS.")
+                            Text("Un bot que está trabajando cambia de motor cuando termine. Solo aparecen los motores que Jack ya integra y tienes instalados.")
                                 .font(BP.mono(9.5)).foregroundStyle(BP.faint)
                         }
                         .padding(14).frame(width: 340).background { ZStack { BP.ink; BPGrid() } }
@@ -327,7 +328,7 @@ struct BotTableView<Chat: View>: View {
                 }
             }
             HStack {
-                Text("Los bots trabajan en la carpeta de Jack. Cada acción con efectos te la pedirá su chat.").font(BP.mono(9.5)).foregroundStyle(BP.faint)
+                Text("Los bots trabajan en la carpeta de Jack, con el modo de permisos de cada agente.").font(BP.mono(9.5)).foregroundStyle(BP.faint)
                 Spacer()
                 Button("Rechazar") { orchestrator.reject(proposal.id) }
                 Button("Aprobar y lanzar") {
@@ -363,47 +364,5 @@ struct BotTableView<Chat: View>: View {
     @ViewBuilder private var chatPanel: some View {
         if let id = jack?.conversationID, store.selectedID != nil, store.conversations.contains(where: { $0.id == id }) { chat() }
         else { VStack { Text("La conversación aparece aquí").font(BP.mono(11)).foregroundStyle(BP.faint) }.frame(maxWidth: .infinity, maxHeight: .infinity) }
-    }
-}
-
-/// Adds or edits a custom API provider. The key is typed here once and goes straight to the Keychain.
-struct APIProviderEditor: View {
-    @State var config: APIProviderConfig
-    @ObservedObject var store: APIProviderStore
-    let onCancel: () -> Void
-    let onSaved: (APIProviderConfig) -> Void
-    @State private var key = ""
-    @State private var error: String?
-
-    private var isNew: Bool { store.provider(id: config.id) == nil }
-
-    var body: some View {
-        BPSheet(figure: "A.1", title: isNew ? "Nuevo proveedor por API" : "Editar proveedor", width: 460) {
-            VStack(alignment: .leading, spacing: 10) {
-                field("NOMBRE") { TextField("OpenAI, Groq, LM Studio…", text: $config.name).bpField() }
-                field("DIRECCIÓN") { TextField("https://api.openai.com", text: $config.baseURL).bpField().disableAutocorrection(true) }
-                field("MODELO") { TextField("gpt-5, llama-3.3-70b…", text: $config.model).bpField().disableAutocorrection(true) }
-                field("CLAVE DE API") {
-                    SecureField(store.hasKey(config.id) ? "Guardada en el Llavero · escribe otra para cambiarla" : "Pega tu clave", text: $key).bpField()
-                }
-                Text("Formato OpenAI-compatible (/v1/chat/completions): OpenAI, OpenRouter, Groq, LM Studio, Ollama… La clave se guarda solo en el Llavero de macOS: Jack no la muestra, no la escribe en archivos ni en el registro. Se admite http únicamente en este equipo.")
-                    .font(BP.mono(9.5)).foregroundStyle(BP.faint)
-                if let error { Text(error).font(BP.mono(10.5)).foregroundStyle(BP.warn) }
-                HStack {
-                    if !isNew { Button("Eliminar", role: .destructive) { try? store.remove(config.id); onCancel() }.buttonStyle(BPButtonStyle(destructive: true)) }
-                    Spacer()
-                    Button("Cancelar", action: onCancel)
-                    Button("Guardar") {
-                        do { try store.upsert(config, apiKey: key); key = ""; onSaved(store.provider(id: config.id) ?? config) }
-                        catch { self.error = error.localizedDescription }
-                    }
-                    .buttonStyle(BPButtonStyle(prominent: true))
-                }
-            }
-        }
-    }
-
-    private func field<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 4) { Text(title).font(BP.mono(9, .semibold)).tracking(1).foregroundStyle(BP.faint); content() }
     }
 }

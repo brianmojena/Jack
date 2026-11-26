@@ -27,7 +27,7 @@ struct BotModeView<Chat: View>: View {
         VStack(spacing: 0) {
             tabBar
             if tab == .table {
-                BotTableView(orchestrator: store.orchestrator, providers: store.apiProviders, bots: bots, store: store, projectPaths: projectPaths, chat: chat)
+                BotTableView(orchestrator: store.orchestrator, bots: bots, store: store, projectPaths: projectPaths, chat: chat)
             } else {
                 HStack(spacing: 0) {
                     agentList.frame(width: 250)
